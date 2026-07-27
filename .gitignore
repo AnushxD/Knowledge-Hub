@@ -21,7 +21,11 @@ npm-debug.log*
 .env.local
 
 ### Editors ###
-.vscode/
+# Shared run/debug configuration is committed; personal settings are not.
+.vscode/*
+!.vscode/launch.json
+!.vscode/tasks.json
+!.vscode/extensions.json
 .idea/
 
 ### Secrets (never commit real values) ###

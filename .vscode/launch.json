@@ -1,0 +1,51 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      // Backend. Breakpoints in controllers, services and repositories all hit.
+      "name": "API (.NET)",
+      "type": "coreclr",
+      "request": "launch",
+      "preLaunchTask": "api-ready",
+      "program": "${workspaceFolder}/server/src/DocHub.Api/bin/Debug/net10.0/DocHub.Api.dll",
+      "args": [],
+      "cwd": "${workspaceFolder}/server/src/DocHub.Api",
+      "stopAtEntry": false,
+      "console": "internalConsole",
+      "env": {
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "ASPNETCORE_URLS": "http://localhost:5080"
+      },
+      "sourceFileMap": { "/Views": "${workspaceFolder}/Views" }
+    },
+    {
+      // Frontend. Starts ng serve, waits for the first successful build, then
+      // launches Chrome attached — breakpoints in .ts files hit directly.
+      "name": "Client (Angular in Chrome)",
+      "type": "chrome",
+      "request": "launch",
+      "preLaunchTask": "ng-serve",
+      "url": "http://localhost:4200",
+      "webRoot": "${workspaceFolder}/client",
+      "sourceMaps": true,
+      "sourceMapPathOverrides": {
+        "webpack:///./*": "${workspaceFolder}/client/*",
+        "webpack:///src/*": "${workspaceFolder}/client/src/*"
+      }
+    },
+    {
+      // For when the API is already running in a terminal and you just want in.
+      "name": "Attach to running .NET process",
+      "type": "coreclr",
+      "request": "attach"
+    }
+  ],
+  "compounds": [
+    {
+      "name": "Full stack (API + Client)",
+      "configurations": ["API (.NET)", "Client (Angular in Chrome)"],
+      "stopAll": true,
+      "presentation": { "order": 1 }
+    }
+  ]
+}
