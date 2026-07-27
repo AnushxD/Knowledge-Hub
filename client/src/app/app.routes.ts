@@ -26,19 +26,19 @@ export const routes: Routes = [
         path: 'search',
         title: 'Search · DocHub',
         loadComponent: () =>
-          import('./features/roadmap/roadmap-placeholder').then((m) => m.SearchPlaceholder),
+          import('./features/roadmap/search-placeholder').then((m) => m.SearchPlaceholder),
       },
       {
         path: 'chat',
         title: 'Assistant · DocHub',
         loadComponent: () =>
-          import('./features/roadmap/roadmap-placeholder').then((m) => m.ChatPlaceholder),
+          import('./features/roadmap/chat-placeholder').then((m) => m.ChatPlaceholder),
       },
       {
         path: 'sources',
         title: 'Knowledge sources · DocHub',
         loadComponent: () =>
-          import('./features/roadmap/roadmap-placeholder').then((m) => m.SourcesPlaceholder),
+          import('./features/roadmap/sources-placeholder').then((m) => m.SourcesPlaceholder),
       },
       {
         path: 'settings',

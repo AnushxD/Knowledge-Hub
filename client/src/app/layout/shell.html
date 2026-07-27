@@ -1,0 +1,47 @@
+<dh-nav-rail class="hidden sm:flex" />
+
+<!-- Sidebar: docked on desktop, an overlay drawer below lg. -->
+@if (sidebarOpen()) {
+  <div
+    class="fixed inset-0 z-30 bg-black/40 lg:hidden"
+    (click)="sidebarOpen.set(false)"
+    aria-hidden="true"
+  ></div>
+}
+<aside
+  class="fixed inset-y-0 left-0 z-40 flex w-[var(--dh-sidebar-w)] shrink-0 flex-col border-r border-hairline bg-surface-1 transition-transform duration-200 lg:static lg:z-auto lg:translate-x-0"
+  [class.-translate-x-full]="!sidebarOpen()"
+  [class.translate-x-0]="sidebarOpen()"
+  [class.lg:hidden]="!desktopSidebar()"
+  aria-label="Library navigation"
+>
+  <div
+    class="flex h-[var(--dh-topbar-h)] shrink-0 items-center gap-2 border-b border-hairline px-4"
+  >
+    <span class="text-[14px] font-semibold tracking-tight text-ink">DocHub</span>
+    <span
+      class="rounded-full border border-hairline px-1.5 py-px text-[9.5px] font-medium text-subtle"
+      >Phase 1</span
+    >
+    <button
+      type="button"
+      class="ml-auto grid size-7 place-items-center rounded-lg text-subtle transition hover:bg-surface-2 hover:text-ink"
+      (click)="collapseSidebar()"
+      aria-label="Collapse sidebar"
+    >
+      <i class="pi pi-angle-double-left text-[13px]"></i>
+    </button>
+  </div>
+  <dh-folder-tree class="min-h-0 flex-1" />
+</aside>
+
+<div class="flex min-w-0 flex-1 flex-col">
+  <dh-top-bar (toggleSidebar)="toggleSidebar()" />
+  <!-- pb clears the assistant FAB so it never covers the last row. -->
+  <main class="min-h-0 flex-1 overflow-y-auto pb-24">
+    <router-outlet />
+  </main>
+</div>
+
+<dh-ai-dock />
+<dh-command-palette />

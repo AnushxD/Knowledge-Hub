@@ -1,0 +1,98 @@
+@if (!open()) {
+  <button
+    type="button"
+    class="fixed right-5 bottom-5 z-40 flex h-11 items-center gap-2 rounded-full px-4 text-[13px] font-medium text-white shadow-glow transition hover:scale-[1.03]"
+    style="background: linear-gradient(135deg, var(--dh-ai-from), var(--dh-ai-to))"
+    (click)="open.set(true)"
+  >
+    <i class="pi pi-sparkles text-[14px]"></i>
+    Ask the assistant
+  </button>
+} @else {
+  <aside
+    class="dh-rise fixed top-0 right-0 bottom-0 z-40 flex w-full max-w-[400px] flex-col border-l border-hairline bg-surface-1 shadow-dh-lg"
+    aria-label="AI assistant"
+  >
+    <header class="flex items-center gap-2.5 border-b border-hairline px-4 py-3">
+      <span
+        class="grid size-8 place-items-center rounded-[11px] text-white"
+        style="background: linear-gradient(135deg, var(--dh-ai-from), var(--dh-ai-to))"
+      >
+        <i class="pi pi-sparkles text-[14px]"></i>
+      </span>
+      <div class="min-w-0 flex-1">
+        <p class="text-[13px] font-semibold text-ink">Assistant</p>
+        <p class="text-[11px] text-subtle">Answers only from indexed content</p>
+      </div>
+      <button
+        type="button"
+        class="grid size-8 place-items-center rounded-lg text-subtle transition hover:bg-surface-2 hover:text-ink"
+        (click)="open.set(false)"
+        aria-label="Close assistant"
+      >
+        <i class="pi pi-times text-[13px]"></i>
+      </button>
+    </header>
+
+    <div class="flex-1 overflow-y-auto px-4 py-5">
+      <div class="dh-ai-surface rounded-dh-lg p-4">
+        <p class="text-[12.5px] leading-relaxed text-muted">
+          Retrieval-augmented answers arrive in
+          <span class="font-medium text-ink">phase 3</span>. The dock is here now so the layout —
+          and the grounding rules below — are settled before the RAG orchestrator exists.
+        </p>
+      </div>
+
+      <p class="dh-eyebrow mt-6 mb-2">What it will be able to answer from</p>
+      <div class="space-y-2">
+        <div class="flex items-center gap-2.5 rounded-dh border border-hairline px-3 py-2.5">
+          <i class="pi pi-check-circle text-[13px] text-status-indexed"></i>
+          <span class="flex-1 text-[12.5px] text-ink">Indexed documents</span>
+          <span class="text-[11px] text-subtle">{{ indexed() }} ready</span>
+        </div>
+        <div
+          class="flex items-center gap-2.5 rounded-dh border border-dashed border-hairline px-3 py-2.5 opacity-60"
+        >
+          <i class="pi pi-share-alt text-[13px] text-subtle"></i>
+          <span class="flex-1 text-[12.5px] text-muted">Source code repositories</span>
+          <span class="text-[11px] text-subtle">Phase 4 · MCP</span>
+        </div>
+      </div>
+
+      <p class="dh-eyebrow mt-6 mb-2">Ground rules</p>
+      <ul class="space-y-2 text-[12.5px] leading-relaxed text-muted">
+        <li class="flex gap-2">
+          <i class="pi pi-link mt-[3px] text-[11px] text-brand-400"></i>
+          Every claim carries a citation you can click through to the exact section.
+        </li>
+        <li class="flex gap-2">
+          <i class="pi pi-ban mt-[3px] text-[11px] text-brand-400"></i>
+          If retrieval finds nothing relevant, it says so instead of guessing.
+        </li>
+        <li class="flex gap-2">
+          <i class="pi pi-eye-slash mt-[3px] text-[11px] text-brand-400"></i>
+          Documents still indexing or failed are invisible to it — hence the status pills.
+        </li>
+      </ul>
+    </div>
+
+    <footer class="border-t border-hairline p-3">
+      <div
+        class="flex items-center gap-2 rounded-dh border border-hairline bg-surface-2/60 px-3 py-2.5 opacity-70"
+      >
+        <input
+          type="text"
+          class="flex-1 bg-transparent text-[13px] outline-none placeholder:text-subtle"
+          placeholder="Ask a question…"
+          disabled
+        />
+        <span
+          class="grid size-7 place-items-center rounded-lg bg-surface-3 text-[12px] text-subtle"
+        >
+          <i class="pi pi-send"></i>
+        </span>
+      </div>
+      <p class="mt-2 px-1 text-[11px] text-subtle">Available once phase 3 lands.</p>
+    </footer>
+  </aside>
+}

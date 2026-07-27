@@ -1,0 +1,30 @@
+.dh-rail-item {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 13px;
+  color: var(--dh-text-subtle);
+  transition:
+    background 0.16s ease,
+    color 0.16s ease;
+}
+.dh-rail-item:hover {
+  background: var(--dh-surface-2);
+  color: var(--dh-text);
+}
+.dh-rail-item.dh-rail-active {
+  background: color-mix(in oklab, var(--dh-brand-500) 16%, transparent);
+  color: var(--dh-brand-400);
+}
+/* Active indicator bar on the rail edge. */
+.dh-rail-item.dh-rail-active::before {
+  content: '';
+  position: absolute;
+  left: -13px;
+  width: 3px;
+  height: 20px;
+  border-radius: 0 3px 3px 0;
+  background: linear-gradient(var(--dh-ai-from), var(--dh-ai-to));
+}

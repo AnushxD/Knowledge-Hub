@@ -11,7 +11,8 @@ import { FileIcon } from '../../shared/components/file-icon';
 import { StatusPill } from '../../shared/components/status-pill';
 import { Avatar } from '../../shared/components/avatar';
 import { EmptyState } from '../../shared/components/empty-state';
-import { CardSkeleton, RowSkeleton } from '../../shared/components/skeletons';
+import { RowSkeleton } from '../../shared/components/row-skeleton';
+import { CardSkeleton } from '../../shared/components/card-skeleton';
 import { FileSizePipe, TimeAgoPipe } from '../../shared/pipes/format.pipes';
 import { UploadDialog } from './upload-dialog';
 

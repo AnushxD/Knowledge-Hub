@@ -38,38 +38,7 @@ type Tab = 'preview' | 'versions' | 'chunks';
   ],
   host: { class: 'block' },
   templateUrl: './document-detail.html',
-  styles: `
-    .dh-tab {
-      position: relative;
-      display: inline-flex;
-      align-items: center;
-      padding: 8px 12px 10px;
-      font-size: 13px;
-      font-weight: 500;
-      color: var(--dh-text-subtle);
-      transition: color 0.15s ease;
-    }
-    .dh-tab:hover {
-      color: var(--dh-text);
-    }
-    .dh-tab-active {
-      color: var(--dh-text);
-    }
-    .dh-tab-active::after {
-      content: '';
-      position: absolute;
-      inset: auto 8px -1px 8px;
-      height: 2px;
-      border-radius: 2px 2px 0 0;
-      background: linear-gradient(90deg, var(--dh-ai-from), var(--dh-ai-to));
-    }
-
-    /* The citation landing style — a wash plus a rail, never a hard border. */
-    .dh-cited {
-      background: color-mix(in oklab, var(--dh-ai-from) 11%, transparent);
-      box-shadow: inset 3px 0 0 var(--dh-brand-500);
-    }
-  `,
+  styleUrl: './document-detail.css',
 })
 export class DocumentDetailPage {
   private readonly gateway = inject(KnowledgeGateway);

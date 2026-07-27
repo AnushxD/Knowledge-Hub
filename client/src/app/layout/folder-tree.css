@@ -1,0 +1,32 @@
+.dh-node {
+  position: relative;
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 7px;
+  border-radius: 9px;
+  padding: 5px 8px;
+  font-size: 12.5px;
+  color: var(--dh-text-muted);
+  cursor: pointer;
+  transition:
+    background 0.14s ease,
+    color 0.14s ease;
+}
+.dh-node:hover {
+  background: var(--dh-surface-2);
+  color: var(--dh-text);
+}
+.dh-node-active {
+  background: color-mix(in oklab, var(--dh-brand-500) 14%, transparent);
+  color: var(--dh-brand-400);
+  font-weight: 500;
+}
+.dh-count {
+  border-radius: 999px;
+  border: 1px solid var(--dh-border);
+  padding: 0 6px;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  color: var(--dh-text-subtle);
+}

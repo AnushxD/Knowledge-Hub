@@ -5,23 +5,7 @@ import { presentationFor } from '../../core/utils/file-kind';
 @Component({
   selector: 'dh-file-icon',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  template: `
-    <span
-      class="inline-grid shrink-0 place-items-center rounded-[10px] border"
-      [class]="sizeClass()"
-      [style.color]="tint()"
-      [style.borderColor]="'color-mix(in oklab, ' + tint() + ' 26%, transparent)'"
-      [style.background]="
-        'linear-gradient(150deg, color-mix(in oklab, ' +
-        tint() +
-        ' 20%, transparent), color-mix(in oklab, ' +
-        tint() +
-        ' 7%, transparent))'
-      "
-    >
-      <i class="pi" [class]="icon()"></i>
-    </span>
-  `,
+  templateUrl: './file-icon.html',
 })
 export class FileIcon {
   readonly kind = input.required<FileKind>();

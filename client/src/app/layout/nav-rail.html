@@ -1,0 +1,42 @@
+<!-- Brand mark doubles as the "go home" affordance. -->
+<a
+  routerLink="/"
+  class="mb-2 grid size-10 place-items-center rounded-[14px] text-white shadow-glow transition-transform hover:scale-105"
+  style="background: linear-gradient(135deg, var(--dh-ai-from), var(--dh-ai-to))"
+  aria-label="DocHub home"
+>
+  <i class="pi pi-sparkles text-[17px]"></i>
+</a>
+
+<nav class="flex flex-1 flex-col items-center gap-1" aria-label="Primary">
+  @for (item of items; track item.route) {
+    <a
+      [routerLink]="item.route"
+      routerLinkActive="dh-rail-active"
+      [routerLinkActiveOptions]="{ exact: !!item.exact }"
+      [dhTooltip]="item.phase ? item.label + ' · Phase ' + item.phase : item.label"
+      tooltipPosition="right"
+      class="dh-rail-item"
+      [attr.aria-label]="item.label"
+    >
+      <i class="pi text-[17px]" [class]="item.icon"></i>
+      @if (item.phase) {
+        <span
+          class="absolute top-1.5 right-1.5 size-1.5 rounded-full bg-brand-400/70"
+          aria-hidden="true"
+        ></span>
+      }
+    </a>
+  }
+</nav>
+
+<button
+  type="button"
+  class="dh-rail-item"
+  (click)="theme.toggle()"
+  [dhTooltip]="theme.mode() === 'dark' ? 'Switch to light' : 'Switch to dark'"
+  tooltipPosition="right"
+  [attr.aria-label]="theme.mode() === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'"
+>
+  <i class="pi text-[16px]" [class]="theme.mode() === 'dark' ? 'pi-sun' : 'pi-moon'"></i>
+</button>

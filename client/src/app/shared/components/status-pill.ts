@@ -9,28 +9,7 @@ import { IngestionStatus } from '../../core/models/knowledge.models';
 @Component({
   selector: 'dh-status-pill',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  template: `
-    <span
-      class="inline-flex items-center gap-1.5 rounded-full border px-2 py-[3px] text-[11px] font-medium whitespace-nowrap"
-      [style.color]="meta().color"
-      [style.borderColor]="'color-mix(in oklab, ' + meta().color + ' 32%, transparent)'"
-      [style.background]="'color-mix(in oklab, ' + meta().color + ' 12%, transparent)'"
-      [attr.title]="tooltip()"
-    >
-      @if (status() === 'indexing') {
-        <span
-          class="size-[7px] rounded-full"
-          [style.background]="meta().color"
-          style="animation: dh-pulse-ring 1.6s infinite"
-        ></span>
-      } @else if (status() === 'failed') {
-        <i class="pi pi-exclamation-triangle text-[10px]"></i>
-      } @else {
-        <span class="size-[7px] rounded-full" [style.background]="meta().color"></span>
-      }
-      <span>{{ label() }}</span>
-    </span>
-  `,
+  templateUrl: './status-pill.html',
 })
 export class StatusPill {
   readonly status = input.required<IngestionStatus>();

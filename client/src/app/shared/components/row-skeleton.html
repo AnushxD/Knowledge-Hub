@@ -1,0 +1,10 @@
+@for (row of rows(); track $index) {
+  <div class="flex items-center gap-3 border-b border-hairline px-4 py-3 last:border-0">
+    <div class="dh-skeleton size-9 rounded-[10px]"></div>
+    <div class="min-w-0 flex-1 space-y-2">
+      <div class="dh-skeleton h-3 rounded" [style.width.%]="widths[$index % widths.length]"></div>
+      <div class="dh-skeleton h-2.5 w-1/4 rounded"></div>
+    </div>
+    <div class="dh-skeleton h-5 w-20 rounded-full"></div>
+  </div>
+}
