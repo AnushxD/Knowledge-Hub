@@ -1,0 +1,184 @@
+import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
+import { LibraryStore } from '../../core/state/library-store';
+import { ThemeService } from '../../core/theme/theme.service';
+import { Avatar } from '../../shared/components/avatar';
+import { Person } from '../../core/models/knowledge.models';
+
+@Component({
+  selector: 'dh-settings',
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [Avatar],
+  host: { class: 'block' },
+  template: `
+    <div class="mx-auto max-w-3xl px-6 py-8 lg:px-10">
+      <h1 class="text-[21px] font-semibold text-ink">Settings</h1>
+      <p class="mt-1.5 text-[13px] text-muted">Personal preferences for this workspace.</p>
+
+      <!-- Appearance -->
+      <section class="dh-card mt-6 p-5">
+        <h2 class="text-[14px] font-semibold text-ink">Appearance</h2>
+        <p class="mt-1 text-[12.5px] text-muted">
+          Both themes are first-class — the token system defines each explicitly rather than
+          inverting one.
+        </p>
+        <div class="mt-4 grid gap-3 sm:grid-cols-2">
+          @for (option of themes; track option.mode) {
+            <button
+              type="button"
+              class="flex items-center gap-3 rounded-dh-lg border p-3 text-left transition"
+              [class]="
+                theme.mode() === option.mode
+                  ? 'border-brand-500/50 bg-brand-500/8'
+                  : 'border-hairline hover:bg-surface-2'
+              "
+              (click)="theme.mode.set(option.mode)"
+            >
+              <span
+                class="grid size-9 place-items-center rounded-[11px] border border-hairline"
+                [style.background]="option.swatch"
+              >
+                <i class="pi text-[13px]" [class]="option.icon" [style.color]="option.fg"></i>
+              </span>
+              <span class="min-w-0 flex-1">
+                <span class="block text-[13px] font-medium text-ink">{{ option.label }}</span>
+                <span class="block text-[11.5px] text-subtle">{{ option.hint }}</span>
+              </span>
+              @if (theme.mode() === option.mode) {
+                <i class="pi pi-check-circle text-[14px] text-brand-400"></i>
+              }
+            </button>
+          }
+        </div>
+      </section>
+
+      <!-- Account (phase 5) -->
+      <section class="dh-card mt-4 p-5">
+        <div class="flex items-start justify-between gap-3">
+          <div>
+            <h2 class="text-[14px] font-semibold text-ink">Account</h2>
+            <p class="mt-1 text-[12.5px] text-muted">
+              Local identity for now. Entra ID single sign-on replaces this in phase 5.
+            </p>
+          </div>
+          <span
+            class="shrink-0 rounded-full border border-hairline px-2.5 py-1 text-[11px] text-subtle"
+            >Phase 5</span
+          >
+        </div>
+        <div class="mt-4 flex items-center gap-3 rounded-dh border border-hairline p-3">
+          <dh-avatar [person]="currentUser" size="md" />
+          <div class="min-w-0 flex-1">
+            <p class="text-[13px] font-medium text-ink">{{ currentUser.name }}</p>
+            <p class="text-[11.5px] text-subtle">Administrator · signed in locally</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Library defaults -->
+      <section class="dh-card mt-4 p-5">
+        <h2 class="text-[14px] font-semibold text-ink">Library defaults</h2>
+        <div class="mt-4 space-y-3">
+          <label class="flex items-center justify-between gap-4">
+            <span class="min-w-0">
+              <span class="block text-[13px] text-ink">Default view</span>
+              <span class="block text-[11.5px] text-subtle">How the library opens.</span>
+            </span>
+            <select
+              class="h-8.5 shrink-0 rounded-dh border border-hairline bg-surface-1 px-2.5 text-[12.5px] text-ink outline-none"
+              [value]="store.viewMode()"
+              (change)="setView($event)"
+            >
+              <option value="list">List</option>
+              <option value="grid">Grid</option>
+            </select>
+          </label>
+
+          <label class="flex items-center justify-between gap-4">
+            <span class="min-w-0">
+              <span class="block text-[13px] text-ink">Include subfolders</span>
+              <span class="block text-[11.5px] text-subtle">
+                Show documents from nested folders when browsing.
+              </span>
+            </span>
+            <span
+              class="grid h-6 w-10 shrink-0 place-items-center rounded-full bg-brand-500 px-1"
+              aria-hidden="true"
+            >
+              <span class="ml-auto block size-4 rounded-full bg-white"></span>
+            </span>
+          </label>
+        </div>
+      </section>
+
+      <!-- Storage -->
+      <section class="dh-card mt-4 p-5">
+        <h2 class="text-[14px] font-semibold text-ink">Storage</h2>
+        <p class="mt-1 text-[12.5px] text-muted">
+          Files live in Azure Blob Storage — the Azurite emulator locally, real Blob Storage in
+          production, through the same <code class="font-mono text-[11.5px]">IFileStorage</code>
+          implementation.
+        </p>
+        <dl class="mt-4 grid grid-cols-2 gap-3 text-[12.5px] sm:grid-cols-4">
+          <div class="rounded-dh border border-hairline p-3">
+            <dt class="text-subtle">Documents</dt>
+            <dd class="mt-1 text-[17px] font-semibold text-ink">
+              {{ store.stats()?.documents ?? '—' }}
+            </dd>
+          </div>
+          <div class="rounded-dh border border-hairline p-3">
+            <dt class="text-subtle">Chunks</dt>
+            <dd class="mt-1 text-[17px] font-semibold text-ink">
+              {{ store.stats()?.chunks ?? '—' }}
+            </dd>
+          </div>
+          <div class="rounded-dh border border-hairline p-3">
+            <dt class="text-subtle">Folders</dt>
+            <dd class="mt-1 text-[17px] font-semibold text-ink">
+              {{ store.stats()?.folders ?? '—' }}
+            </dd>
+          </div>
+          <div class="rounded-dh border border-hairline p-3">
+            <dt class="text-subtle">Failed</dt>
+            <dd class="mt-1 text-[17px] font-semibold text-ink">
+              {{ store.stats()?.failed ?? '—' }}
+            </dd>
+          </div>
+        </dl>
+      </section>
+    </div>
+  `,
+})
+export class SettingsPage {
+  protected readonly theme = inject(ThemeService);
+  protected readonly store = inject(LibraryStore);
+
+  protected readonly currentUser: Person = {
+    id: 'u1',
+    name: 'Ana Ruiz',
+    initials: 'AR',
+    tint: '#7c5cff',
+  };
+
+  protected readonly themes = [
+    {
+      mode: 'dark' as const,
+      label: 'Dark',
+      hint: 'Default. Easier for long reading sessions.',
+      icon: 'pi-moon',
+      swatch: '#0f1117',
+      fg: '#b09bff',
+    },
+    {
+      mode: 'light' as const,
+      label: 'Light',
+      hint: 'Higher contrast in bright rooms.',
+      icon: 'pi-sun',
+      swatch: '#ffffff',
+      fg: '#6b45f5',
+    },
+  ];
+
+  protected setView(event: Event): void {
+    this.store.viewMode.set((event.target as HTMLSelectElement).value as 'list' | 'grid');
+  }
+}

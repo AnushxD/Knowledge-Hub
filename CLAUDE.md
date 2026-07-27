@@ -6,7 +6,18 @@ An internal Documentation & Knowledge Hub: upload/organize/search team docs, wit
 This is a real org requirement being built as a personal learning project (also learning Claude Code, git workflow, CI/CD).
 
 ## Stack
-- Frontend: Angular (standalone components, signals) + Angular Material/PrimeNG + Tailwind
+- Frontend: Angular 22 (standalone components, signals, zoneless) + Tailwind v4 — **no third-party UI kit**
+  - PrimeNG and PrimeIcons were evaluated and rejected: as of v22 both moved to the
+    commercial PrimeUI license, which requires a per-developer key and shows a nag
+    banner without one. Every control is hand-built on our own design tokens instead.
+  - Design tokens live in `client/src/styles.css` (`--dh-*`) — single source of truth for
+    both themes. Add a colour/radius/shadow there, never inline in a component.
+  - Icons: Lucide (ISC), inlined as CSS masks by `client/tools/gen-icons.mjs` into the
+    generated `client/src/styles/icons.css`. To add an icon, extend the map in that script
+    and re-run `node tools/gen-icons.mjs`. Never edit `icons.css` by hand.
+  - The UI talks to the backend only through `KnowledgeGateway` (abstract class). Phase 1
+    is bound to `MockKnowledgeGateway`; swapping in an `HttpKnowledgeGateway` is a one-line
+    provider change in `app.config.ts`. No component injects HttpClient directly.
 - Backend: ASP.NET Core Web API
 - DB: PostgreSQL + pgvector extension (one DB for relational data AND embeddings)
 - File storage: Azure Blob Storage — Azurite emulator locally (`UseDevelopmentStorage=true`), real Azure in prod

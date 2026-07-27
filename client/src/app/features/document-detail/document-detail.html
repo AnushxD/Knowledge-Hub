@@ -1,0 +1,351 @@
+@if (loading()) {
+  <div class="px-6 py-6 lg:px-10">
+    <div class="dh-skeleton h-4 w-64 rounded"></div>
+    <div class="dh-skeleton mt-4 h-7 w-96 rounded"></div>
+    <div class="mt-8 grid gap-6 lg:grid-cols-[1fr_320px]">
+      <div class="dh-card h-[520px]"></div>
+      <div class="dh-card h-72"></div>
+    </div>
+  </div>
+} @else if (doc(); as document) {
+  <!-- ── Header ────────────────────────────────────────────────────────── -->
+  <header class="sticky top-0 z-20 border-b border-hairline bg-canvas/85 backdrop-blur-md">
+    <div class="px-6 pt-4 lg:px-10">
+      <nav class="flex items-center gap-1 text-[12px] text-subtle" aria-label="Breadcrumb">
+        <a routerLink="/browse" class="transition hover:text-ink">All documents</a>
+        @for (crumb of document.breadcrumb; track crumb.id) {
+          <i class="pi pi-angle-right text-[9px] opacity-60"></i>
+          <button type="button" class="transition hover:text-ink" (click)="openFolder(crumb.id)">
+            {{ crumb.name }}
+          </button>
+        }
+      </nav>
+
+      <div class="mt-2 flex flex-wrap items-start justify-between gap-4">
+        <div class="flex min-w-0 items-center gap-3">
+          <dh-file-icon [kind]="document.kind" size="lg" />
+          <div class="min-w-0">
+            <h1 class="truncate text-[19px] font-semibold text-ink">{{ document.title }}</h1>
+            <div class="mt-1 flex flex-wrap items-center gap-2">
+              <dh-status-pill [status]="document.status" [progress]="document.indexProgress" />
+              <span class="text-[12px] text-subtle">
+                {{ document.fileName }} · {{ document.sizeBytes | fileSize }} · v{{
+                  document.version
+                }}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-2">
+          <!-- Reserved for phase 3: scopes the assistant to this document. -->
+          <button
+            type="button"
+            class="dh-btn-ghost gap-2 opacity-55"
+            disabled
+            dhTooltip="Grounded Q&A over this document arrives in phase 3"
+            tooltipPosition="bottom"
+          >
+            <i class="pi pi-sparkles text-[12px] text-brand-400"></i>
+            Ask about this doc
+          </button>
+          <button
+            type="button"
+            class="dh-btn-ghost"
+            (click)="store.star(document.id)"
+            [attr.aria-label]="document.starred ? 'Unstar' : 'Star'"
+          >
+            <i
+              class="pi text-[14px]"
+              [class]="document.starred ? 'pi-star-fill text-amber-400' : 'pi-star'"
+            ></i>
+          </button>
+          <button type="button" class="dh-btn-ghost">
+            <i class="pi pi-download text-[12px]"></i>
+            <span class="hidden sm:inline">Download</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Tabs -->
+      <div class="mt-3.5 flex gap-1" role="tablist">
+        @for (t of tabs; track t.id) {
+          <button
+            type="button"
+            role="tab"
+            class="dh-tab"
+            [class.dh-tab-active]="tab() === t.id"
+            [attr.aria-selected]="tab() === t.id"
+            (click)="tab.set(t.id)"
+          >
+            {{ t.label }}
+            @if (t.id === 'versions') {
+              <span class="ml-1.5 text-[11px] text-subtle">{{ document.versions.length }}</span>
+            }
+            @if (t.id === 'chunks') {
+              <span class="ml-1.5 text-[11px] text-subtle">{{ document.sections.length }}</span>
+            }
+          </button>
+        }
+      </div>
+    </div>
+  </header>
+
+  <div class="grid gap-5 px-6 py-5 lg:grid-cols-[minmax(0,1fr)_318px] lg:px-10">
+    <!-- ── Main pane ───────────────────────────────────────────────────── -->
+    <div class="min-w-0">
+      @if (document.status === 'failed') {
+        <div
+          class="mb-4 flex flex-wrap items-start gap-3 rounded-dh-lg border p-4"
+          style="
+            border-color: color-mix(in oklab, var(--dh-status-failed) 30%, transparent);
+            background: color-mix(in oklab, var(--dh-status-failed) 8%, transparent);
+          "
+        >
+          <i class="pi pi-exclamation-triangle mt-0.5 text-[14px] text-status-failed"></i>
+          <div class="min-w-0 flex-1">
+            <p class="text-[13px] font-medium text-ink">This document could not be indexed</p>
+            <p class="mt-1 text-[12.5px] leading-relaxed text-muted">
+              {{ document.failureReason }}
+            </p>
+            <p class="mt-1.5 text-[12px] text-subtle">
+              Until it succeeds, search and the assistant behave as if this file does not exist.
+            </p>
+          </div>
+          <button type="button" class="dh-btn-primary" (click)="store.retry(document.id)">
+            <i class="pi pi-refresh text-[12px]"></i>
+            Retry ingestion
+          </button>
+        </div>
+      }
+
+      @switch (tab()) {
+        @case ('preview') {
+          <article class="dh-card overflow-hidden">
+            <div
+              class="flex items-center justify-between border-b border-hairline bg-surface-inset px-4 py-2"
+            >
+              <span class="text-[11.5px] text-subtle">
+                Extracted text preview · {{ document.sections.length }} sections
+              </span>
+              @if (highlightChunk()) {
+                <button
+                  type="button"
+                  class="text-[11.5px] font-medium text-brand-400 hover:underline"
+                  (click)="clearHighlight()"
+                >
+                  Clear highlight
+                </button>
+              }
+            </div>
+
+            <div class="space-y-6 px-6 py-6 lg:px-8">
+              @for (section of document.sections; track section.chunkId) {
+                <section
+                  [id]="'chunk-' + section.chunkId"
+                  class="scroll-mt-40 rounded-dh px-3 py-2.5 transition-colors duration-500"
+                  [class]="highlightChunk() === section.chunkId ? 'dh-cited' : ''"
+                >
+                  <div class="mb-1.5 flex items-baseline gap-2">
+                    <h2 class="text-[14px] font-semibold text-ink">{{ section.heading }}</h2>
+                    <span class="text-[11px] text-subtle">page {{ section.page }}</span>
+                    @if (highlightChunk() === section.chunkId) {
+                      <span
+                        class="rounded-full px-2 py-px text-[10px] font-medium"
+                        style="
+                          background: color-mix(in oklab, var(--dh-ai-from) 20%, transparent);
+                          color: var(--dh-brand-400);
+                        "
+                      >
+                        cited passage
+                      </span>
+                    }
+                  </div>
+                  <p class="text-[13.5px] leading-[1.75] text-muted">{{ section.body }}</p>
+                </section>
+              }
+            </div>
+          </article>
+        }
+
+        @case ('versions') {
+          <div class="dh-card overflow-hidden">
+            @for (version of document.versions; track version.version) {
+              <div class="flex items-center gap-3 border-b border-hairline px-4 py-3 last:border-0">
+                <span
+                  class="grid size-8 shrink-0 place-items-center rounded-[10px] border text-[11px] font-semibold tabular-nums"
+                  [class]="
+                    version.current
+                      ? 'border-brand-500/40 bg-brand-500/12 text-brand-400'
+                      : 'border-hairline text-subtle'
+                  "
+                >
+                  v{{ version.version }}
+                </span>
+                <div class="min-w-0 flex-1">
+                  <p class="truncate text-[13px] text-ink">
+                    {{ version.note }}
+                    @if (version.current) {
+                      <span class="ml-1.5 text-[11px] font-medium text-brand-400">current</span>
+                    }
+                  </p>
+                  <p class="mt-0.5 text-[11.5px] text-subtle">
+                    {{ version.changedBy.name }} · {{ version.changedAt | timeAgo }} ·
+                    {{ version.sizeBytes | fileSize }}
+                  </p>
+                </div>
+                <dh-avatar [person]="version.changedBy" size="sm" />
+                @if (!version.current) {
+                  <button type="button" class="dh-btn-ghost h-8">Restore</button>
+                }
+              </div>
+            }
+          </div>
+        }
+
+        @case ('chunks') {
+          <div class="dh-card overflow-hidden">
+            <div class="border-b border-hairline bg-surface-inset px-4 py-2.5">
+              <p class="text-[12px] text-muted">
+                What retrieval actually sees. Each row is one embedded chunk — citations point here,
+                which is why a citation can name an exact section instead of a whole file.
+              </p>
+            </div>
+            @for (section of document.sections; track section.chunkId) {
+              <button
+                type="button"
+                class="flex w-full items-start gap-3 border-b border-hairline px-4 py-3 text-left transition last:border-0 hover:bg-surface-2/50"
+                (click)="jumpToChunk(section.chunkId)"
+              >
+                <span
+                  class="mt-0.5 rounded border border-hairline px-1.5 py-px font-mono text-[10.5px] text-subtle tabular-nums"
+                >
+                  #{{ section.chunkId }}
+                </span>
+                <span class="min-w-0 flex-1">
+                  <span class="block truncate text-[12.5px] font-medium text-ink">
+                    {{ section.heading }}
+                  </span>
+                  <span class="mt-0.5 line-clamp-2 block text-[11.5px] leading-relaxed text-subtle">
+                    {{ section.body }}
+                  </span>
+                </span>
+                <span class="shrink-0 text-[11px] text-subtle">p.{{ section.page }}</span>
+              </button>
+            }
+          </div>
+        }
+      }
+    </div>
+
+    <!-- ── Metadata panel ──────────────────────────────────────────────── -->
+    <aside class="lg:sticky lg:top-[168px] lg:self-start">
+      <div class="dh-card divide-y divide-hairline">
+        <div class="p-4">
+          <p class="dh-eyebrow mb-2">Description</p>
+          <p class="text-[12.5px] leading-relaxed text-muted">
+            {{ document.description || 'No description yet.' }}
+          </p>
+        </div>
+
+        <div class="p-4">
+          <p class="dh-eyebrow mb-2">Tags</p>
+          @if (document.tags.length) {
+            <div class="flex flex-wrap gap-1.5">
+              @for (tag of document.tags; track tag) {
+                <button type="button" class="dh-chip" (click)="filterByTag(tag)">#{{ tag }}</button>
+              }
+            </div>
+          } @else {
+            <p class="text-[12.5px] text-subtle">Untagged</p>
+          }
+        </div>
+
+        <dl class="space-y-2.5 p-4 text-[12.5px]">
+          <div class="flex items-center justify-between gap-3">
+            <dt class="text-subtle">Owner</dt>
+            <dd class="flex items-center gap-1.5">
+              <dh-avatar [person]="document.owner" size="xs" />
+              <span class="text-ink">{{ document.owner.name }}</span>
+            </dd>
+          </div>
+          <div class="flex items-center justify-between gap-3">
+            <dt class="text-subtle">Updated</dt>
+            <dd class="text-ink">{{ document.updatedAt | timeAgo }}</dd>
+          </div>
+          <div class="flex items-center justify-between gap-3">
+            <dt class="text-subtle">Created</dt>
+            <dd class="text-ink">{{ document.createdAt | timeAgo }}</dd>
+          </div>
+          <div class="flex items-center justify-between gap-3">
+            <dt class="text-subtle">Type</dt>
+            <dd class="text-ink">{{ kindLabel(document.kind) }}</dd>
+          </div>
+          <div class="flex items-center justify-between gap-3">
+            <dt class="text-subtle">Size</dt>
+            <dd class="text-ink tabular-nums">{{ document.sizeBytes | fileSize }}</dd>
+          </div>
+        </dl>
+
+        <!-- Retrieval facts: the panel that makes indexing legible. -->
+        <div class="p-4">
+          <p class="dh-eyebrow mb-2.5">Retrieval</p>
+          @if (document.status === 'indexed') {
+            <div class="space-y-2 text-[12.5px]">
+              <div class="flex items-center justify-between gap-3">
+                <span class="text-subtle">Chunks</span>
+                <span class="text-ink tabular-nums">{{ document.chunkCount }}</span>
+              </div>
+              <div class="flex items-center justify-between gap-3">
+                <span class="text-subtle">Cited in answers</span>
+                <span class="text-ink tabular-nums">{{ document.citedInAnswers }}</span>
+              </div>
+            </div>
+          } @else if (document.status === 'indexing') {
+            <p class="text-[12.5px] text-muted">
+              Embedding in progress — {{ (document.indexProgress ?? 0).toFixed(0) }}% complete.
+            </p>
+            <div class="mt-2 h-1.5 overflow-hidden rounded-full bg-surface-3">
+              <div
+                class="h-full rounded-full bg-status-indexing transition-[width] duration-500"
+                [style.width.%]="document.indexProgress ?? 0"
+              ></div>
+            </div>
+          } @else if (document.status === 'pending') {
+            <p class="text-[12.5px] text-muted">Queued — waiting for an ingestion worker.</p>
+          } @else {
+            <p class="text-[12.5px] text-status-failed">
+              Not retrievable. Fix the failure above and re-index.
+            </p>
+          }
+        </div>
+      </div>
+
+      <!-- Citation demo: proves the deep-link contract before RAG exists. -->
+      @if (document.status === 'indexed' && document.sections.length) {
+        <div class="dh-ai-surface mt-3 rounded-dh-lg p-4">
+          <p class="dh-eyebrow mb-2">Citation target</p>
+          <p class="text-[12px] leading-relaxed text-muted">
+            From phase 3, an answer citing this document links straight to a section. Try the
+            contract now:
+          </p>
+          <button
+            type="button"
+            class="mt-2.5 text-[12px] font-medium text-brand-400 hover:underline"
+            (click)="jumpToChunk(document.sections[1].chunkId)"
+          >
+            Open “{{ document.sections[1].heading }}” →
+          </button>
+        </div>
+      }
+    </aside>
+  </div>
+} @else {
+  <dh-empty-state
+    icon="pi-file-excel"
+    heading="Document not found"
+    message="It may have been deleted, or the link is stale."
+  >
+    <a routerLink="/browse" class="dh-btn-primary">Back to library</a>
+  </dh-empty-state>
+}

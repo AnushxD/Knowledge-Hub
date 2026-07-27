@@ -1,0 +1,531 @@
+/* ============================================================================
+   DocHub — global styles & design tokens
+
+   No third-party UI kit: every control here is hand-built on these tokens.
+   Icons are Lucide (ISC), inlined as CSS masks by tools/gen-icons.mjs.
+   ========================================================================= */
+@import 'tailwindcss';
+@import './styles/icons.css';
+
+/* Class-based dark mode (the shell toggles `.dark` on <html>). */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ---------------------------------------------------------------------------
+   1. Semantic tokens — the single source of truth for the whole product.
+   Everything else (Tailwind utilities, PrimeNG preset, component CSS) reads
+   from these, so a theme change is a change in exactly one place.
+------------------------------------------------------------------------- */
+:root {
+  /* Brand ramp — violet. Used for primary actions and selection. */
+  --dh-brand-50: #f2eeff;
+  --dh-brand-100: #e6e0ff;
+  --dh-brand-200: #cfc3ff;
+  --dh-brand-300: #b09bff;
+  --dh-brand-400: #9271ff;
+  --dh-brand-500: #7c5cff;
+  --dh-brand-600: #6b45f5;
+  --dh-brand-700: #5a34d9;
+  --dh-brand-800: #4a2bb0;
+  --dh-brand-900: #3d258c;
+
+  /* AI gradient — reserved exclusively for assistant/grounding affordances,
+     so "this is the AI" is legible without reading a label. */
+  --dh-ai-from: #7c5cff;
+  --dh-ai-to: #22d3ee;
+
+  /* Ingestion status — one vocabulary, used everywhere a doc appears. */
+  --dh-status-pending: #94a3b8;
+  --dh-status-indexing: #38bdf8;
+  --dh-status-indexed: #10b981;
+  --dh-status-failed: #f43f5e;
+
+  /* Surfaces — light theme */
+  --dh-canvas: #f4f5f8;
+  --dh-surface-1: #ffffff;
+  --dh-surface-2: #f1f3f7;
+  --dh-surface-3: #e6e9f0;
+  --dh-surface-inset: #fbfcfd;
+  --dh-border: #e2e6ee;
+  --dh-border-strong: #cdd4e1;
+
+  /* Text */
+  --dh-text: #0f172a;
+  --dh-text-muted: #5c6779;
+  --dh-text-subtle: #8b95a8;
+  --dh-text-invert: #ffffff;
+
+  /* Effects */
+  --dh-ring: color-mix(in oklab, var(--dh-brand-500) 45%, transparent);
+  --dh-glass: color-mix(in oklab, var(--dh-surface-1) 72%, transparent);
+  --dh-shadow-sm: 0 1px 2px rgb(15 23 42 / 0.05);
+  --dh-shadow: 0 1px 2px rgb(15 23 42 / 0.04), 0 8px 24px -14px rgb(15 23 42 / 0.22);
+  --dh-shadow-lg: 0 2px 4px rgb(15 23 42 / 0.04), 0 24px 48px -20px rgb(15 23 42 / 0.28);
+  --dh-glow:
+    0 0 0 1px color-mix(in oklab, var(--dh-brand-500) 22%, transparent),
+    0 12px 32px -12px color-mix(in oklab, var(--dh-brand-500) 42%, transparent);
+
+  /* Geometry */
+  --dh-radius-sm: 8px;
+  --dh-radius: 12px;
+  --dh-radius-lg: 16px;
+  --dh-radius-xl: 22px;
+
+  /* Layout rhythm — referenced by the shell so chrome stays in sync. */
+  --dh-rail-w: 68px;
+  --dh-sidebar-w: 274px;
+  --dh-topbar-h: 60px;
+
+  color-scheme: light;
+}
+
+.dark {
+  --dh-canvas: #08090f;
+  --dh-surface-1: #0f1117;
+  --dh-surface-2: #161923;
+  --dh-surface-3: #1f2431;
+  --dh-surface-inset: #0b0d13;
+  --dh-border: #232838;
+  --dh-border-strong: #333a4d;
+
+  --dh-text: #e9ebf2;
+  --dh-text-muted: #99a2b5;
+  --dh-text-subtle: #6b7488;
+  --dh-text-invert: #0f172a;
+
+  --dh-glass: color-mix(in oklab, var(--dh-surface-1) 66%, transparent);
+  --dh-shadow-sm: 0 1px 2px rgb(0 0 0 / 0.4);
+  --dh-shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 8px 24px -14px rgb(0 0 0 / 0.7);
+  --dh-shadow-lg: 0 2px 4px rgb(0 0 0 / 0.35), 0 24px 48px -20px rgb(0 0 0 / 0.85);
+
+  color-scheme: dark;
+}
+
+/* ---------------------------------------------------------------------------
+   2. Expose the tokens as Tailwind utilities: bg-surface-1, text-muted,
+   border-hairline, rounded-dh, shadow-dh …
+------------------------------------------------------------------------- */
+@theme inline {
+  --color-canvas: var(--dh-canvas);
+  --color-surface-1: var(--dh-surface-1);
+  --color-surface-2: var(--dh-surface-2);
+  --color-surface-3: var(--dh-surface-3);
+  --color-surface-inset: var(--dh-surface-inset);
+  --color-hairline: var(--dh-border);
+  --color-hairline-strong: var(--dh-border-strong);
+
+  --color-ink: var(--dh-text);
+  --color-muted: var(--dh-text-muted);
+  --color-subtle: var(--dh-text-subtle);
+
+  --color-brand-50: var(--dh-brand-50);
+  --color-brand-100: var(--dh-brand-100);
+  --color-brand-200: var(--dh-brand-200);
+  --color-brand-300: var(--dh-brand-300);
+  --color-brand-400: var(--dh-brand-400);
+  --color-brand-500: var(--dh-brand-500);
+  --color-brand-600: var(--dh-brand-600);
+  --color-brand-700: var(--dh-brand-700);
+  --color-brand-800: var(--dh-brand-800);
+  --color-brand-900: var(--dh-brand-900);
+
+  --color-status-pending: var(--dh-status-pending);
+  --color-status-indexing: var(--dh-status-indexing);
+  --color-status-indexed: var(--dh-status-indexed);
+  --color-status-failed: var(--dh-status-failed);
+
+  --radius-dh-sm: var(--dh-radius-sm);
+  --radius-dh: var(--dh-radius);
+  --radius-dh-lg: var(--dh-radius-lg);
+  --radius-dh-xl: var(--dh-radius-xl);
+
+  --shadow-dh-sm: var(--dh-shadow-sm);
+  --shadow-dh: var(--dh-shadow);
+  --shadow-dh-lg: var(--dh-shadow-lg);
+  --shadow-glow: var(--dh-glow);
+
+  --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+}
+
+/* ---------------------------------------------------------------------------
+   3. Base
+------------------------------------------------------------------------- */
+@layer base {
+  * {
+    border-color: var(--dh-border);
+  }
+
+  html,
+  body {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    background: var(--dh-canvas);
+    color: var(--dh-text);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    letter-spacing: -0.018em;
+    font-weight: 600;
+  }
+
+  ::selection {
+    background: color-mix(in oklab, var(--dh-brand-500) 28%, transparent);
+  }
+
+  /* Visible, on-brand focus for keyboard users only. */
+  :focus-visible {
+    outline: 2px solid var(--dh-brand-500);
+    outline-offset: 2px;
+    border-radius: var(--dh-radius-sm);
+  }
+
+  /* Thin, self-effacing scrollbars — they should not compete with content. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--dh-border-strong) transparent;
+  }
+  *::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  *::-webkit-scrollbar-thumb {
+    background: var(--dh-border-strong);
+    border: 3px solid transparent;
+    background-clip: content-box;
+    border-radius: 999px;
+  }
+  *::-webkit-scrollbar-thumb:hover {
+    background: var(--dh-text-subtle);
+    border: 3px solid transparent;
+    background-clip: content-box;
+  }
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   4. Reusable surface/typography primitives
+------------------------------------------------------------------------- */
+@layer components {
+  .dh-card {
+    background: var(--dh-surface-1);
+    border: 1px solid var(--dh-border);
+    border-radius: var(--dh-radius-lg);
+    box-shadow: var(--dh-shadow-sm);
+  }
+
+  /* Interactive card: lifts slightly and warms its border on hover. */
+  .dh-card-interactive {
+    transition:
+      transform 0.18s cubic-bezier(0.22, 1, 0.36, 1),
+      box-shadow 0.18s ease,
+      border-color 0.18s ease;
+  }
+  .dh-card-interactive:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--dh-shadow);
+    border-color: color-mix(in oklab, var(--dh-brand-500) 32%, var(--dh-border));
+  }
+
+  .dh-glass {
+    background: var(--dh-glass);
+    backdrop-filter: blur(14px) saturate(160%);
+    -webkit-backdrop-filter: blur(14px) saturate(160%);
+    border: 1px solid var(--dh-border);
+  }
+
+  /* Section label — the small uppercase headers in sidebars and panels. */
+  .dh-eyebrow {
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--dh-text-subtle);
+  }
+
+  .dh-gradient-text {
+    background: linear-gradient(100deg, var(--dh-ai-from), var(--dh-ai-to));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  .dh-ai-surface {
+    background: linear-gradient(
+      135deg,
+      color-mix(in oklab, var(--dh-ai-from) 14%, transparent),
+      color-mix(in oklab, var(--dh-ai-to) 10%, transparent)
+    );
+    border: 1px solid color-mix(in oklab, var(--dh-ai-from) 26%, transparent);
+  }
+
+  /* Ambient aurora used behind the dashboard hero and empty states. */
+  .dh-aurora {
+    position: relative;
+    isolation: isolate;
+  }
+  .dh-aurora::before {
+    content: '';
+    position: absolute;
+    inset: -40% -10% auto -10%;
+    height: 340px;
+    z-index: -1;
+    pointer-events: none;
+    background:
+      radial-gradient(
+        50% 60% at 18% 30%,
+        color-mix(in oklab, var(--dh-ai-from) 26%, transparent),
+        transparent 70%
+      ),
+      radial-gradient(
+        46% 58% at 78% 20%,
+        color-mix(in oklab, var(--dh-ai-to) 20%, transparent),
+        transparent 70%
+      );
+    filter: blur(46px);
+    opacity: 0.75;
+  }
+
+  .dh-divider {
+    height: 1px;
+    background: var(--dh-border);
+    border: 0;
+  }
+
+  /* -- Controls ---------------------------------------------------------- */
+  .dh-btn-ghost {
+    display: inline-flex;
+    height: 34px;
+    align-items: center;
+    gap: 7px;
+    border: 1px solid var(--dh-border);
+    border-radius: var(--dh-radius);
+    padding: 0 13px;
+    font-size: 12.5px;
+    font-weight: 500;
+    color: var(--dh-text);
+    background: var(--dh-surface-1);
+    transition:
+      background 0.15s ease,
+      border-color 0.15s ease;
+  }
+  .dh-btn-ghost:hover {
+    background: var(--dh-surface-2);
+    border-color: var(--dh-border-strong);
+  }
+  .dh-btn-ghost.dh-btn-active {
+    border-color: color-mix(in oklab, var(--dh-brand-500) 45%, transparent);
+    background: color-mix(in oklab, var(--dh-brand-500) 12%, transparent);
+    color: var(--dh-brand-400);
+  }
+
+  .dh-btn-primary {
+    display: inline-flex;
+    height: 34px;
+    align-items: center;
+    gap: 7px;
+    border-radius: var(--dh-radius);
+    padding: 0 15px;
+    font-size: 12.5px;
+    font-weight: 500;
+    color: #fff;
+    background: linear-gradient(135deg, var(--dh-brand-600), var(--dh-brand-500));
+    transition: filter 0.15s ease;
+  }
+  .dh-btn-primary:hover {
+    filter: brightness(1.1);
+  }
+
+  .dh-chip {
+    display: inline-flex;
+    align-items: center;
+    height: 26px;
+    border: 1px solid var(--dh-border);
+    border-radius: 999px;
+    padding: 0 10px;
+    font-size: 12px;
+    color: var(--dh-text-muted);
+    background: var(--dh-surface-1);
+    transition:
+      background 0.14s ease,
+      border-color 0.14s ease,
+      color 0.14s ease;
+  }
+  .dh-chip:hover {
+    border-color: var(--dh-border-strong);
+    color: var(--dh-text);
+  }
+  .dh-chip-active {
+    border-color: color-mix(in oklab, var(--dh-brand-500) 48%, transparent);
+    background: color-mix(in oklab, var(--dh-brand-500) 14%, transparent);
+    color: var(--dh-brand-400);
+    font-weight: 500;
+  }
+
+  .dh-seg {
+    display: grid;
+    place-items: center;
+    width: 30px;
+    height: 28px;
+    border-radius: 8px;
+    color: var(--dh-text-subtle);
+    transition:
+      background 0.14s ease,
+      color 0.14s ease;
+  }
+  .dh-seg:hover {
+    color: var(--dh-text);
+  }
+  .dh-seg-active {
+    background: var(--dh-surface-3);
+    color: var(--dh-text);
+  }
+
+  /* Row actions stay hidden until the row is hovered or focused, so lists
+     read as content rather than as a wall of buttons. */
+  .dh-row-action {
+    display: grid;
+    place-items: center;
+    width: 26px;
+    height: 26px;
+    border-radius: 8px;
+    color: var(--dh-text-subtle);
+    opacity: 0;
+    transition:
+      opacity 0.14s ease,
+      background 0.14s ease,
+      color 0.14s ease;
+  }
+  .group:hover .dh-row-action,
+  .dh-row-action:focus-visible {
+    opacity: 1;
+  }
+  .dh-row-action:hover {
+    background: var(--dh-surface-3);
+    color: var(--dh-text);
+  }
+
+  .dh-menu-item {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    gap: 9px;
+    padding: 7px 12px;
+    font-size: 12.5px;
+    color: var(--dh-text);
+    text-align: left;
+    transition: background 0.12s ease;
+  }
+  .dh-menu-item:hover {
+    background: var(--dh-surface-2);
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   5. Motion — used by skeletons, status pills and route transitions.
+------------------------------------------------------------------------- */
+@layer components {
+  @keyframes dh-shimmer {
+    100% {
+      transform: translateX(100%);
+    }
+  }
+  @keyframes dh-pulse-ring {
+    0% {
+      box-shadow: 0 0 0 0 color-mix(in oklab, var(--dh-status-indexing) 55%, transparent);
+    }
+    70% {
+      box-shadow: 0 0 0 6px transparent;
+    }
+    100% {
+      box-shadow: 0 0 0 0 transparent;
+    }
+  }
+  @keyframes dh-rise {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  .dh-skeleton {
+    position: relative;
+    overflow: hidden;
+    background: var(--dh-surface-2);
+    border-radius: var(--dh-radius-sm);
+  }
+  .dh-skeleton::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    transform: translateX(-100%);
+    background: linear-gradient(
+      90deg,
+      transparent,
+      color-mix(in oklab, var(--dh-surface-3) 80%, transparent),
+      transparent
+    );
+    animation: dh-shimmer 1.6s infinite;
+  }
+
+  .dh-rise {
+    animation: dh-rise 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   6. Tooltip (rendered into <body> by TooltipDirective)
+------------------------------------------------------------------------- */
+@layer components {
+  .dh-tooltip {
+    position: fixed;
+    z-index: 60;
+    max-width: 240px;
+    padding: 5px 9px;
+    border: 1px solid var(--dh-border);
+    border-radius: var(--dh-radius-sm);
+    background: var(--dh-surface-3);
+    color: var(--dh-text);
+    font-family: var(--font-sans);
+    font-size: 11.5px;
+    line-height: 1.45;
+    box-shadow: var(--dh-shadow);
+    pointer-events: none;
+    opacity: 0;
+    transform: translateY(2px);
+    transition:
+      opacity 0.13s ease,
+      transform 0.13s ease;
+  }
+  .dh-tooltip-in {
+    opacity: 1;
+    transform: none;
+  }
+}

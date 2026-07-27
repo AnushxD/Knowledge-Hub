@@ -1,0 +1,426 @@
+<!-- ── Header ──────────────────────────────────────────────────────────── -->
+<header class="sticky top-0 z-20 border-b border-hairline bg-canvas/85 backdrop-blur-md">
+  <div class="px-5 pt-4 lg:px-7">
+    <!-- Breadcrumb -->
+    <nav class="flex items-center gap-1 text-[12px] text-subtle" aria-label="Breadcrumb">
+      <button type="button" class="transition hover:text-ink" (click)="store.openFolder(null)">
+        All documents
+      </button>
+      @for (crumb of store.breadcrumb(); track crumb.id) {
+        <i class="pi pi-angle-right text-[9px] opacity-60"></i>
+        <button
+          type="button"
+          class="transition hover:text-ink"
+          [class.text-ink]="$last"
+          (click)="store.openFolder(crumb.id)"
+        >
+          {{ crumb.name }}
+        </button>
+      }
+    </nav>
+
+    <div class="mt-1.5 flex flex-wrap items-center justify-between gap-3">
+      <div class="flex items-baseline gap-2.5">
+        <h1 class="text-[19px] font-semibold text-ink">{{ heading() }}</h1>
+        <span class="text-[12.5px] text-subtle">
+          @if (!store.loading()) {
+            {{ documents().length }} {{ documents().length === 1 ? 'document' : 'documents' }}
+          }
+        </span>
+      </div>
+
+      <div class="flex items-center gap-2">
+        <button type="button" class="dh-btn-ghost" (click)="newFolder()">
+          <i class="pi pi-folder-plus text-[12px]"></i>
+          <span class="hidden sm:inline">New folder</span>
+        </button>
+        <button
+          type="button"
+          class="flex h-8.5 items-center gap-2 rounded-dh px-3.5 text-[12.5px] font-medium text-white transition hover:brightness-110"
+          style="background: linear-gradient(135deg, var(--dh-brand-600), var(--dh-brand-500))"
+          (click)="showUpload.set(true)"
+        >
+          <i class="pi pi-upload text-[12px]"></i>
+          Upload
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Toolbar ───────────────────────────────────────────────────────── -->
+  <div class="flex flex-wrap items-center gap-2 px-5 py-3 lg:px-7">
+    <div
+      class="flex h-8.5 w-full min-w-0 items-center gap-2 rounded-dh border border-hairline bg-surface-1 px-3 sm:w-auto sm:max-w-xs sm:flex-1"
+    >
+      <i class="pi pi-search text-[12px] text-subtle"></i>
+      <input
+        type="text"
+        class="min-w-0 flex-1 bg-transparent text-[12.5px] text-ink outline-none placeholder:text-subtle"
+        placeholder="Filter in this folder…"
+        [value]="store.text()"
+        (input)="onSearch($event)"
+      />
+      @if (store.text()) {
+        <button
+          type="button"
+          class="text-subtle transition hover:text-ink"
+          (click)="store.text.set('')"
+          aria-label="Clear filter"
+        >
+          <i class="pi pi-times-circle text-[12px]"></i>
+        </button>
+      }
+    </div>
+
+    <button
+      type="button"
+      class="dh-btn-ghost"
+      [class.dh-btn-active]="filtersOpen()"
+      (click)="filtersOpen.set(!filtersOpen())"
+    >
+      <i class="pi pi-filter text-[12px]"></i>
+      Filters
+      @if (store.activeFilterCount()) {
+        <span
+          class="grid size-4 place-items-center rounded-full bg-brand-500 text-[9.5px] font-semibold text-white"
+        >
+          {{ store.activeFilterCount() }}
+        </span>
+      }
+    </button>
+
+    <div class="ml-auto flex items-center gap-2">
+      <select
+        class="h-8.5 rounded-dh border border-hairline bg-surface-1 px-2.5 text-[12.5px] text-ink outline-none"
+        [value]="store.sort()"
+        (change)="onSort($event)"
+        aria-label="Sort documents"
+      >
+        <option value="updated-desc">Last updated</option>
+        <option value="updated-asc">Oldest first</option>
+        <option value="name-asc">Name A–Z</option>
+        <option value="name-desc">Name Z–A</option>
+        <option value="size-desc">Largest first</option>
+      </select>
+
+      <div class="flex h-8.5 items-center rounded-dh border border-hairline bg-surface-1 p-0.5">
+        <button
+          type="button"
+          class="dh-seg"
+          [class.dh-seg-active]="store.viewMode() === 'list'"
+          (click)="store.viewMode.set('list')"
+          aria-label="List view"
+        >
+          <i class="pi pi-list text-[12px]"></i>
+        </button>
+        <button
+          type="button"
+          class="dh-seg"
+          [class.dh-seg-active]="store.viewMode() === 'grid'"
+          (click)="store.viewMode.set('grid')"
+          aria-label="Grid view"
+        >
+          <i class="pi pi-th-large text-[12px]"></i>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Filter drawer ─────────────────────────────────────────────────── -->
+  @if (filtersOpen()) {
+    <div class="dh-rise space-y-3 border-t border-hairline px-5 py-3.5 lg:px-7">
+      <div class="flex flex-wrap items-center gap-2">
+        <span class="dh-eyebrow w-14 shrink-0">Status</span>
+        @for (status of allStatuses; track status) {
+          <button
+            type="button"
+            class="dh-chip"
+            [class.dh-chip-active]="store.statuses().includes(status)"
+            (click)="store.toggleStatus(status)"
+          >
+            {{ statusLabel(status) }}
+          </button>
+        }
+      </div>
+
+      <div class="flex flex-wrap items-center gap-2">
+        <span class="dh-eyebrow w-14 shrink-0">Type</span>
+        @for (kind of availableKinds(); track kind) {
+          <button
+            type="button"
+            class="dh-chip"
+            [class.dh-chip-active]="store.kinds().includes(kind)"
+            (click)="store.toggleKind(kind)"
+          >
+            {{ kindLabel(kind) }}
+          </button>
+        }
+      </div>
+
+      <div class="flex flex-wrap items-center gap-2">
+        <span class="dh-eyebrow w-14 shrink-0">Tags</span>
+        @for (tag of store.availableTags().slice(0, 12); track tag) {
+          <button
+            type="button"
+            class="dh-chip"
+            [class.dh-chip-active]="store.tags().includes(tag)"
+            (click)="store.toggleTag(tag)"
+          >
+            #{{ tag }}
+          </button>
+        }
+      </div>
+
+      <div class="flex flex-wrap items-center gap-2">
+        <span class="dh-eyebrow w-14 shrink-0">Owner</span>
+        @for (person of store.people(); track person.id) {
+          <button
+            type="button"
+            class="dh-chip gap-1.5 pl-1"
+            [class.dh-chip-active]="store.ownerId() === person.id"
+            (click)="toggleOwner(person.id)"
+          >
+            <dh-avatar [person]="person" size="xs" />
+            {{ person.name }}
+          </button>
+        }
+        @if (store.activeFilterCount()) {
+          <button
+            type="button"
+            class="ml-auto text-[12px] font-medium text-brand-400 transition hover:underline"
+            (click)="store.clearFilters()"
+          >
+            Clear all filters
+          </button>
+        }
+      </div>
+    </div>
+  }
+</header>
+
+<!-- ── Content ─────────────────────────────────────────────────────────── -->
+<div
+  class="relative px-5 py-4 lg:px-7"
+  (dragover)="onDragOver($event)"
+  (dragleave)="onDragLeave($event)"
+  (drop)="onDrop($event)"
+>
+  @if (pageDragging()) {
+    <div
+      class="pointer-events-none fixed inset-4 z-40 grid place-items-center rounded-dh-xl border-2 border-dashed border-brand-400 bg-brand-500/10 backdrop-blur-[1px]"
+    >
+      <div class="text-center">
+        <i class="pi pi-cloud-upload mb-2 block text-[28px] text-brand-400"></i>
+        <p class="text-[14px] font-medium text-ink">Drop to upload into {{ heading() }}</p>
+      </div>
+    </div>
+  }
+
+  @if (store.loading()) {
+    @if (store.viewMode() === 'list') {
+      <div class="dh-card overflow-hidden"><dh-row-skeleton [count]="8" /></div>
+    } @else {
+      <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        <dh-card-skeleton [count]="8" />
+      </div>
+    }
+  } @else if (!documents().length) {
+    <div class="dh-card">
+      @if (store.activeFilterCount()) {
+        <dh-empty-state
+          icon="pi-filter-slash"
+          heading="No documents match these filters"
+          message="Try widening the filters, or clear them to see everything in this folder."
+        >
+          <button type="button" class="dh-btn-primary" (click)="store.clearFilters()">
+            Clear filters
+          </button>
+        </dh-empty-state>
+      } @else {
+        <dh-empty-state
+          icon="pi-cloud-upload"
+          heading="Nothing here yet"
+          message="Drop files anywhere on this page, or upload them explicitly. They'll be extracted, chunked and embedded automatically."
+        >
+          <button type="button" class="dh-btn-primary" (click)="showUpload.set(true)">
+            <i class="pi pi-upload text-[12px]"></i>
+            Upload documents
+          </button>
+          <button type="button" class="dh-btn-ghost" (click)="newFolder()">
+            <i class="pi pi-folder-plus text-[12px]"></i>
+            New folder
+          </button>
+        </dh-empty-state>
+      }
+    </div>
+  } @else if (store.viewMode() === 'list') {
+    <!-- ── List ──────────────────────────────────────────────────────── -->
+    <div class="dh-card overflow-hidden">
+      <div
+        class="hidden items-center gap-3 border-b border-hairline bg-surface-inset px-4 py-2 text-[11px] font-medium text-subtle md:flex"
+      >
+        <span class="w-9"></span>
+        <span class="flex-1">Name</span>
+        <span class="hidden w-28 lg:block">Owner</span>
+        <span class="hidden w-20 text-right lg:block">Size</span>
+        <span class="w-24 text-right">Updated</span>
+        <span class="w-28">Status</span>
+        <span class="w-16"></span>
+      </div>
+
+      @for (doc of documents(); track doc.id) {
+        <div
+          class="group relative flex items-center gap-3 border-b border-hairline px-4 py-2.5 transition last:border-0 hover:bg-surface-2/50"
+        >
+          <dh-file-icon [kind]="doc.kind" />
+
+          <a [routerLink]="['/docs', doc.id]" class="min-w-0 flex-1">
+            <div class="flex items-center gap-2">
+              <span class="truncate text-[13px] font-medium text-ink">{{ doc.title }}</span>
+              @if (doc.starred) {
+                <i class="pi pi-star-fill text-[10px] text-amber-400"></i>
+              }
+              @if (doc.version > 1) {
+                <span
+                  class="rounded border border-hairline px-1 text-[9.5px] text-subtle tabular-nums"
+                  >v{{ doc.version }}</span
+                >
+              }
+            </div>
+            <div class="mt-0.5 flex items-center gap-2">
+              <span class="truncate text-[11.5px] text-subtle">{{ doc.fileName }}</span>
+              @for (tag of doc.tags.slice(0, 2); track tag) {
+                <span class="hidden text-[11px] text-brand-400 sm:inline">#{{ tag }}</span>
+              }
+            </div>
+            @if (doc.status === 'failed' && doc.failureReason) {
+              <p class="mt-1 text-[11.5px] text-status-failed">{{ doc.failureReason }}</p>
+            }
+          </a>
+
+          <span class="hidden w-28 items-center gap-2 lg:flex">
+            <dh-avatar [person]="doc.owner" size="xs" />
+            <span class="truncate text-[11.5px] text-muted">{{ doc.owner.name }}</span>
+          </span>
+          <span class="hidden w-20 text-right text-[11.5px] text-muted tabular-nums lg:block">
+            {{ doc.sizeBytes | fileSize }}
+          </span>
+          <span class="hidden w-24 text-right text-[11.5px] text-muted sm:block">
+            {{ doc.updatedAt | timeAgo }}
+          </span>
+
+          <span class="flex shrink-0 items-center gap-1.5 sm:w-28">
+            <dh-status-pill [status]="doc.status" [progress]="doc.indexProgress" />
+            @if (doc.status === 'failed') {
+              <button
+                type="button"
+                class="grid size-6 place-items-center rounded-md text-subtle transition hover:bg-surface-3 hover:text-ink"
+                (click)="store.retry(doc.id)"
+                dhTooltip="Retry ingestion"
+                tooltipPosition="top"
+                aria-label="Retry ingestion"
+              >
+                <i class="pi pi-refresh text-[11px]"></i>
+              </button>
+            }
+          </span>
+
+          <span class="hidden w-16 items-center justify-end gap-0.5 sm:flex">
+            <button
+              type="button"
+              class="dh-row-action"
+              [class.opacity-100]="doc.starred"
+              (click)="store.star(doc.id)"
+              [attr.aria-label]="doc.starred ? 'Unstar' : 'Star'"
+            >
+              <i class="pi text-[11px]" [class]="doc.starred ? 'pi-star-fill' : 'pi-star'"></i>
+            </button>
+            <button
+              type="button"
+              class="dh-row-action"
+              (click)="menuFor.set(menuFor() === doc.id ? null : doc.id)"
+              aria-label="More actions"
+            >
+              <i class="pi pi-ellipsis-h text-[11px]"></i>
+            </button>
+          </span>
+
+          @if (menuFor() === doc.id) {
+            <div
+              class="dh-rise absolute top-full right-4 z-30 w-44 overflow-hidden rounded-dh border border-hairline bg-surface-1 py-1 shadow-dh-lg"
+            >
+              <a [routerLink]="['/docs', doc.id]" class="dh-menu-item">
+                <i class="pi pi-eye text-[11px]"></i> Open
+              </a>
+              <button type="button" class="dh-menu-item" (click)="menuFor.set(null)">
+                <i class="pi pi-download text-[11px]"></i> Download
+              </button>
+              @if (doc.status !== 'indexing') {
+                <button type="button" class="dh-menu-item" (click)="reindex(doc.id)">
+                  <i class="pi pi-refresh text-[11px]"></i> Re-index
+                </button>
+              }
+              <div class="my-1 h-px bg-hairline"></div>
+              <button type="button" class="dh-menu-item text-status-failed" (click)="del(doc.id)">
+                <i class="pi pi-trash text-[11px]"></i> Delete
+              </button>
+            </div>
+          }
+        </div>
+      }
+    </div>
+  } @else {
+    <!-- ── Grid ──────────────────────────────────────────────────────── -->
+    <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+      @for (doc of documents(); track doc.id) {
+        <a
+          [routerLink]="['/docs', doc.id]"
+          class="dh-card dh-card-interactive group relative flex flex-col p-4"
+        >
+          <div class="flex items-start justify-between">
+            <dh-file-icon [kind]="doc.kind" size="lg" />
+            <button
+              type="button"
+              class="dh-row-action"
+              [class.opacity-100]="doc.starred"
+              (click)="star($event, doc.id)"
+              [attr.aria-label]="doc.starred ? 'Unstar' : 'Star'"
+            >
+              <i class="pi text-[11px]" [class]="doc.starred ? 'pi-star-fill' : 'pi-star'"></i>
+            </button>
+          </div>
+
+          <p class="mt-3 line-clamp-2 text-[13px] font-medium text-ink">{{ doc.title }}</p>
+          <p class="mt-1 truncate text-[11.5px] text-subtle">{{ doc.fileName }}</p>
+
+          @if (doc.tags.length) {
+            <div class="mt-2 flex flex-wrap gap-1">
+              @for (tag of doc.tags.slice(0, 3); track tag) {
+                <span class="text-[11px] text-brand-400">#{{ tag }}</span>
+              }
+            </div>
+          }
+
+          <div class="mt-auto pt-4">
+            <dh-status-pill [status]="doc.status" [progress]="doc.indexProgress" />
+            <div class="mt-3 flex items-center gap-2 border-t border-hairline pt-3">
+              <dh-avatar [person]="doc.owner" size="xs" />
+              <span class="truncate text-[11px] text-muted">{{ doc.owner.name }}</span>
+              <span class="ml-auto shrink-0 text-[11px] text-subtle">{{
+                doc.updatedAt | timeAgo
+              }}</span>
+            </div>
+          </div>
+        </a>
+      }
+    </div>
+  }
+</div>
+
+@if (showUpload()) {
+  <dh-upload-dialog
+    [folderId]="store.folderId()"
+    [seedFiles]="droppedFiles()"
+    (close)="closeUpload()"
+  />
+}
