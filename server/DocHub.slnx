@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/DocHub.Api/DocHub.Api.csproj" />
+    <Project Path="src/DocHub.DataAccess/DocHub.DataAccess.csproj" />
+    <Project Path="src/DocHub.Integrations/DocHub.Integrations.csproj" />
+    <Project Path="src/DocHub.Services/DocHub.Services.csproj" />
+  </Folder>
+</Solution>

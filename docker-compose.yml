@@ -1,0 +1,51 @@
+# Local development infrastructure. Start this before `dotnet run`:
+#   docker compose up -d
+#
+# Both services mirror what production uses, so no code branches on environment:
+# Postgres carries the pgvector extension the ingestion pipeline needs in phase
+# 2, and Azurite speaks the real Azure Blob Storage API.
+services:
+  postgres:
+    # pgvector image rather than stock postgres — phase 2 needs the extension,
+    # and having it from the start avoids a migration that cannot run locally.
+    image: pgvector/pgvector:pg17
+    container_name: dochub-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: dochub
+      POSTGRES_USER: dochub
+      POSTGRES_PASSWORD: dochub_local_dev
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U dochub -d dochub']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  azurite:
+    image: mcr.microsoft.com/azure-storage/azurite:latest
+    container_name: dochub-azurite
+    restart: unless-stopped
+    # --skipApiVersionCheck: Azurite trails the Azure SDK's service version by
+    # some months and rejects newer ones outright. Skipping the check here keeps
+    # application code on the SDK default, so production behaviour is never
+    # shaped by an emulator limitation. Emulator-only — nothing ships with this.
+    command: 'azurite --blobHost 0.0.0.0 --queueHost 0.0.0.0 --tableHost 0.0.0.0 --location /data --skipApiVersionCheck'
+    ports:
+      - '10000:10000' # blob
+      - '10001:10001' # queue
+      - '10002:10002' # table
+    volumes:
+      - azurite-data:/data
+    healthcheck:
+      test: ['CMD', 'nc', '-z', '127.0.0.1', '10000']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  postgres-data:
+  azurite-data:
