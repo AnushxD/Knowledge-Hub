@@ -1,0 +1,28 @@
+### macOS ###
+.DS_Store
+
+### .NET ###
+bin/
+obj/
+*.user
+*.suo
+.vs/
+appsettings.Development.json.local
+
+### Angular / Node ###
+node_modules/
+dist/
+.angular/
+npm-debug.log*
+
+### Docker ###
+*.env
+.env
+.env.local
+
+### Editors ###
+.vscode/
+.idea/
+
+### Secrets (never commit real values) ###
+**/secrets.json
