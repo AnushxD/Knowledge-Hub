@@ -49,15 +49,24 @@ internal sealed class SearchService(
             Limit = Math.Max(take * 3, 40),
         };
 
-        var keywordTask = chunks.SearchKeywordAsync(filter, ct);
-        var vectorTask = SearchVectorAsync(filter, query, ct);
+        // Start embedding first, then run the keyword query while it is in
+        // flight. The embedding call is a network round trip and by far the
+        // slowest part of a search, so this overlaps the only latency worth
+        // overlapping.
+        //
+        // The two database queries themselves are deliberately *not*
+        // concurrent: they share a request-scoped DbContext, which cannot serve
+        // two commands at once. Issuing them together fails outright — and
+        // fails intermittently, because a slow embedding provider hides the
+        // race by letting the keyword query finish first.
+        var embeddingTask = EmbedQueryAsync(query, ct);
 
-        // Both branches hit the same Postgres but different indexes, and
-        // neither depends on the other's result.
-        await Task.WhenAll(keywordTask, vectorTask);
+        var keyword = await chunks.SearchKeywordAsync(filter, ct);
 
-        var keyword = await keywordTask;
-        var (vector, vectorError) = await vectorTask;
+        var (embedding, embeddingError) = await embeddingTask;
+        var (vector, vectorError) = embedding is null
+            ? ([], embeddingError)
+            : await SearchVectorAsync(filter, embedding, ct);
 
         var fused = Fuse(keyword, vector);
         var terms = ExtractTerms(query);
@@ -89,32 +98,49 @@ internal sealed class SearchService(
     }
 
     /// <summary>
-    /// Runs the vector branch, degrading to keyword-only if the embedding
-    /// provider is unavailable.
+    /// Embeds the query, degrading to keyword-only if the provider is down.
     ///
     /// A search that returns the keyword half is far more useful than an error
     /// page, so this failure is reported in the diagnostics rather than thrown
     /// — but it is never hidden.
     /// </summary>
-    private async Task<(IReadOnlyList<ChunkMatchDto> Matches, string? Error)> SearchVectorAsync(
-        ChunkSearchDto filter,
+    private async Task<(float[]? Embedding, string? Error)> EmbedQueryAsync(
         string query,
         CancellationToken ct)
     {
         try
         {
-            var embedding = await embeddings.EmbedQueryAsync(query, ct);
+            return (await embeddings.EmbedQueryAsync(query, ct), null);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            logger.LogWarning(exception,
+                "Embedding the query failed; falling back to keyword-only results.");
+
+            return (null, Unavailable(exception));
+        }
+    }
+
+    private async Task<(IReadOnlyList<ChunkMatchDto> Matches, string? Error)> SearchVectorAsync(
+        ChunkSearchDto filter,
+        float[] embedding,
+        CancellationToken ct)
+    {
+        try
+        {
             return (await chunks.SearchVectorAsync(filter, embedding, ct), null);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
             logger.LogWarning(exception,
-                "Vector search unavailable; falling back to keyword-only results.");
+                "Vector search failed; falling back to keyword-only results.");
 
-            return ([], $"Semantic matching is unavailable ({exception.Message}). "
-                + "Showing keyword results only.");
+            return ([], Unavailable(exception));
         }
     }
+
+    private static string Unavailable(Exception exception) =>
+        $"Semantic matching is unavailable ({exception.Message}). Showing keyword results only.";
 
     /// <summary>
     /// Merges the two branches by reciprocal rank fusion: each chunk scores
