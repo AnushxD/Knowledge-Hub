@@ -13,6 +13,10 @@
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
     <PackageReference Include="Microsoft.OpenApi" Version="2.11.0" />
+    <!-- The UI only. Document generation stays with Microsoft.AspNetCore.OpenApi
+         above — pulling in full Swashbuckle would run a second, competing
+         generator over the same controllers. -->
+    <PackageReference Include="Swashbuckle.AspNetCore.SwaggerUI" Version="10.2.3" />
     <!-- Background ingestion. Runs in-process for now; the same job logic moves
          to a dedicated worker later by pointing Hangfire at another store. -->
     <PackageReference Include="Hangfire.AspNetCore" Version="1.8.24" />

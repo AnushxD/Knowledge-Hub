@@ -10,6 +10,7 @@ using Hangfire.PostgreSql;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Swashbuckle.AspNetCore.SwaggerUI;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -64,7 +65,25 @@ builder.Services.Configure<FormOptions>(options =>
     options.MultipartBodyLengthLimit = 25 * 1024 * 1024;
 });
 
-builder.Services.AddOpenApi();
+builder.Services.AddOpenApi(options =>
+{
+    // Describes the document itself, so the Swagger UI header says what this
+    // API is rather than just echoing the assembly name.
+    options.AddDocumentTransformer((document, _, _) =>
+    {
+        document.Info = new()
+        {
+            Title = "DocHub API",
+            Version = "v1",
+            Description =
+                "Documentation & Knowledge Hub — folders, documents, ingestion and "
+                + "hybrid search. Errors are RFC 7807 problem details: 400 for a "
+                + "rejected business rule, 404 for a missing entity.",
+        };
+
+        return Task.CompletedTask;
+    });
+});
 
 // The Angular dev server runs on its own origin during local development.
 const string DevCorsPolicy = "dochub-dev-client";
@@ -94,10 +113,28 @@ if (app.Environment.IsDevelopment())
     app.MapOpenApi();
     app.UseCors(DevCorsPolicy);
 
+    // Interactive API browser at /swagger, reading the document MapOpenApi
+    // serves. Development only, for the same reason as the jobs dashboard
+    // below: it is unauthenticated and it invites callers to fire real
+    // requests at real data.
+    app.UseSwaggerUI(swagger =>
+    {
+        swagger.SwaggerEndpoint("/openapi/v1.json", "DocHub API v1");
+        swagger.DocumentTitle = "DocHub API";
+        // Collapsed by default; the endpoint list is long enough that expanded
+        // models bury it.
+        swagger.DocExpansion(DocExpansion.List);
+        swagger.DisplayRequestDuration();
+    });
+
     // Development only: the dashboard is unauthenticated and exposes job
     // arguments — including document ids. It gets real authorisation when auth
     // lands in phase 5, and only then can it be exposed anywhere else.
     app.UseHangfireDashboard("/jobs");
+
+    // Landing on the API root in a browser is nearly always someone looking
+    // for the docs.
+    app.MapGet("/", () => Results.Redirect("/swagger")).ExcludeFromDescription();
 }
 else
 {

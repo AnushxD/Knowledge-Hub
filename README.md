@@ -143,6 +143,7 @@ npm --prefix client start
 | Angular client | http://localhost:4200 |
 | API | http://localhost:5080 |
 | API readiness check | http://localhost:5080/healthz |
+| Swagger UI — browse and call every endpoint | http://localhost:5080/swagger — development only |
 | Background jobs dashboard | http://localhost:5080/jobs — development only |
 | OpenAPI document | http://localhost:5080/openapi/v1.json |
 | Postgres | `localhost:5432` — db `dochub`, user `dochub`, password `dochub_local_dev` |
@@ -154,9 +155,14 @@ npm --prefix client start
 step is missing — the response says which, and the command that fixes it. See
 [Troubleshooting](#troubleshooting).
 
-The jobs dashboard is unauthenticated and shows job arguments, so it is
-registered in development only. It gains real authorisation when auth arrives
-in phase 5.
+Browsing to the API root redirects to **Swagger UI**, where every endpoint can
+be expanded and called with *Try it out* — including file uploads, which get a
+real file picker. It reads the same `/openapi/v1.json` document the API already
+serves, so it can never drift from the actual routes.
+
+Swagger UI and the jobs dashboard are both registered in development only: they
+are unauthenticated, and both invite real requests against real data. They gain
+proper authorisation when auth arrives in phase 5.
 
 ### Running and debugging from VS Code
 
