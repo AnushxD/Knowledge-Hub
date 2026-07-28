@@ -28,13 +28,16 @@ public static class DataAccessServiceCollectionExtensions
         services.AddDbContext<DocHubDbContext>((provider, builder) =>
         {
             var options = provider.GetRequiredService<IOptions<DataAccessOptions>>().Value;
-            builder.UseNpgsql(options.ConnectionString, npgsql =>
-                npgsql.MigrationsHistoryTable("__ef_migrations_history"));
+            builder.UseNpgsql(options.ConnectionString, npgsql => npgsql
+                .MigrationsHistoryTable("__ef_migrations_history")
+                // Teaches Npgsql the pgvector type used by document_chunks.
+                .UseVector());
         });
 
         // Scoped: repositories wrap the request-scoped DbContext.
         services.AddScoped<IFolderRepository, FolderRepository>();
         services.AddScoped<IDocumentRepository, DocumentRepository>();
+        services.AddScoped<IChunkRepository, ChunkRepository>();
 
         services.AddHealthChecks()
             .AddCheck<PostgresHealthCheck>("postgres", tags: ["ready", "db"]);

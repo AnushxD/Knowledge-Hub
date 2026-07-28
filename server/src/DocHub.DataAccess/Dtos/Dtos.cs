@@ -121,3 +121,55 @@ public record DocumentMetadataUpdateDto
     public IReadOnlyList<string>? Tags { get; init; }
     public bool? IsStarred { get; init; }
 }
+
+/// <summary>One chunk ready to be persisted, as produced by the ingestion pipeline.</summary>
+public record NewChunkDto(
+    int Ordinal,
+    string Text,
+    string? SectionRef,
+    int TokenCount,
+    float[] Embedding);
+
+/// <summary>
+/// A chunk that matched a search, carrying enough document context for a
+/// result card and a citation without a second query per hit.
+/// </summary>
+/// <param name="Score">
+/// Raw relevance from the branch that produced this hit — ts_rank for keyword,
+/// cosine similarity for vector. The two are not comparable, which is exactly
+/// why the service fuses on rank position instead of on this number.
+/// </param>
+public record ChunkMatchDto(
+    Guid ChunkId,
+    Guid DocumentId,
+    string DocumentTitle,
+    string FileName,
+    string Extension,
+    Guid FolderId,
+    string FolderPath,
+    int Ordinal,
+    string? SectionRef,
+    string Text,
+    double Score);
+
+/// <summary>
+/// Filter for a chunk-level search. Only chunks of Indexed documents are ever
+/// returned, so a document still in the pipeline (or one that failed) cannot be
+/// surfaced or cited.
+/// </summary>
+public record ChunkSearchDto
+{
+    public required string Text { get; init; }
+
+    /// <summary>Restricts to a folder and, since folders nest, its whole subtree.</summary>
+    public Guid? FolderId { get; init; }
+
+    public IReadOnlyList<string>? Extensions { get; init; }
+
+    public IReadOnlyList<string>? Tags { get; init; }
+
+    public Guid? OwnerId { get; init; }
+
+    /// <summary>Candidates to pull from each branch before fusion.</summary>
+    public int Limit { get; init; } = 40;
+}

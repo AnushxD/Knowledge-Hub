@@ -38,7 +38,7 @@ public class Document
     /// <summary>Populated only when <see cref="Status"/> is Failed.</summary>
     public string? FailureReason { get; set; }
 
-    /// <summary>Chunks produced by ingestion. Null until phase 2 fills it in.</summary>
+    /// <summary>Number of rows in <see cref="Chunks"/>; null until ingestion succeeds.</summary>
     public int? ChunkCount { get; set; }
 
     public bool IsStarred { get; set; }
@@ -52,4 +52,6 @@ public class Document
     public User? Owner { get; set; }
 
     public ICollection<DocumentVersion> Versions { get; set; } = [];
+
+    public ICollection<DocumentChunk> Chunks { get; set; } = [];
 }

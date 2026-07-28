@@ -13,6 +13,22 @@ public sealed class DocHubDbContext(DbContextOptions<DocHubDbContext> options) :
     /// <summary>Deterministic id for the seeded local development user.</summary>
     public static readonly Guid SystemUserId = new("00000000-0000-0000-0000-0000000000a1");
 
+    /// <summary>
+    /// Width of the embedding column, fixed by the migration. Matches
+    /// nomic-embed-text, the default local provider. A provider with a
+    /// different width needs a new migration and a full re-index, so the
+    /// Integrations layer validates its own dimension against this at startup
+    /// rather than failing per-row at write time.
+    /// </summary>
+    public const int EmbeddingDimensions = 768;
+
+    /// <summary>
+    /// Text search configuration used for both the generated tsvector column
+    /// and every query against it. They have to agree — stemming differences
+    /// between index and query silently return nothing.
+    /// </summary>
+    public const string SearchConfiguration = "english";
+
     public DbSet<User> Users => Set<User>();
 
     public DbSet<Folder> Folders => Set<Folder>();
@@ -21,8 +37,13 @@ public sealed class DocHubDbContext(DbContextOptions<DocHubDbContext> options) :
 
     public DbSet<DocumentVersion> DocumentVersions => Set<DocumentVersion>();
 
+    public DbSet<DocumentChunk> DocumentChunks => Set<DocumentChunk>();
+
     protected override void OnModelCreating(ModelBuilder builder)
     {
+        // Enables the vector type used by document_chunks.embedding.
+        builder.HasPostgresExtension("vector");
+
         builder.Entity<User>(entity =>
         {
             entity.ToTable("users");
@@ -126,6 +147,44 @@ public sealed class DocHubDbContext(DbContextOptions<DocHubDbContext> options) :
                 .OnDelete(DeleteBehavior.Restrict);
 
             entity.HasIndex(version => new { version.DocumentId, version.VersionNumber }).IsUnique();
+        });
+
+        builder.Entity<DocumentChunk>(entity =>
+        {
+            entity.ToTable("document_chunks");
+            entity.HasKey(chunk => chunk.Id);
+            entity.Property(chunk => chunk.Text).IsRequired();
+            entity.Property(chunk => chunk.SectionRef).HasMaxLength(300);
+
+            entity.Property(chunk => chunk.Embedding)
+                .HasColumnType($"vector({EmbeddingDimensions})")
+                .IsRequired();
+
+            // Maintained by Postgres, so the index can never drift from the
+            // text the way an application-populated column would.
+            entity.HasGeneratedTsVectorColumn(
+                    chunk => chunk.SearchVector!,
+                    SearchConfiguration,
+                    chunk => chunk.Text)
+                .HasIndex(chunk => chunk.SearchVector)
+                .HasMethod("gin");
+
+            entity.HasOne(chunk => chunk.Document)
+                .WithMany(document => document.Chunks)
+                .HasForeignKey(chunk => chunk.DocumentId)
+                // Deleting a document must take its chunks with it, or deleted
+                // content stays answerable through search.
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(chunk => new { chunk.DocumentId, chunk.Ordinal }).IsUnique();
+
+            // HNSW over cosine distance: the embedding providers all return
+            // normalised vectors, and cosine is what the search service ranks
+            // on. Built here rather than left to a manual DBA step so a fresh
+            // clone gets the same query plan as production.
+            entity.HasIndex(chunk => chunk.Embedding)
+                .HasMethod("hnsw")
+                .HasOperators("vector_cosine_ops");
         });
     }
 }
