@@ -104,6 +104,21 @@ public sealed class TextChunkerTests
     }
 
     [Fact]
+    public void A_short_but_real_paragraph_is_kept()
+    {
+        // The minimum exists to drop fragments with no content of their own,
+        // not to lose a two-line policy statement that answers a question
+        // perfectly well.
+        var chunks = ChunkerWith().Chunk(TextOf(
+            ("Expense Policy\nEmployees may claim reasonable travel costs incurred on "
+             + "company business.", "Expense Policy"),
+            ("Submit claims within sixty days of the expense, or get written approval "
+             + "from your line manager first.", "Deadlines")));
+
+        Assert.Equal(2, chunks.Count);
+    }
+
+    [Fact]
     public void A_document_that_is_only_a_short_line_still_gets_indexed()
     {
         var chunks = ChunkerWith().Chunk(TextOf(("Ping the service desk.", null)));

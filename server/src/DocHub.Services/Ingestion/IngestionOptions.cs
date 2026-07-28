@@ -26,10 +26,16 @@ public sealed class IngestionOptions
     public int OverlapTokens { get; set; } = 120;
 
     /// <summary>
-    /// Chunks below this are folded into their neighbour rather than stored.
-    /// A stray heading on its own embeds to noise and crowds out real results.
+    /// Chunks below this are discarded rather than stored, because a passage
+    /// that short — a bare heading, a stray caption — embeds to the document's
+    /// general topic and then outranks the passage that actually answers a
+    /// question.
+    ///
+    /// Kept low on purpose. The point is to drop fragments with no content of
+    /// their own, not short paragraphs: a two-line policy statement is a
+    /// perfectly good answer, and setting this high quietly loses it.
     /// </summary>
-    public int MinTokens { get; set; } = 24;
+    public int MinTokens { get; set; } = 12;
 
     /// <summary>
     /// Ceiling on chunks per document, so one pathological upload cannot spend

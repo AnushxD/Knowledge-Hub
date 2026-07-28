@@ -40,8 +40,17 @@ internal sealed class PdfTextExtractor : ITextExtractor
                 // NearestNeighbourWordExtractor rather than page.Text: the raw
                 // property concatenates glyphs in content-stream order, which
                 // loses the spaces between words in most real PDFs.
-                var words = NearestNeighbourWordExtractor.Instance.GetWords(page.Letters);
-                var text = string.Join(' ', words.Select(word => word.Text)).Trim();
+                //
+                // Word spacing in a PDF is positional, so the extractor also
+                // emits whitespace-only runs. Dropping them before joining is
+                // what keeps "Incident Response" from arriving as
+                // "Incident   Response" in the preview.
+                var words = NearestNeighbourWordExtractor.Instance
+                    .GetWords(page.Letters)
+                    .Select(word => word.Text.Trim())
+                    .Where(word => word.Length > 0);
+
+                var text = string.Join(' ', words).Trim();
 
                 if (text.Length > 0)
                     sections.Add(new ExtractedSection(text, $"Page {page.Number}"));
