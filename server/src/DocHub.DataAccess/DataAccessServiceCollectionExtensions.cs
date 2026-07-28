@@ -38,6 +38,7 @@ public static class DataAccessServiceCollectionExtensions
         services.AddScoped<IFolderRepository, FolderRepository>();
         services.AddScoped<IDocumentRepository, DocumentRepository>();
         services.AddScoped<IChunkRepository, ChunkRepository>();
+        services.AddScoped<IChatRepository, ChatRepository>();
 
         services.AddHealthChecks()
             .AddCheck<PostgresHealthCheck>("postgres", tags: ["ready", "db"]);

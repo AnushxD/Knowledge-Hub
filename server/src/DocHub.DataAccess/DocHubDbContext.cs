@@ -1,5 +1,8 @@
+using System.Text.Json;
 using DocHub.DataAccess.Entities;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 namespace DocHub.DataAccess;
 
@@ -38,6 +41,10 @@ public sealed class DocHubDbContext(DbContextOptions<DocHubDbContext> options) :
     public DbSet<DocumentVersion> DocumentVersions => Set<DocumentVersion>();
 
     public DbSet<DocumentChunk> DocumentChunks => Set<DocumentChunk>();
+
+    public DbSet<ChatSession> ChatSessions => Set<ChatSession>();
+
+    public DbSet<ChatMessage> ChatMessages => Set<ChatMessage>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -186,5 +193,71 @@ public sealed class DocHubDbContext(DbContextOptions<DocHubDbContext> options) :
                 .HasMethod("hnsw")
                 .HasOperators("vector_cosine_ops");
         });
+
+        builder.Entity<ChatSession>(entity =>
+        {
+            entity.ToTable("chat_sessions");
+            entity.HasKey(session => session.Id);
+            entity.Property(session => session.Title).HasMaxLength(300).IsRequired();
+
+            entity.HasOne(session => session.User)
+                .WithMany()
+                .HasForeignKey(session => session.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // History is always read newest-first for one user.
+            entity.HasIndex(session => new { session.UserId, session.UpdatedAt });
+        });
+
+        builder.Entity<ChatMessage>(entity =>
+        {
+            entity.ToTable("chat_messages");
+            entity.HasKey(message => message.Id);
+            entity.Property(message => message.Content).IsRequired();
+
+            // Text for the same reason as IngestionStatus: a dump stays
+            // readable and reordering the enum cannot remap existing rows.
+            entity.Property(message => message.Role)
+                .HasConversion<string>()
+                .HasMaxLength(16)
+                .IsRequired();
+
+            entity.Property(message => message.Citations)
+                .HasConversion(CitationsConverter)
+                .Metadata.SetValueComparer(CitationsComparer);
+
+            entity.Property(message => message.Citations).HasColumnType("jsonb");
+
+            entity.HasOne(message => message.Session)
+                .WithMany(session => session.Messages)
+                .HasForeignKey(message => message.SessionId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(message => new { message.SessionId, message.CreatedAt });
+        });
     }
+
+    private static readonly JsonSerializerOptions CitationJson = new(JsonSerializerDefaults.Web);
+
+    /// <summary>
+    /// Citations round-trip through jsonb. Explicit rather than relying on
+    /// Npgsql's dynamic JSON mapping, which needs an opt-in at the data source
+    /// and fails at run time rather than at model build if it is missing.
+    /// </summary>
+    private static readonly ValueConverter<IReadOnlyList<Citation>, string> CitationsConverter =
+        new(
+            citations => JsonSerializer.Serialize(citations, CitationJson),
+            json => JsonSerializer.Deserialize<List<Citation>>(json, CitationJson)
+                ?? new List<Citation>());
+
+    /// <summary>
+    /// Without this EF compares the list by reference and never notices an
+    /// edit, so a changed citation set would silently not be saved.
+    /// </summary>
+    private static readonly ValueComparer<IReadOnlyList<Citation>> CitationsComparer =
+        new(
+            (left, right) => left!.SequenceEqual(right!),
+            citations => citations.Aggregate(
+                0, (hash, citation) => HashCode.Combine(hash, citation.GetHashCode())),
+            citations => citations.ToList());
 }

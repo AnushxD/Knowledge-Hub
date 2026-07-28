@@ -122,6 +122,38 @@ public record DocumentMetadataUpdateDto
     public bool? IsStarred { get; init; }
 }
 
+// ---- chat ------------------------------------------------------------------
+
+public record ChatSessionDto(
+    Guid Id,
+    string Title,
+    int MessageCount,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset UpdatedAt);
+
+public record ChatMessageDto(
+    Guid Id,
+    Guid SessionId,
+    ChatRole Role,
+    string Content,
+    IReadOnlyList<Citation> Citations,
+    bool IsRefusal,
+    DateTimeOffset CreatedAt);
+
+/// <summary>A session together with its whole transcript.</summary>
+public record ChatTranscriptDto(
+    ChatSessionDto Session,
+    IReadOnlyList<ChatMessageDto> Messages);
+
+/// <summary>A message about to be appended to a session.</summary>
+public record NewChatMessageDto
+{
+    public required ChatRole Role { get; init; }
+    public required string Content { get; init; }
+    public IReadOnlyList<Citation> Citations { get; init; } = [];
+    public bool IsRefusal { get; init; }
+}
+
 /// <summary>One chunk ready to be persisted, as produced by the ingestion pipeline.</summary>
 public record NewChunkDto(
     int Ordinal,
