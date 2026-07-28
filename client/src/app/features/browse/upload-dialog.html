@@ -91,7 +91,9 @@
 
     <footer class="flex items-center gap-2 border-t border-hairline px-5 py-3">
       <span class="flex-1 text-[12px] text-subtle">
-        @if (validCount()) {
+        @if (!hasTarget()) {
+          <span class="text-status-failed">Create a folder before uploading.</span>
+        } @else if (validCount()) {
           {{ validCount() }} file{{ validCount() === 1 ? '' : 's' }} ready
         }
       </span>
@@ -106,7 +108,7 @@
         type="button"
         class="h-9 rounded-dh px-4 text-[13px] font-medium text-white transition enabled:hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-45"
         style="background: linear-gradient(135deg, var(--dh-brand-600), var(--dh-brand-500))"
-        [disabled]="!validCount()"
+        [disabled]="!validCount() || !hasTarget()"
         (click)="submit()"
       >
         Upload {{ validCount() || '' }}

@@ -46,9 +46,24 @@ export class UploadDialog {
     });
   }
 
-  protected readonly targetName = computed(
-    () => this.store.folders()?.find((f) => f.id === this.folderId())?.path ?? 'All documents',
+  /**
+   * Every document must live in a folder, but the library can be browsed with
+   * none selected ("All documents"). In that case fall back to the first
+   * top-level folder rather than inventing an id, and show the resolved name
+   * below so the destination is never a surprise.
+   */
+  protected readonly targetFolderId = computed(
+    () => this.folderId() ?? this.store.folders()?.find((f) => f.parentId === null)?.id ?? null,
   );
+
+  protected readonly targetName = computed(
+    () =>
+      this.store.folders()?.find((f) => f.id === this.targetFolderId())?.path ??
+      'No folder available',
+  );
+
+  /** Nothing can be uploaded until at least one folder exists. */
+  protected readonly hasTarget = computed(() => this.targetFolderId() !== null);
 
   protected readonly validCount = computed(() => this.staged().filter((s) => !s.error).length);
 
@@ -96,11 +111,14 @@ export class UploadDialog {
   }
 
   protected submit(): void {
+    const folderId = this.targetFolderId();
     const files = this.staged()
       .filter((s) => !s.error)
       .map((s) => s.file);
-    if (!files.length) return;
-    this.store.upload(this.folderId() ?? 'f-eng', files);
+
+    if (!folderId || !files.length) return;
+
+    this.store.upload(folderId, files);
     this.close.emit();
   }
 }

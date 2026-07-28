@@ -1,6 +1,6 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { startWith, switchMap } from 'rxjs';
+import { combineLatest, startWith, switchMap } from 'rxjs';
 import { KnowledgeGateway } from '../data/knowledge-gateway';
 import {
   DocumentQuery,
@@ -63,9 +63,14 @@ export class LibraryStore {
     { initialValue: undefined },
   );
 
+  /**
+   * Re-runs when the filters change *or* after a mutation. The refresh trigger
+   * matters for the HTTP gateway: unlike the in-memory mock it answers a query
+   * once, so an upload or delete would otherwise leave the list stale.
+   */
   private readonly documentsResult = toSignal<DocumentSummary[] | undefined>(
-    toObservable(this.query).pipe(
-      switchMap((query) =>
+    combineLatest([toObservable(this.query), toObservable(this.refresh)]).pipe(
+      switchMap(([query]) =>
         this.gateway.documents(query).pipe(startWith(undefined as DocumentSummary[] | undefined)),
       ),
     ),

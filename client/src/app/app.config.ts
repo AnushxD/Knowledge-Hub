@@ -4,7 +4,7 @@ import { provideRouter, withComponentInputBinding, withInMemoryScrolling } from 
 
 import { routes } from './app.routes';
 import { KnowledgeGateway } from './core/data/knowledge-gateway';
-import { MockKnowledgeGateway } from './core/data/mock-knowledge-gateway';
+import { HttpKnowledgeGateway } from './core/data/http-knowledge-gateway';
 
 export const appConfig: ApplicationConfig = {
   providers: [
@@ -16,8 +16,9 @@ export const appConfig: ApplicationConfig = {
     ),
     provideHttpClient(withFetch()),
 
-    // Phase 1 runs entirely on mock data. Swapping this single line for
-    // `HttpKnowledgeGateway` is the whole migration to the real API.
-    { provide: KnowledgeGateway, useClass: MockKnowledgeGateway },
+    // The single seam between the UI and the backend. `MockKnowledgeGateway`
+    // still implements the same contract and can be swapped back in here to
+    // develop screens without running the API.
+    { provide: KnowledgeGateway, useClass: HttpKnowledgeGateway },
   ],
 };

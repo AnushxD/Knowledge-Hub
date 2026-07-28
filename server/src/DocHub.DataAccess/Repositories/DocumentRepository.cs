@@ -325,6 +325,15 @@ internal sealed class DocumentRepository(DocHubDbContext db) : IDocumentReposito
             .ToList();
     }
 
+    public async Task<IReadOnlyList<UserDto>> GetOwnersAsync(CancellationToken ct = default) =>
+        await db.Documents
+            .AsNoTracking()
+            .Select(document => document.Owner!)
+            .Distinct()
+            .OrderBy(owner => owner.Name)
+            .Select(owner => new UserDto(owner.Id, owner.Name, owner.Email, owner.Role))
+            .ToListAsync(ct);
+
     private async Task<DocumentDto> RequireDtoAsync(Guid id, CancellationToken ct) =>
         await db.Documents
             .AsNoTracking()

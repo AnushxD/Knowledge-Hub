@@ -173,6 +173,15 @@
       </header>
       <div class="px-4 py-3">
         @if (activity(); as events) {
+          @if (!events.length) {
+            <!-- There is no audit trail server-side yet (phase 5), so this is
+                 the honest state rather than invented events. -->
+            <div class="py-6 text-center">
+              <i class="pi pi-inbox mb-2 block text-[18px] text-subtle"></i>
+              <p class="text-[12.5px] text-muted">No activity recorded yet.</p>
+              <p class="mt-1 text-[11.5px] text-subtle">An audit trail arrives with phase 5.</p>
+            </div>
+          }
           <ol class="relative space-y-3.5">
             @for (event of events; track event.id) {
               <li class="flex gap-3">

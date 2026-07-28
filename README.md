@@ -4,9 +4,10 @@ An internal Documentation & Knowledge Hub: upload, organise and search team
 documentation, with an AI assistant (from phase 3) that answers questions
 grounded strictly in indexed content and always cites its sources.
 
-> **Status:** phase 1 (core document management). The Angular client is
-> complete; the backend is being built block by block. See
-> [Current state](#current-state) for exactly what works today.
+> **Status:** phase 1 (core document management) is **complete** — upload,
+> folders, metadata, preview and versioning work end to end against Postgres
+> and blob storage. Phase 2 (ingestion + search) is next. See
+> [Current state](#current-state).
 
 ---
 
@@ -293,13 +294,27 @@ docker compose down
 | Data access: entities, migrations, repositories | Done |
 | Blob storage (`IFileStorage`) | Done |
 | Services + API endpoints | Done |
-| Client wired to the real API | Not started — still `MockKnowledgeGateway` |
+| Client wired to the real API | Done |
 
-The API is fully working — you can create folders and upload documents with
-`curl` or from the OpenAPI document today. The **client** still runs on
-in-memory mock data, so uploads made in the browser do not persist across a
-refresh. Swapping it over is a one-line provider change in
-`client/src/app/app.config.ts`, and it is the last piece of phase 1.
+**Phase 1 is complete.** Everything the browser shows comes from Postgres and
+Azurite — uploads, folders, metadata edits and version history all survive a
+page reload.
+
+Not yet built, by design (later phases): text extraction, chunking and
+embeddings; search; the AI assistant; MCP repository sources; authentication.
+Documents therefore sit at status **Queued** forever for now — nothing ingests
+them yet, which is phase 2.
+
+The client talks to the API through one seam, `KnowledgeGateway`. Two
+implementations exist:
+
+- `HttpKnowledgeGateway` — the real API (the default)
+- `MockKnowledgeGateway` — in-memory sample data, useful for working on screens
+  without running the backend
+
+Swap them in `client/src/app/app.config.ts`. In development the Angular dev
+server proxies `/api` to `http://localhost:5080` (`client/proxy.conf.json`), so
+requests are same-origin and CORS never applies.
 
 ### API endpoints
 
@@ -371,3 +386,7 @@ create and drop the `dochub_test` database themselves.
 
 **Client build fails after pulling** — dependencies changed; run
 `npm --prefix client install` again.
+
+**The client loads but shows no data, and the console logs failed `/api` calls**
+— the API isn't running. Start it in a second terminal; the dev server only
+proxies `/api` through, it does not host it.

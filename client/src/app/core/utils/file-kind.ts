@@ -57,6 +57,16 @@ export function kindFromExtension(extension: string): FileKind {
   return EXTENSION_MAP[extension.replace('.', '').toLowerCase()] ?? 'unknown';
 }
 
+/**
+ * Every extension that maps to a kind. The UI filters by kind ("Slides") while
+ * the API filters by extension, so the gateway expands one into the other.
+ */
+export function extensionsForKind(kind: FileKind): string[] {
+  return Object.entries(EXTENSION_MAP)
+    .filter(([, mapped]) => mapped === kind)
+    .map(([extension]) => extension);
+}
+
 export function kindFromFileName(fileName: string): FileKind {
   const ext = fileName.split('.').pop() ?? '';
   return kindFromExtension(ext);

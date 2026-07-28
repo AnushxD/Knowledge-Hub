@@ -44,4 +44,7 @@ public interface IDocumentRepository
     Task<LibraryStatsDto> GetStatsAsync(CancellationToken ct = default);
 
     Task<IReadOnlyList<string>> GetAllTagsAsync(CancellationToken ct = default);
+
+    /// <summary>Distinct owners of at least one document, for the owner filter.</summary>
+    Task<IReadOnlyList<UserDto>> GetOwnersAsync(CancellationToken ct = default);
 }

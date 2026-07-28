@@ -220,6 +220,12 @@ internal sealed class DocumentService(
     public Task<IReadOnlyList<string>> GetTagsAsync(CancellationToken ct = default) =>
         documents.GetAllTagsAsync(ct);
 
+    public async Task<IReadOnlyList<UserViewModel>> GetOwnersAsync(CancellationToken ct = default)
+    {
+        var owners = await documents.GetOwnersAsync(ct);
+        return [.. owners.Select(owner => owner.ToViewModel())];
+    }
+
     /// <summary>
     /// Returns the sanitised file name and its extension, or throws with a
     /// message the user can act on.

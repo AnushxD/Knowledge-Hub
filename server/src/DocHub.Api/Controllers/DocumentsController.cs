@@ -29,6 +29,12 @@ public sealed class DocumentsController(IDocumentService documents) : Controller
     public async Task<IReadOnlyList<string>> Tags(CancellationToken ct) =>
         await documents.GetTagsAsync(ct);
 
+    /// <summary>Everyone who owns at least one document, for the owner filter.</summary>
+    [HttpGet("owners")]
+    [ProducesResponseType<IReadOnlyList<UserViewModel>>(StatusCodes.Status200OK)]
+    public async Task<IReadOnlyList<UserViewModel>> Owners(CancellationToken ct) =>
+        await documents.GetOwnersAsync(ct);
+
     [HttpGet("{id:guid}")]
     [ProducesResponseType<DocumentDetailViewModel>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]

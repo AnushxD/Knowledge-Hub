@@ -35,4 +35,6 @@ public interface IDocumentService
     Task<LibraryStatsViewModel> GetStatsAsync(CancellationToken ct = default);
 
     Task<IReadOnlyList<string>> GetTagsAsync(CancellationToken ct = default);
+
+    Task<IReadOnlyList<UserViewModel>> GetOwnersAsync(CancellationToken ct = default);
 }
