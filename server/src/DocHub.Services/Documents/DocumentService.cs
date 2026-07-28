@@ -1,6 +1,7 @@
 using DocHub.DataAccess.Dtos;
 using DocHub.DataAccess.Repositories;
 using DocHub.Integrations.Storage;
+using DocHub.Services.Ingestion;
 using DocHub.Services.ViewModels;
 using Microsoft.Extensions.Logging;
 
@@ -9,7 +10,9 @@ namespace DocHub.Services.Documents;
 internal sealed class DocumentService(
     IDocumentRepository documents,
     IFolderRepository folders,
+    IChunkRepository chunks,
     IFileStorage storage,
+    IIngestionQueue ingestion,
     ICurrentUser currentUser,
     ILogger<DocumentService> logger) : IDocumentService
 {
@@ -62,7 +65,11 @@ internal sealed class DocumentService(
         var detail = await documents.GetByIdAsync(id, ct)
             ?? throw new NotFoundException("Document", id);
 
-        return detail.ToViewModel();
+        // Empty for anything that has not finished ingestion, which is also
+        // exactly when the client shows the pipeline state instead of a preview.
+        var sections = await chunks.GetForDocumentAsync(id, ct);
+
+        return detail.ToViewModel(sections);
     }
 
     public async Task<DocumentContent> DownloadAsync(Guid id, CancellationToken ct = default)
@@ -118,6 +125,10 @@ internal sealed class DocumentService(
                 "Uploaded document {DocumentId} ({FileName}) to folder {FolderId}",
                 created.Id, fileName, folderId);
 
+            // Queued rather than awaited: extracting and embedding a document
+            // takes seconds to minutes, and the upload response should not.
+            ingestion.Enqueue(created.Id);
+
             return created.ToViewModel();
         }
         catch
@@ -152,6 +163,10 @@ internal sealed class DocumentService(
             // retrievable.
             logger.LogInformation(
                 "Added version {Version} to document {DocumentId}", updated.Version, id);
+
+            // AddVersionAsync already reset the document to Pending, since the
+            // stored chunks describe content that is no longer current.
+            ingestion.Enqueue(id);
 
             return updated.ToViewModel();
         }

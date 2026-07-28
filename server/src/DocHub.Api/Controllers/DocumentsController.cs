@@ -1,5 +1,6 @@
 using DocHub.Services;
 using DocHub.Services.Documents;
+using DocHub.Services.Ingestion;
 using DocHub.Services.ViewModels;
 using Microsoft.AspNetCore.Mvc;
 
@@ -8,8 +9,25 @@ namespace DocHub.Api.Controllers;
 [ApiController]
 [Route("api/documents")]
 [Produces("application/json")]
-public sealed class DocumentsController(IDocumentService documents) : ControllerBase
+public sealed class DocumentsController(
+    IDocumentService documents,
+    IIngestionService ingestion) : ControllerBase
 {
+    /// <summary>File types the ingestion pipeline can make searchable.</summary>
+    [HttpGet("supported-types")]
+    [ProducesResponseType<IReadOnlyList<string>>(StatusCodes.Status200OK)]
+    public IReadOnlyList<string> SupportedTypes() => ingestion.SupportedExtensions;
+
+    /// <summary>
+    /// Puts a document back through ingestion. Backs the retry action on a
+    /// failed document, and re-indexing after the chunking settings change.
+    /// </summary>
+    [HttpPost("{id:guid}/reindex")]
+    [ProducesResponseType<DocumentViewModel>(StatusCodes.Status202Accepted)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<DocumentViewModel>> Reindex(Guid id, CancellationToken ct) =>
+        Accepted(await ingestion.RequeueAsync(id, ct));
+
     [HttpGet]
     [ProducesResponseType<IReadOnlyList<DocumentViewModel>>(StatusCodes.Status200OK)]
     public async Task<IReadOnlyList<DocumentViewModel>> Query(

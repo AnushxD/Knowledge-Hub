@@ -4,6 +4,9 @@ using DocHub.Api.Infrastructure;
 using DocHub.DataAccess;
 using DocHub.Integrations;
 using DocHub.Services;
+using DocHub.Services.Ingestion;
+using Hangfire;
+using Hangfire.PostgreSql;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
@@ -13,7 +16,33 @@ var builder = WebApplication.CreateBuilder(args);
 // Layers register themselves; the host only composes them.
 builder.Services.AddDataAccess(builder.Configuration);
 builder.Services.AddIntegrations(builder.Configuration);
-builder.Services.AddServices();
+builder.Services.AddServices(builder.Configuration);
+
+// Background ingestion. Hangfire shares the application's Postgres, so a queued
+// job survives a restart and there is no second store to operate.
+var databaseConnection = builder.Configuration["Database:ConnectionString"]
+    ?? throw new InvalidOperationException("Database:ConnectionString must be configured.");
+
+builder.Services.AddHangfire(hangfire => hangfire
+    .SetDataCompatibilityLevel(CompatibilityLevel.Version_180)
+    .UseSimpleAssemblyNameTypeSerializer()
+    .UseRecommendedSerializerSettings()
+    // Hangfire creates and migrates its own `hangfire` schema on first run.
+    // That is the one exception to this project's "provisioning is explicit"
+    // rule, and a deliberate one: those tables are the job runner's private
+    // bookkeeping, versioned with the library rather than with our migrations.
+    // Application data is still only ever created by `dotnet ef database update`.
+    .UsePostgreSqlStorage(postgres => postgres.UseNpgsqlConnection(databaseConnection)));
+
+builder.Services.AddHangfireServer(options =>
+{
+    // Embedding is the bottleneck and a local model serves one request at a
+    // time; more workers would just queue inside Ollama instead of here.
+    options.WorkerCount = 2;
+    options.Queues = ["default"];
+});
+
+builder.Services.AddScoped<IIngestionQueue, HangfireIngestionQueue>();
 
 builder.Services
     .AddControllers()
@@ -64,6 +93,11 @@ if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
     app.UseCors(DevCorsPolicy);
+
+    // Development only: the dashboard is unauthenticated and exposes job
+    // arguments — including document ids. It gets real authorisation when auth
+    // lands in phase 5, and only then can it be exposed anywhere else.
+    app.UseHangfireDashboard("/jobs");
 }
 else
 {

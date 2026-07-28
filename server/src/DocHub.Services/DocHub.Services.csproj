@@ -12,6 +12,11 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.10" />
+    <!-- Text extraction. These are in-process parsing libraries, not external
+         systems, so they stay in the Service layer behind ITextExtractor rather
+         than becoming Integrations. -->
+    <PackageReference Include="PdfPig" Version="0.1.15" />
+    <PackageReference Include="DocumentFormat.OpenXml" Version="3.5.1" />
   </ItemGroup>
 
   <PropertyGroup>
