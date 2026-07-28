@@ -164,8 +164,12 @@ providers. Docker must be running.
 - **Integrations** — exercises the actual Azure SDK against Azurite, including
   the 404 behaviour the code depends on. Uses a throwaway blob container per
   run.
+- **Services** — the whole stack minus HTTP: real services over real
+  repositories over real blob storage. Mocking those seams would only prove the
+  mocks behave; the bugs worth catching live between the layers, such as a
+  deleted folder failing to free its documents' files.
 
-Neither touches your development data. Override the targets with the
+None of them touch your development data. Override the targets with the
 `DOCHUB_TEST_DB` and `DOCHUB_TEST_BLOBS` environment variables if you need to.
 
 Client tests (`npm --prefix client test`) exist as a harness but there are no
@@ -288,12 +292,42 @@ docker compose down
 | Local infrastructure + solution skeleton | Done |
 | Data access: entities, migrations, repositories | Done |
 | Blob storage (`IFileStorage`) | Done |
-| Services + API endpoints | Not started |
+| Services + API endpoints | Done |
 | Client wired to the real API | Not started — still `MockKnowledgeGateway` |
 
-The client currently runs entirely on in-memory mock data, so **uploads do not
-persist across a refresh yet**. Swapping to the real API is a one-line provider
-change in `client/src/app/app.config.ts` once the endpoints exist.
+The API is fully working — you can create folders and upload documents with
+`curl` or from the OpenAPI document today. The **client** still runs on
+in-memory mock data, so uploads made in the browser do not persist across a
+refresh. Swapping it over is a one-line provider change in
+`client/src/app/app.config.ts`, and it is the last piece of phase 1.
+
+### API endpoints
+
+| Method | Route | Purpose |
+|---|---|---|
+| `GET` | `/api/folders` | Whole folder tree with recursive document counts |
+| `POST` | `/api/folders` | Create a folder |
+| `PUT` | `/api/folders/{id}` | Rename a folder |
+| `DELETE` | `/api/folders/{id}` | Delete a folder, its subtree and its files |
+| `GET` | `/api/documents` | List/filter documents (folder, text, tag, status, owner, sort, paging) |
+| `GET` | `/api/documents/{id}` | Document with breadcrumb and version history |
+| `GET` | `/api/documents/{id}/content` | Download the current file |
+| `POST` | `/api/documents?folderId=…` | Upload a document (multipart `file`) |
+| `POST` | `/api/documents/{id}/versions` | Upload a replacement as a new version |
+| `PATCH` | `/api/documents/{id}` | Update title, description, tags, starred |
+| `POST` | `/api/documents/{id}/move` | Move to another folder |
+| `DELETE` | `/api/documents/{id}` | Delete a document and all its files |
+| `GET` | `/api/documents/stats` | Library counts for the dashboard |
+| `GET` | `/api/documents/tags` | Every tag in use |
+
+Errors come back as RFC 7807 problem details — 400 for a rejected business
+rule (with a message meant for the user), 404 for a missing entity.
+
+Try it once the API is running:
+
+```bash
+curl -X POST http://localhost:5080/api/folders -H 'Content-Type: application/json' -d '{"parentId":null,"name":"Engineering"}'
+```
 
 Roadmap phases (search, AI assistant, MCP, auth, deployment) are listed in
 [CLAUDE.md](CLAUDE.md#roadmap--build-in-this-order-dont-jump-ahead).

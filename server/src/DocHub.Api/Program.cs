@@ -1,8 +1,11 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using DocHub.Api.Infrastructure;
 using DocHub.DataAccess;
 using DocHub.Integrations;
+using DocHub.Services;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -10,14 +13,27 @@ var builder = WebApplication.CreateBuilder(args);
 // Layers register themselves; the host only composes them.
 builder.Services.AddDataAccess(builder.Configuration);
 builder.Services.AddIntegrations(builder.Configuration);
+builder.Services.AddServices();
 
 builder.Services
     .AddControllers()
     .AddJsonOptions(options =>
     {
         options.JsonSerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
-        options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
+        options.JsonSerializerOptions.Converters.Add(
+            new JsonStringEnumConverter(JsonNamingPolicy.CamelCase));
     });
+
+// Domain exceptions become RFC 7807 responses; services stay HTTP-agnostic.
+builder.Services.AddProblemDetails();
+builder.Services.AddExceptionHandler<ServiceExceptionHandler>();
+
+// Cap uploads at the same 25 MB the service enforces, so an oversized file is
+// rejected by the server before it is buffered rather than after.
+builder.Services.Configure<FormOptions>(options =>
+{
+    options.MultipartBodyLengthLimit = 25 * 1024 * 1024;
+});
 
 builder.Services.AddOpenApi();
 
@@ -41,6 +57,8 @@ if (args.Contains("init-storage"))
     await app.Services.InitializeIntegrationsAsync();
     return;
 }
+
+app.UseExceptionHandler();
 
 if (app.Environment.IsDevelopment())
 {

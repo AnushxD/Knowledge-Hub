@@ -9,6 +9,7 @@
   <ItemGroup>
     <!-- Repositories stay internal so only the interfaces escape the layer;
          the test project is the one exception. -->
+    <InternalsVisibleTo Include="DocHub.Services.Tests" />
     <InternalsVisibleTo Include="DocHub.DataAccess.Tests" />
   </ItemGroup>
 
