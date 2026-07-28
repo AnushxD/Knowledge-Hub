@@ -241,21 +241,38 @@ internal sealed class SearchService(
     }
 
     /// <summary>
-    /// The words worth highlighting. Single characters and the handful of
-    /// operator words websearch_to_tsquery understands are dropped — marking
-    /// "or" in every result is noise, not help.
+    /// Common English words Postgres' "english" configuration already strips
+    /// from the query. Highlighting them would mark half of every snippet, so
+    /// the client is not given them in the first place.
+    ///
+    /// Deliberately short rather than a full stop-word list: these are the ones
+    /// that actually show up in questions ("how do I log in to the VPN"), and a
+    /// term wrongly kept costs one extra highlight, not a wrong result.
+    /// </summary>
+    private static readonly HashSet<string> StopWords =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            "a", "an", "and", "are", "as", "at", "be", "but", "by", "can", "do", "does",
+            "for", "from", "get", "had", "has", "have", "how", "i", "if", "in", "into", "is",
+            "it", "its", "me", "my", "no", "not", "of", "on", "or", "our", "out", "should",
+            "so", "that", "the", "their", "then", "there", "these", "they", "this", "to", "up",
+            "was", "we", "were", "what", "when", "where", "which", "while", "who", "why",
+            "will", "with", "would", "you", "your",
+        };
+
+    /// <summary>
+    /// The words worth highlighting: what the user typed, minus the words that
+    /// carry no signal.
     /// </summary>
     private static IReadOnlyList<string> ExtractTerms(string query)
     {
-        var stopWords = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "or", "and", "not" };
-
         return
         [
             .. query
                 .Split([' ', '\t', '\n', '"', '\'', ',', '.', '?', '!', '(', ')', ':', ';'],
                     StringSplitOptions.RemoveEmptyEntries)
                 .Select(term => term.Trim())
-                .Where(term => term.Length > 1 && !stopWords.Contains(term))
+                .Where(term => term.Length > 1 && !StopWords.Contains(term))
                 .Distinct(StringComparer.OrdinalIgnoreCase)
         ];
     }

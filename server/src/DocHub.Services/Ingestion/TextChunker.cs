@@ -38,22 +38,40 @@ internal sealed class TextChunker(IOptions<IngestionOptions> options) : ITextChu
 
             foreach (var body in ChunkSection(section.Text))
             {
-                if (chunks.Count >= options.MaxChunksPerDocument) return chunks;
+                if (chunks.Count >= options.MaxChunksPerDocument) return Renumber(chunks);
 
-                chunks.Add(new TextChunk(
-                    chunks.Count, body, section.SectionRef, EstimateTokens(body)));
+                chunks.Add(new TextChunk(0, body, section.SectionRef, EstimateTokens(body)));
             }
         }
 
-        return chunks;
+        // Drop passages too small to answer anything. A bare heading — a
+        // section whose whole content is "# Remote Access Setup" — embeds to
+        // the document's topic and then outranks the passage that actually
+        // answers the question.
+        var substantial = chunks
+            .Where(chunk => chunk.TokenCount >= options.MinTokens)
+            .ToList();
+
+        // Unless that would leave nothing: a genuinely one-line document should
+        // still be findable, so keep its largest passage.
+        if (substantial.Count == 0 && chunks.Count > 0)
+            substantial = [chunks.MaxBy(chunk => chunk.TokenCount)!];
+
+        return Renumber(substantial);
     }
+
+    /// <summary>
+    /// Ordinals must be contiguous from zero — they are the chunk's identity in
+    /// a citation URL and carry a unique index in the database.
+    /// </summary>
+    private static IReadOnlyList<TextChunk> Renumber(List<TextChunk> chunks) =>
+        [.. chunks.Select((chunk, index) => chunk with { Ordinal = index })];
 
     private IEnumerable<string> ChunkSection(string text)
     {
         var blocks = SplitIntoBlocks(text);
         var current = new List<string>();
         var currentTokens = 0;
-        var emittedAny = false;
 
         foreach (var block in blocks)
         {
@@ -62,7 +80,6 @@ internal sealed class TextChunker(IOptions<IngestionOptions> options) : ITextChu
             if (currentTokens > 0 && currentTokens + blockTokens > options.TargetTokens)
             {
                 yield return Join(current);
-                emittedAny = true;
 
                 // Carry the tail of the chunk just emitted into the next one, so
                 // a passage split down the middle is still fully present in at
@@ -75,15 +92,11 @@ internal sealed class TextChunker(IOptions<IngestionOptions> options) : ITextChu
             currentTokens += blockTokens;
         }
 
+        // Undersized tails are not filtered here — Chunk() applies the minimum
+        // across the whole document, so it can tell "too small to be useful"
+        // apart from "all this document has".
         var tail = Join(current);
-        if (tail.Length == 0) yield break;
-
-        // A trailing fragment too small to stand on its own is dropped — it is
-        // already carried in the previous chunk's overlap. The very first chunk
-        // of a section is always kept however short, or a one-line document
-        // would index to nothing at all.
-        if (!emittedAny || EstimateTokens(tail) >= options.MinTokens)
-            yield return tail;
+        if (tail.Length > 0) yield return tail;
     }
 
     /// <summary>
