@@ -21,7 +21,7 @@
     <span class="text-[14px] font-semibold tracking-tight text-ink">DocHub</span>
     <span
       class="rounded-full border border-hairline px-1.5 py-px text-[9.5px] font-medium text-subtle"
-      >Phase 2</span
+      >Phase 3</span
     >
     <button
       type="button"
@@ -37,11 +37,17 @@
 
 <div class="flex min-w-0 flex-1 flex-col">
   <dh-top-bar (toggleSidebar)="toggleSidebar()" />
-  <!-- pb clears the assistant FAB so it never covers the last row. -->
-  <main class="min-h-0 flex-1 overflow-y-auto pb-24">
+  <!-- pb clears the assistant FAB so it never covers the last row. The
+       assistant screen has no FAB, and its own composer is pinned to the
+       bottom, so the padding would only push it off-screen. -->
+  <main class="min-h-0 flex-1 overflow-y-auto" [class.pb-24]="!onAssistant()">
     <router-outlet />
   </main>
 </div>
 
-<dh-ai-dock />
+<!-- Hidden on the assistant screen: a shortcut to the thing you are already
+     looking at is just something covering its composer. -->
+@if (!onAssistant()) {
+  <dh-ai-dock />
+}
 <dh-command-palette />

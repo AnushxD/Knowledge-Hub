@@ -1,6 +1,10 @@
 import { Observable } from 'rxjs';
 import {
   ActivityEvent,
+  AskRequest,
+  ChatEvent,
+  ChatSession,
+  ChatTranscript,
   DocumentDetail,
   DocumentQuery,
   DocumentSummary,
@@ -33,6 +37,19 @@ export abstract class KnowledgeGateway {
    * inside the content.
    */
   abstract search(query: SearchQuery): Observable<SearchResponse>;
+
+  /**
+   * Asks the assistant, emitting each server-sent event as it arrives.
+   *
+   * Streaming rather than a single response because a grounded answer takes
+   * seconds to generate, and the retrieved sources are worth showing before
+   * the first word of the answer exists.
+   */
+  abstract ask(request: AskRequest): Observable<ChatEvent>;
+
+  abstract chatSessions(): Observable<ChatSession[]>;
+  abstract chatTranscript(sessionId: string): Observable<ChatTranscript>;
+  abstract deleteChatSession(sessionId: string): Observable<void>;
 
   abstract activity(limit?: number): Observable<ActivityEvent[]>;
   abstract people(): Observable<Person[]>;

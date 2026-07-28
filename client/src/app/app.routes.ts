@@ -30,8 +30,7 @@ export const routes: Routes = [
       {
         path: 'chat',
         title: 'Assistant · DocHub',
-        loadComponent: () =>
-          import('./features/roadmap/chat-placeholder').then((m) => m.ChatPlaceholder),
+        loadComponent: () => import('./features/chat/chat').then((m) => m.ChatPage),
       },
       {
         path: 'sources',

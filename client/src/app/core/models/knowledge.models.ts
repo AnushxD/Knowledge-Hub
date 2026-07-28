@@ -181,6 +181,64 @@ export interface SearchQuery {
   ownerId?: string;
 }
 
+// ---- assistant --------------------------------------------------------------
+
+/** A source backing an answer, resolvable to the exact passage. */
+export interface Citation {
+  /** The bracketed number used in the answer text. */
+  marker: number;
+  documentId: string;
+  documentTitle: string;
+  /** Chunk position — links to `/docs/:documentId?chunk=:chunkId`. */
+  chunkId: number;
+  heading: string;
+}
+
+export interface ChatSession {
+  id: string;
+  title: string;
+  messageCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ChatMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  citations: Citation[];
+  /**
+   * True when the assistant declined for lack of grounding. Rendered as its
+   * own state — an honest "I don't know" is the designed outcome for an
+   * unanswerable question, not an error.
+   */
+  isRefusal: boolean;
+  createdAt: string;
+}
+
+export interface ChatTranscript {
+  session: ChatSession;
+  messages: ChatMessage[];
+}
+
+/**
+ * One server-sent event from an in-flight answer. Discriminated on `type` so
+ * the component can render sources before the first token arrives.
+ */
+export type ChatEvent =
+  | { type: 'session'; sessionId: string; title: string }
+  | { type: 'sources'; sources: Citation[] }
+  | { type: 'token'; text: string }
+  | { type: 'done'; messageId: string; citations: Citation[]; isRefusal: boolean }
+  | { type: 'error'; reason: string };
+
+export interface AskRequest {
+  question: string;
+  /** Omitted to start a new conversation. */
+  sessionId?: string | null;
+  folderId?: string | null;
+}
+
 export interface UploadTask {
   id: string;
   fileName: string;

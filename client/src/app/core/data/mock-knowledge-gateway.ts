@@ -1,8 +1,13 @@
 import { Injectable } from '@angular/core';
-import { BehaviorSubject, Observable, map, of, timer } from 'rxjs';
-import { delayWhen, take } from 'rxjs/operators';
+import { BehaviorSubject, Observable, from, map, of, timer } from 'rxjs';
+import { concatMap, delay, delayWhen, take } from 'rxjs/operators';
 import {
   ActivityEvent,
+  AskRequest,
+  ChatEvent,
+  ChatSession,
+  ChatTranscript,
+  Citation,
   DocumentDetail,
   DocumentQuery,
   DocumentSection,
@@ -920,6 +925,60 @@ export class MockKnowledgeGateway extends KnowledgeGateway {
         },
       } satisfies SearchResponse;
     });
+  }
+
+  /**
+   * Replays a canned answer over the same event shape the real gateway emits.
+   *
+   * Deliberately not a fake model: it retrieves real seeded passages and then
+   * says it cannot answer from them. Inventing a plausible answer here would
+   * make the screen look finished while hiding whether grounding actually
+   * works — the one property this feature exists to guarantee.
+   */
+  ask(request: AskRequest): Observable<ChatEvent> {
+    const sources: Citation[] = HERO_SECTIONS.slice(0, 3).map((section, index) => ({
+      marker: index + 1,
+      documentId: 'd-1',
+      documentTitle: 'Dev Environment Setup',
+      chunkId: section.chunkId,
+      heading: section.heading,
+    }));
+
+    const answer =
+      'This is the mock gateway, so no model is running — nothing here is a real answer. ' +
+      'The sources above are genuinely retrieved from the seeded content, and the real ' +
+      'assistant would cite them like [1]. Point the app at the API to ask for real.';
+
+    const events: ChatEvent[] = [
+      { type: 'session', sessionId: request.sessionId ?? 'mock-session', title: request.question },
+      { type: 'sources', sources },
+      ...answer.split(' ').map((word) => ({ type: 'token' as const, text: `${word} ` })),
+      { type: 'done', messageId: 'mock-message', citations: [sources[0]], isRefusal: false },
+    ];
+
+    // Paced so the streaming UI is exercised rather than filled in one frame.
+    return from(events).pipe(concatMap((event) => of(event).pipe(delay(28))));
+  }
+
+  chatSessions(): Observable<ChatSession[]> {
+    return this.read(() => []);
+  }
+
+  chatTranscript(sessionId: string): Observable<ChatTranscript> {
+    return this.read(() => ({
+      session: {
+        id: sessionId,
+        title: 'Mock conversation',
+        messageCount: 0,
+        createdAt: ago(0),
+        updatedAt: ago(0),
+      },
+      messages: [],
+    }));
+  }
+
+  deleteChatSession(): Observable<void> {
+    return of(void 0);
   }
 
   createFolder(parentId: string | null, name: string): Observable<Folder> {

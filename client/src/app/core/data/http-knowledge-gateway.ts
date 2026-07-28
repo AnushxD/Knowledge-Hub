@@ -3,6 +3,10 @@ import { Injectable, inject } from '@angular/core';
 import { Observable, forkJoin, map, of, switchMap } from 'rxjs';
 import {
   ActivityEvent,
+  AskRequest,
+  ChatEvent,
+  ChatSession,
+  ChatTranscript,
   DocumentDetail,
   DocumentQuery,
   DocumentSummary,
@@ -256,6 +260,81 @@ export class HttpKnowledgeGateway extends KnowledgeGateway {
     ).pipe(map(() => void 0));
   }
 
+  // ---- assistant -----------------------------------------------------------
+
+  /**
+   * Streams an answer over server-sent events.
+   *
+   * Uses `fetch` rather than HttpClient: HttpClient buffers the whole response
+   * before emitting, which would defeat streaming entirely. Aborting the fetch
+   * on unsubscribe also cancels the request server-side, so navigating away
+   * stops the model rather than leaving it generating into nothing.
+   */
+  ask(request: AskRequest): Observable<ChatEvent> {
+    return new Observable<ChatEvent>((subscriber) => {
+      const controller = new AbortController();
+
+      void (async () => {
+        try {
+          const response = await fetch(`${this.base}/chat`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(request),
+            signal: controller.signal,
+          });
+
+          if (!response.ok || !response.body) {
+            // Errors before the stream starts come back as problem details.
+            const problem = await response.json().catch(() => null);
+            throw new Error(problem?.detail ?? problem?.title ?? `Request failed (${response.status})`);
+          }
+
+          const reader = response.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = '';
+
+          for (;;) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+
+            // Events are separated by a blank line; a partial frame at the end
+            // of a chunk stays in the buffer until the rest arrives.
+            const frames = buffer.split('\n\n');
+            buffer = frames.pop() ?? '';
+
+            for (const frame of frames) {
+              const parsed = parseSseFrame(frame);
+              if (parsed) subscriber.next(parsed);
+            }
+          }
+
+          subscriber.complete();
+        } catch (error) {
+          // An abort is an unsubscribe, not a failure — the subscriber is
+          // already gone and emitting an error would be noise.
+          if (controller.signal.aborted) return;
+          subscriber.error(error);
+        }
+      })();
+
+      return () => controller.abort();
+    });
+  }
+
+  chatSessions(): Observable<ChatSession[]> {
+    return this.http.get<ChatSession[]>(`${this.base}/chat/sessions`);
+  }
+
+  chatTranscript(sessionId: string): Observable<ChatTranscript> {
+    return this.http.get<ChatTranscript>(`${this.base}/chat/sessions/${sessionId}`);
+  }
+
+  deleteChatSession(sessionId: string): Observable<void> {
+    return this.http.delete<void>(`${this.base}/chat/sessions/${sessionId}`);
+  }
+
   retryIngestion(documentId: string): Observable<void> {
     return this.http
       .post<ApiDocument>(`${this.base}/documents/${documentId}/reindex`, {})
@@ -352,6 +431,32 @@ function toQueryParams(query: DocumentQuery): HttpParams {
   }
 
   return params;
+}
+
+/**
+ * Turns one `event:`/`data:` frame into a typed event.
+ *
+ * The event name carries the discriminator; the payload is merged onto it so
+ * the result matches the `ChatEvent` union. Unknown names are ignored rather
+ * than thrown on — a future server event should not break an older client.
+ */
+function parseSseFrame(frame: string): ChatEvent | null {
+  let name = '';
+  let data = '';
+
+  for (const line of frame.split('\n')) {
+    if (line.startsWith('event: ')) name = line.slice(7).trim();
+    else if (line.startsWith('data: ')) data += line.slice(6);
+  }
+
+  if (!name || !data) return null;
+  if (!['session', 'sources', 'token', 'done', 'error'].includes(name)) return null;
+
+  try {
+    return { type: name, ...JSON.parse(data) } as ChatEvent;
+  } catch {
+    return null;
+  }
 }
 
 /** Deterministic avatar colour from an id — stable across sessions and users. */

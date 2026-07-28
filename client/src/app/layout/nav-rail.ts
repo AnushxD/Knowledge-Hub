@@ -30,7 +30,7 @@ export class NavRail {
     { route: '/', icon: 'pi-home', label: 'Home', exact: true },
     { route: '/browse', icon: 'pi-folder', label: 'Library' },
     { route: '/search', icon: 'pi-search', label: 'Search' },
-    { route: '/chat', icon: 'pi-comments', label: 'Assistant', phase: 3 },
+    { route: '/chat', icon: 'pi-comments', label: 'Assistant' },
     { route: '/sources', icon: 'pi-share-alt', label: 'Knowledge sources', phase: 4 },
     { route: '/settings', icon: 'pi-cog', label: 'Settings' },
   ];

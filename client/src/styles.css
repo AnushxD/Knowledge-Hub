@@ -374,6 +374,66 @@
     font-weight: 500;
   }
 
+  /* A citation marker inside an answer. Small and superscript-ish so it reads
+     as a reference rather than interrupting the sentence. */
+  .dh-citation {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 4px;
+    border-radius: 5px;
+    background: color-mix(in oklab, var(--dh-brand-500) 20%, transparent);
+    color: var(--dh-brand-400);
+    font-size: 10.5px;
+    font-weight: 600;
+    line-height: 1;
+    vertical-align: 1px;
+    transition: background 0.14s ease;
+  }
+  .dh-citation:hover {
+    background: color-mix(in oklab, var(--dh-brand-500) 36%, transparent);
+  }
+
+  /* A retrieved source shown while the answer is still streaming. */
+  .dh-source-chip {
+    display: inline-flex;
+    align-items: center;
+    max-width: 200px;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    height: 20px;
+    padding: 0 8px;
+    border: 1px solid var(--dh-border);
+    border-radius: 999px;
+    background: var(--dh-surface-2);
+    color: var(--dh-text-muted);
+    font-size: 11px;
+  }
+  .dh-source-chip:hover {
+    border-color: var(--dh-border-strong);
+    color: var(--dh-text);
+  }
+
+  /* Blinking caret while tokens are still arriving. */
+  .dh-caret {
+    display: inline-block;
+    width: 7px;
+    height: 14px;
+    margin-left: 2px;
+    vertical-align: -2px;
+    background: var(--dh-brand-400);
+    border-radius: 1px;
+    animation: dh-caret-blink 1s steps(2, start) infinite;
+  }
+  @keyframes dh-caret-blink {
+    to {
+      visibility: hidden;
+    }
+  }
+
   /* Matched query words inside a search snippet. Tinted rather than the
      browser's yellow default, which is unreadable on the dark theme. */
   .dh-mark {

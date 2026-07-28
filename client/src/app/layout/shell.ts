@@ -1,5 +1,14 @@
-import { ChangeDetectionStrategy, Component, HostListener, inject, signal } from '@angular/core';
-import { RouterOutlet } from '@angular/router';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  HostListener,
+  computed,
+  inject,
+  signal,
+} from '@angular/core';
+import { NavigationEnd, Router, RouterOutlet } from '@angular/router';
+import { toSignal } from '@angular/core/rxjs-interop';
+import { filter, map } from 'rxjs';
 import { NavRail } from './nav-rail';
 import { TopBar } from './top-bar';
 import { FolderTree } from './folder-tree';
@@ -21,6 +30,18 @@ import { CommandPaletteService } from './command-palette.service';
 })
 export class Shell {
   private readonly palette = inject(CommandPaletteService);
+  private readonly router = inject(Router);
+
+  /** Route the assistant lives on, where its dock shortcut is redundant. */
+  private readonly url = toSignal(
+    this.router.events.pipe(
+      filter((event): event is NavigationEnd => event instanceof NavigationEnd),
+      map((event) => event.urlAfterRedirects),
+    ),
+    { initialValue: this.router.url },
+  );
+
+  protected readonly onAssistant = computed(() => this.url().startsWith('/chat'));
 
   protected readonly sidebarOpen = signal(false);
   /** Whether the sidebar occupies space on large screens. */

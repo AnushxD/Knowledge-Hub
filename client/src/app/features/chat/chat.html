@@ -1,0 +1,245 @@
+<div class="flex h-[calc(100vh-var(--dh-topbar-h))] min-h-0">
+  <!-- ── Conversation history ────────────────────────────────────────────── -->
+  <aside
+    class="hidden w-60 shrink-0 flex-col border-r border-hairline bg-surface-1/50 lg:flex"
+  >
+    <div class="p-3">
+      <button
+        type="button"
+        class="flex h-8.5 w-full items-center justify-center gap-2 rounded-dh px-3 text-[12.5px] font-medium text-white transition hover:brightness-110"
+        style="background: linear-gradient(135deg, var(--dh-brand-600), var(--dh-brand-500))"
+        (click)="newConversation()"
+      >
+        <i class="pi pi-plus text-[11px]"></i>
+        New conversation
+      </button>
+    </div>
+
+    <div class="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
+      @for (session of sessions(); track session.id) {
+        <button
+          type="button"
+          class="group mb-0.5 flex w-full items-center gap-2 rounded-dh px-2.5 py-2 text-left transition hover:bg-surface-2"
+          [class.bg-surface-2]="sessionId() === session.id"
+          (click)="openSession(session)"
+        >
+          <i class="pi pi-comments shrink-0 text-[11px] text-subtle"></i>
+          <span class="min-w-0 flex-1 truncate text-[12px] text-muted">
+            {{ session.title }}
+          </span>
+          <span
+            class="shrink-0 text-subtle opacity-0 transition group-hover:opacity-100"
+            role="button"
+            tabindex="0"
+            aria-label="Delete conversation"
+            (click)="deleteSession(session, $event)"
+            (keydown.enter)="deleteSession(session, $event)"
+          >
+            <i class="pi pi-trash text-[11px] hover:text-status-failed"></i>
+          </span>
+        </button>
+      } @empty {
+        <p class="px-2.5 py-2 text-[11.5px] leading-relaxed text-subtle">
+          Conversations you start appear here.
+        </p>
+      }
+    </div>
+  </aside>
+
+  <!-- ── Conversation ───────────────────────────────────────────────────── -->
+  <div class="flex min-w-0 flex-1 flex-col">
+    <header class="border-b border-hairline px-5 py-3 lg:px-7">
+      <div class="flex items-center gap-2.5">
+        <h1 class="text-[16px] font-semibold text-ink">Assistant</h1>
+        <span
+          class="rounded-full border border-hairline px-2 py-px text-[10.5px] text-subtle"
+        >
+          {{ indexed() }} documents indexed
+        </span>
+      </div>
+      <p class="mt-0.5 text-[12px] text-subtle">
+        Answers come only from indexed documents, and every claim links to its source.
+      </p>
+    </header>
+
+    <!-- Transcript -->
+    <div #transcript class="min-h-0 flex-1 overflow-y-auto px-5 py-5 lg:px-7">
+      @if (!turns().length) {
+        <dh-empty-state
+          icon="pi-sparkles"
+          heading="Ask about your documents"
+          message="The assistant reads only what has been indexed. If the answer isn't in your documents it will say so rather than guess — so an answer with citations is one you can check."
+        >
+          @for (suggestion of suggestions; track suggestion) {
+            <button type="button" class="dh-chip" (click)="runSuggestion(suggestion)">
+              {{ suggestion }}
+            </button>
+          }
+        </dh-empty-state>
+      }
+
+      <div class="mx-auto max-w-3xl space-y-5">
+        @for (turn of turns(); track turn.id) {
+          @if (turn.role === 'user') {
+            <div class="flex justify-end">
+              <div
+                class="max-w-[85%] rounded-dh-lg rounded-br-sm px-3.5 py-2.5 text-[13.5px] leading-relaxed text-white"
+                style="background: linear-gradient(135deg, var(--dh-brand-600), var(--dh-brand-500))"
+              >
+                {{ turn.content }}
+              </div>
+            </div>
+          } @else {
+            <div class="flex gap-3">
+              <div
+                class="dh-ai-surface mt-0.5 grid size-7 shrink-0 place-items-center rounded-lg text-[12px] text-brand-400"
+              >
+                <i class="pi pi-sparkles"></i>
+              </div>
+
+              <div class="min-w-0 flex-1">
+                <!-- Sources land before the first token, so the grounding is
+                     visible while the answer is still being written. -->
+                @if (turn.streaming && pendingSources().length) {
+                  <div class="mb-2.5 flex flex-wrap items-center gap-1.5">
+                    <span class="text-[11px] text-subtle">Reading</span>
+                    @for (source of readingDocuments(); track source.documentId) {
+                      <a
+                        class="dh-source-chip"
+                        [routerLink]="['/docs', source.documentId]"
+                        [queryParams]="{ chunk: source.chunkId }"
+                        [dhTooltip]="source.heading"
+                      >
+                        {{ source.documentTitle }}
+                      </a>
+                    }
+                  </div>
+                }
+
+                @if (turn.isRefusal) {
+                  <!-- A designed outcome, not an error — styled as information
+                       so it doesn't read as something having gone wrong. -->
+                  <div
+                    class="flex items-start gap-2.5 rounded-dh border px-3.5 py-2.5"
+                    style="
+                      border-color: color-mix(in oklab, var(--dh-status-pending) 34%, transparent);
+                      background: color-mix(in oklab, var(--dh-status-pending) 10%, transparent);
+                    "
+                  >
+                    <i class="pi pi-info-circle mt-px text-[12px] text-subtle"></i>
+                    <p class="text-[13px] leading-relaxed text-muted">{{ turn.content }}</p>
+                  </div>
+                } @else {
+                  <dh-citation-text
+                    [content]="turn.content"
+                    [citations]="turn.citations"
+                  />
+
+                  @if (turn.streaming) {
+                    <span class="dh-caret" aria-label="Generating"></span>
+                  }
+
+                  <!-- An answer with no surviving citations is shown as such.
+                       Presenting it like a cited one would claim a grounding
+                       the user cannot check, which is the exact failure this
+                       feature exists to prevent. -->
+                  @if (!turn.streaming && !turn.citations.length) {
+                    <div class="mt-3 flex items-start gap-2 text-[11.5px] text-subtle">
+                      <i class="pi pi-exclamation-triangle mt-px text-[10px]"></i>
+                      <span>
+                        This answer cites no sources. It was written from the retrieved
+                        passages, but nothing in it is linked to a specific one — check
+                        the documents before relying on it.
+                      </span>
+                    </div>
+                  }
+
+                  @if (!turn.streaming && turn.citations.length) {
+                    <div class="mt-3 border-t border-hairline pt-2.5">
+                      <p class="mb-1.5 text-[11px] text-subtle">Sources</p>
+                      <div class="flex flex-col gap-1">
+                        @for (citation of turn.citations; track citation.marker) {
+                          <a
+                            class="group flex items-center gap-2 text-[12px] text-muted transition hover:text-ink"
+                            [routerLink]="['/docs', citation.documentId]"
+                            [queryParams]="{ chunk: citation.chunkId }"
+                          >
+                            <span class="dh-citation shrink-0">{{ citation.marker }}</span>
+                            <span class="truncate">
+                              {{ citation.documentTitle }}
+                              <span class="text-subtle">· {{ citation.heading }}</span>
+                            </span>
+                            <i
+                              class="pi pi-angle-right ml-auto shrink-0 text-[10px] text-subtle opacity-0 transition group-hover:opacity-100"
+                            ></i>
+                          </a>
+                        }
+                      </div>
+                    </div>
+                  }
+                }
+              </div>
+            </div>
+          }
+        }
+
+        @if (failure(); as error) {
+          <div
+            class="flex items-start gap-2.5 rounded-dh border px-3.5 py-2.5 text-[12.5px]"
+            style="
+              border-color: color-mix(in oklab, var(--dh-status-failed) 30%, transparent);
+              background: color-mix(in oklab, var(--dh-status-failed) 10%, transparent);
+            "
+          >
+            <i class="pi pi-exclamation-triangle mt-px text-[12px] text-status-failed"></i>
+            <span class="text-muted">{{ error }}</span>
+          </div>
+        }
+      </div>
+    </div>
+
+    <!-- ── Composer ─────────────────────────────────────────────────────── -->
+    <div class="border-t border-hairline px-5 py-3.5 lg:px-7">
+      <div class="mx-auto max-w-3xl">
+        <div
+          class="flex items-end gap-2 rounded-dh border border-hairline bg-surface-1 px-3 py-2 transition focus-within:border-brand-400"
+        >
+          <textarea
+            rows="1"
+            class="max-h-40 min-w-0 flex-1 resize-none bg-transparent py-1 text-[13.5px] text-ink outline-none placeholder:text-subtle"
+            placeholder="Ask about your documents…"
+            [value]="draft()"
+            (input)="onInput($event)"
+            (keydown)="onKeydown($event)"
+          ></textarea>
+
+          @if (sending()) {
+            <button
+              type="button"
+              class="grid size-8 shrink-0 place-items-center rounded-dh border border-hairline text-subtle transition hover:text-ink"
+              dhTooltip="Stop generating"
+              (click)="stop()"
+            >
+              <i class="pi pi-times text-[12px]"></i>
+            </button>
+          } @else {
+            <button
+              type="button"
+              class="grid size-8 shrink-0 place-items-center rounded-dh text-white transition disabled:opacity-40"
+              style="background: linear-gradient(135deg, var(--dh-brand-600), var(--dh-brand-500))"
+              [disabled]="!canSend()"
+              (click)="send()"
+              aria-label="Send"
+            >
+              <i class="pi pi-send text-[12px]"></i>
+            </button>
+          }
+        </div>
+
+        <p class="mt-1.5 text-center text-[11px] text-subtle">
+          Grounded in indexed documents only. Check the cited sources for anything that matters.
+        </p>
+      </div>
+    </div>
+  </div>
+</div>

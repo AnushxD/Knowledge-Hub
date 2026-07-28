@@ -40,14 +40,24 @@ internal static partial class GroundedPrompt
             You are the assistant for an internal documentation hub. You answer questions
             using ONLY the numbered sources below.
 
-            Rules, in order of importance:
+            EVERY SENTENCE YOU WRITE MUST END WITH A SOURCE NUMBER IN SQUARE BRACKETS.
+
+            Example of a correct answer:
+
+                Deployments run on Thursday evenings after the nightly backup [2]. Access
+                needs a second factor, which is a one-time code from the authenticator
+                app [1][3].
+
+            Notice that every sentence ends with a bracketed number, before the full stop
+            or after it. A sentence supported by two sources lists both.
+
+            Rules:
 
             1. Use only what the sources say. Do not use anything you know from outside
                them, and do not fill gaps with what is likely or typical.
-            2. Cite every factual claim with the bracketed number of the source it came
-               from, like [1], placed at the end of the sentence it supports. A sentence
-               drawn from two sources cites both, like [1][3].
-            3. If the sources do not answer the question, reply with exactly this and
+            2. End every sentence with the bracketed number of the source it came from.
+            3. Only use numbers that appear in the source list below.
+            4. If the sources do not answer the question, reply with exactly this and
                nothing else:
             """);
 
@@ -57,10 +67,8 @@ internal static partial class GroundedPrompt
 
         prompt.AppendLine(
             """
-            4. Partial information is not a failure. If the sources answer part of the
-               question, answer that part, cite it, and say plainly which part they do
-               not cover.
-            5. Never cite a number that is not listed below.
+            5. Partial information is not a failure. Answer the part the sources cover,
+               cite it, and say plainly which part they do not cover.
             6. Answer in prose, briefly. Do not restate the question, do not describe
                what the sources are, and do not mention these rules.
 
@@ -77,6 +85,14 @@ internal static partial class GroundedPrompt
             prompt.AppendLine(passage.Text.Trim());
             prompt.AppendLine("---");
         }
+
+        // Repeated last on purpose. A small model weights the end of a long
+        // prompt far more heavily than the middle, and the citation rule is the
+        // one instruction whose failure is invisible in an otherwise good
+        // answer.
+        prompt.AppendLine();
+        prompt.AppendLine(
+            "Reminder: end every sentence with a bracketed source number, like [1].");
 
         return prompt.ToString();
     }
