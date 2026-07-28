@@ -25,12 +25,25 @@ internal sealed class BlobStorageHealthCheck(
             var container = client.GetBlobContainerClient(_options.ContainerName);
             var exists = await container.ExistsAsync(cancellationToken);
 
-            return HealthCheckResult.Healthy("Blob storage reachable.", new Dictionary<string, object>
+            var data = new Dictionary<string, object>
             {
                 ["account"] = client.AccountName,
                 ["container"] = _options.ContainerName,
                 ["containerExists"] = exists.Value,
-            });
+            };
+
+            // The container is provisioned by an explicit setup step, never by
+            // the app at runtime. Missing means setup has not been run, so say
+            // so — and name the command — rather than failing later on upload.
+            if (!exists.Value)
+            {
+                return HealthCheckResult.Degraded(
+                    $"Blob storage is reachable but the '{_options.ContainerName}' container "
+                        + "does not exist. Run: dotnet run --project server/src/DocHub.Api -- init-storage",
+                    data: data);
+            }
+
+            return HealthCheckResult.Healthy("Blob storage reachable.", data);
         }
         catch (Exception ex)
         {

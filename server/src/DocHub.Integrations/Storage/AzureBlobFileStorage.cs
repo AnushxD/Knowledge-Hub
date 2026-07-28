@@ -12,12 +12,6 @@ internal sealed class AzureBlobFileStorage : IFileStorage
     private readonly FileStorageOptions _options;
     private readonly ILogger<AzureBlobFileStorage> _logger;
 
-    /// <summary>
-    /// Created once and awaited by every caller, so the container existence
-    /// check costs one round trip per process rather than one per upload.
-    /// </summary>
-    private readonly Lazy<Task<BlobContainerClient>> _container;
-
     public AzureBlobFileStorage(
         BlobServiceClient client,
         IOptions<FileStorageOptions> options,
@@ -26,20 +20,30 @@ internal sealed class AzureBlobFileStorage : IFileStorage
         _client = client;
         _options = options.Value;
         _logger = logger;
-        _container = new Lazy<Task<BlobContainerClient>>(CreateContainerAsync);
     }
 
-    private async Task<BlobContainerClient> CreateContainerAsync()
+    /// <summary>
+    /// The container is a provisioned resource, not something a request
+    /// creates. The read and write paths below assume it already exists —
+    /// <see cref="EnsureReadyAsync"/> is the only method that provisions it,
+    /// and it is invoked from the explicit `init-storage` setup command.
+    /// </summary>
+    private BlobContainerClient Container =>
+        _client.GetBlobContainerClient(_options.ContainerName);
+
+    public async Task EnsureReadyAsync(CancellationToken ct = default)
     {
-        var container = _client.GetBlobContainerClient(_options.ContainerName);
-        // Private by default: documents must never be world-readable, and an
-        // explicit access level here stops a future default change from
-        // silently publishing them.
-        await container.CreateIfNotExistsAsync(PublicAccessType.None);
-        return container;
-    }
+        // Private access explicitly: documents must never be world-readable,
+        // and stating it here stops a future default change from publishing
+        // them silently.
+        var response = await Container.CreateIfNotExistsAsync(PublicAccessType.None, cancellationToken: ct);
 
-    public Task EnsureReadyAsync(CancellationToken ct = default) => _container.Value;
+        _logger.LogInformation(
+            response is null
+                ? "Blob container {Container} already exists."
+                : "Created blob container {Container}.",
+            _options.ContainerName);
+    }
 
     public async Task<string> SaveAsync(
         Stream content,
@@ -47,9 +51,8 @@ internal sealed class AzureBlobFileStorage : IFileStorage
         string contentType,
         CancellationToken ct = default)
     {
-        var container = await _container.Value;
         var storagePath = BuildStoragePath(originalFileName);
-        var blob = container.GetBlobClient(storagePath);
+        var blob = Container.GetBlobClient(storagePath);
 
         await blob.UploadAsync(
             content,
@@ -67,8 +70,7 @@ internal sealed class AzureBlobFileStorage : IFileStorage
 
     public async Task<StoredFile?> OpenReadAsync(string storagePath, CancellationToken ct = default)
     {
-        var container = await _container.Value;
-        var blob = container.GetBlobClient(storagePath);
+        var blob = Container.GetBlobClient(storagePath);
 
         try
         {
@@ -90,8 +92,7 @@ internal sealed class AzureBlobFileStorage : IFileStorage
 
     public async Task<bool> DeleteAsync(string storagePath, CancellationToken ct = default)
     {
-        var container = await _container.Value;
-        var response = await container
+        var response = await Container
             .GetBlobClient(storagePath)
             .DeleteIfExistsAsync(cancellationToken: ct);
 
@@ -121,8 +122,7 @@ internal sealed class AzureBlobFileStorage : IFileStorage
 
     public async Task<bool> ExistsAsync(string storagePath, CancellationToken ct = default)
     {
-        var container = await _container.Value;
-        var response = await container.GetBlobClient(storagePath).ExistsAsync(ct);
+        var response = await Container.GetBlobClient(storagePath).ExistsAsync(ct);
         return response.Value;
     }
 

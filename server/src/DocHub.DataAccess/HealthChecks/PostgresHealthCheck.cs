@@ -28,14 +28,35 @@ internal sealed class PostgresHealthCheck(IOptions<DataAccessOptions> options) :
 
             await using var command = connection.CreateCommand();
             command.CommandText =
-                "select default_version from pg_available_extensions where name = 'vector'";
-            var vectorVersion = await command.ExecuteScalarAsync(cancellationToken) as string;
+                """
+                select
+                    (select default_version from pg_available_extensions where name = 'vector'),
+                    to_regclass('public.__ef_migrations_history') is not null
+                """;
+
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            await reader.ReadAsync(cancellationToken);
+            var vectorVersion = reader.IsDBNull(0) ? null : reader.GetString(0);
+            var migrationsApplied = reader.GetBoolean(1);
 
             var data = new Dictionary<string, object>
             {
                 ["server"] = connection.PostgreSqlVersion.ToString(),
                 ["pgvector"] = vectorVersion ?? "not available",
+                ["migrationsApplied"] = migrationsApplied,
             };
+
+            // Setup is a deliberate manual step, so an un-migrated database is
+            // a normal state to report clearly rather than a crash — the
+            // message names the exact command to fix it.
+            if (!migrationsApplied)
+            {
+                return HealthCheckResult.Degraded(
+                    "Postgres is reachable but no migrations have been applied. "
+                        + "Run: dotnet ef database update --project server/src/DocHub.DataAccess "
+                        + "--startup-project server/src/DocHub.Api",
+                    data: data);
+            }
 
             return vectorVersion is null
                 ? HealthCheckResult.Degraded(

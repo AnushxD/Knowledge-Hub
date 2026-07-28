@@ -30,16 +30,20 @@ builder.Services.AddCors(options => options.AddPolicy(DevCorsPolicy, policy => p
 
 var app = builder.Build();
 
-// Create the blob container if it is missing. Idempotent and cheap, and it
-// surfaces a bad storage configuration at boot instead of on first upload.
-await app.Services.InitializeIntegrationsAsync();
+// One-shot setup command: `dotnet run -- init-storage`.
+//
+// Provisioning is deliberately never done at startup. Creating databases or
+// containers as a side effect of booting hides real configuration problems,
+// races when more than one instance starts, and makes it unclear who owns the
+// resource. Setup is an explicit step the operator runs — see the README.
+if (args.Contains("init-storage"))
+{
+    await app.Services.InitializeIntegrationsAsync();
+    return;
+}
 
 if (app.Environment.IsDevelopment())
 {
-    // Keeps a fresh clone one `dotnet run` away from a working database.
-    // Production applies migrations from the release pipeline instead.
-    await app.Services.MigrateDataAccessAsync();
-
     app.MapOpenApi();
     app.UseCors(DevCorsPolicy);
 }

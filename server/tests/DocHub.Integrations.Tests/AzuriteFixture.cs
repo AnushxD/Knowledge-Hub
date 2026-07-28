@@ -26,7 +26,7 @@ public sealed class AzuriteFixture : IAsyncLifetime
 
     private BlobServiceClient _client = null!;
 
-    public Task InitializeAsync()
+    public async Task InitializeAsync()
     {
         _client = new BlobServiceClient(ConnectionString);
 
@@ -36,14 +36,14 @@ public sealed class AzuriteFixture : IAsyncLifetime
             ContainerName = _containerName,
         });
 
-        // The implementation creates the container on first use, so there is
-        // nothing to set up here — that path gets exercised by the first test.
         Storage = new AzureBlobFileStorage(
             _client,
             options,
             NullLogger<AzureBlobFileStorage>.Instance);
 
-        return Task.CompletedTask;
+        // Mirrors the real `init-storage` setup step — the app never creates
+        // the container itself at runtime.
+        await Storage.EnsureReadyAsync();
     }
 
     public async Task DisposeAsync() =>

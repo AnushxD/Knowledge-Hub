@@ -78,14 +78,29 @@ approve the build tooling once:
 npm --prefix client approve-scripts esbuild fsevents lmdb msgpackr-extract @parcel/watcher
 ```
 
-### 4. Apply database migrations
+### 4. Create the database schema
 
-In **Development** the API applies pending migrations automatically on startup,
-so you can usually skip this. To run them explicitly:
+The API **never** creates or migrates anything on startup — provisioning is an
+explicit step you run, so nothing is silently created behind your back.
 
 ```bash
 dotnet ef database update --project server/src/DocHub.DataAccess --startup-project server/src/DocHub.Api
 ```
+
+### 5. Create the blob storage container
+
+```bash
+dotnet run --project server/src/DocHub.Api -- init-storage
+```
+
+This creates the private `documents` container in Azurite and exits. It is
+idempotent — running it again just reports that the container already exists.
+
+### 6. Confirm setup is complete
+
+Start the API (see below) and open http://localhost:5080/healthz. It should
+report `"status": "Healthy"`. If either step above was missed, the status is
+`Degraded` and the response names the exact command to run.
 
 ---
 
@@ -115,7 +130,8 @@ npm --prefix client start
 | Azurite blob | `localhost:10000` |
 
 `GET /healthz` should return `"status": "Healthy"` with both the `postgres` and
-`blob-storage` checks green. If it doesn't, start there — see
+`blob-storage` checks green. A `Degraded` status means a setup step is missing —
+the response says which, and the command that fixes it. See
 [Troubleshooting](#troubleshooting).
 
 ### Running and debugging from VS Code
@@ -202,7 +218,9 @@ Key settings, one strongly-typed Options class per external dependency:
 | `Cors:AllowedOrigins` | Origins allowed to call the API in development |
 
 All are validated at startup, so a missing or empty value fails the boot rather
-than the first request.
+than the first request. Note that validation is all the app does at startup —
+it never creates a database, applies a migration, or creates a container on
+its own. Those are the explicit setup steps above.
 
 Never put a real secret in any `appsettings.*.json`. To add one locally:
 
@@ -220,10 +238,23 @@ dotnet user-secrets set "SomeProvider:ApiKey" "value" --project server/src/DocHu
 dotnet ef migrations add YourMigrationName --project server/src/DocHub.DataAccess --startup-project server/src/DocHub.Api
 ```
 
-**Reset the local database** completely:
+**Reset everything** — wipes the database *and* all stored files, then re-runs
+setup:
 
 ```bash
 docker compose down -v && docker compose up -d --wait
+```
+```bash
+dotnet ef database update --project server/src/DocHub.DataAccess --startup-project server/src/DocHub.Api
+```
+```bash
+dotnet run --project server/src/DocHub.Api -- init-storage
+```
+
+**Roll a migration back** to a known one (use `0` to undo everything):
+
+```bash
+dotnet ef database update PreviousMigrationName --project server/src/DocHub.DataAccess --startup-project server/src/DocHub.Api
 ```
 
 **Add an icon to the client** — extend the map in `client/tools/gen-icons.mjs`,
@@ -278,6 +309,19 @@ Roadmap phases (search, AI assistant, MCP, auth, deployment) are listed in
 containers aren't up. Run `docker compose ps` and check both are healthy.
 Config is validated at boot on purpose, so a bad connection string fails
 immediately rather than on the first request.
+
+**`/healthz` reports `Degraded`** — a setup step hasn't been run. The response
+says which one:
+
+- `no migrations have been applied` → run step 4
+- `container does not exist` → run step 5
+
+**A request fails with "container does not exist"** — same cause. The app
+deliberately does not create storage at runtime, so run step 5.
+
+**`relation "documents" does not exist`** — the database schema is missing; run
+step 4. This also happens after `docker compose down -v`, which deletes the
+volumes.
 
 **`/healthz` reports `blob-storage` unhealthy** — Azurite trails the Azure SDK's
 service version and rejects newer ones. `docker-compose.yml` passes

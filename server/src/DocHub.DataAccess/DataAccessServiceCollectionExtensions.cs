@@ -41,18 +41,4 @@ public static class DataAccessServiceCollectionExtensions
 
         return services;
     }
-
-    /// <summary>
-    /// Applies pending migrations at startup.
-    ///
-    /// Convenient for local development and the single-instance IIS deployment;
-    /// once the API scales out, migrations should move to a deliberate step in
-    /// the release pipeline so two instances cannot race each other.
-    /// </summary>
-    public static async Task MigrateDataAccessAsync(this IServiceProvider services)
-    {
-        await using var scope = services.CreateAsyncScope();
-        var db = scope.ServiceProvider.GetRequiredService<DocHubDbContext>();
-        await db.Database.MigrateAsync();
-    }
 }
