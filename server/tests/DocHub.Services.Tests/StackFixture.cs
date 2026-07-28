@@ -67,7 +67,11 @@ public sealed class StackFixture : IAsyncLifetime
     }
 
     private DocHubDbContext CreateContext() =>
-        new(new DbContextOptionsBuilder<DocHubDbContext>().UseNpgsql(ConnectionString).Options);
+        new(new DbContextOptionsBuilder<DocHubDbContext>()
+            // Mirrors AddDataAccess: without this Npgsql has no mapping for the
+            // pgvector column and the model fails validation.
+            .UseNpgsql(ConnectionString, npgsql => npgsql.UseVector())
+            .Options);
 
     /// <summary>The services of one request, sharing a DbContext as a request would.</summary>
     public Scope NewScope()

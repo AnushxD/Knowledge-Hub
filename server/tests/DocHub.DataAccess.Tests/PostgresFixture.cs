@@ -36,7 +36,9 @@ public sealed class PostgresFixture : IAsyncLifetime
     public DocHubDbContext CreateContext()
     {
         var options = new DbContextOptionsBuilder<DocHubDbContext>()
-            .UseNpgsql(ConnectionString)
+            // Mirrors AddDataAccess: without this Npgsql has no mapping for the
+            // pgvector column and the model fails validation.
+            .UseNpgsql(ConnectionString, npgsql => npgsql.UseVector())
             .Options;
 
         return new DocHubDbContext(options);
