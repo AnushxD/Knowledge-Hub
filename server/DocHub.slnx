@@ -5,4 +5,7 @@
     <Project Path="src/DocHub.Integrations/DocHub.Integrations.csproj" />
     <Project Path="src/DocHub.Services/DocHub.Services.csproj" />
   </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/DocHub.DataAccess.Tests/DocHub.DataAccess.Tests.csproj" />
+  </Folder>
 </Solution>

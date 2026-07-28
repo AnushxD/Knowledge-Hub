@@ -32,6 +32,10 @@ var app = builder.Build();
 
 if (app.Environment.IsDevelopment())
 {
+    // Keeps a fresh clone one `dotnet run` away from a working database.
+    // Production applies migrations from the release pipeline instead.
+    await app.Services.MigrateDataAccessAsync();
+
     app.MapOpenApi();
     app.UseCors(DevCorsPolicy);
 }
