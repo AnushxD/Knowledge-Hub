@@ -1,4 +1,5 @@
 using Azure.Storage.Blobs;
+using DocHub.Integrations.Embeddings;
 using DocHub.Integrations.HealthChecks;
 using DocHub.Integrations.Storage;
 using Microsoft.Extensions.Configuration;
@@ -37,8 +38,44 @@ public static class IntegrationsServiceCollectionExtensions
         // holds no per-request state.
         services.AddSingleton<IFileStorage, AzureBlobFileStorage>();
 
+        services
+            .AddOptions<EmbeddingOptions>()
+            .Bind(configuration.GetSection(EmbeddingOptions.SectionName))
+            .Validate(
+                options => options.Dimensions > 0,
+                "Embeddings:Dimensions must be greater than zero.")
+            .Validate(
+                options => options.Provider is EmbeddingOptions.OllamaProvider
+                    or EmbeddingOptions.HashingProvider,
+                $"Embeddings:Provider must be '{EmbeddingOptions.OllamaProvider}' or "
+                + $"'{EmbeddingOptions.HashingProvider}'.")
+            .ValidateOnStart();
+
+        var embeddingOptions = configuration
+            .GetSection(EmbeddingOptions.SectionName)
+            .Get<EmbeddingOptions>() ?? new EmbeddingOptions();
+
+        // The provider is chosen from configuration at startup, not probed at
+        // run time: search quality depends on every vector in the table coming
+        // from the same model, so silently falling back mid-run would poison
+        // the index with incomparable embeddings.
+        if (embeddingOptions.Provider == EmbeddingOptions.HashingProvider)
+        {
+            services.AddSingleton<IEmbeddingProvider, HashingEmbeddingProvider>();
+        }
+        else
+        {
+            services
+                .AddHttpClient<IEmbeddingProvider, OllamaEmbeddingProvider>(client =>
+                {
+                    client.BaseAddress = new Uri(embeddingOptions.BaseUrl);
+                    client.Timeout = TimeSpan.FromSeconds(embeddingOptions.TimeoutSeconds);
+                });
+        }
+
         services.AddHealthChecks()
-            .AddCheck<BlobStorageHealthCheck>("blob-storage", tags: ["ready", "storage"]);
+            .AddCheck<BlobStorageHealthCheck>("blob-storage", tags: ["ready", "storage"])
+            .AddCheck<EmbeddingProviderHealthCheck>("embeddings", tags: ["ready", "ai"]);
 
         return services;
     }

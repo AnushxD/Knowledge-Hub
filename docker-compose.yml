@@ -46,6 +46,31 @@ services:
       timeout: 3s
       retries: 10
 
+  ollama:
+    # Local embedding model for the ingestion pipeline. Free and key-less, and
+    # document text never leaves the machine. It sits behind IEmbeddingProvider,
+    # so swapping in a hosted provider later is a config change plus a re-index.
+    #
+    # The model itself is not bundled — pull it once after first start:
+    #   docker compose exec ollama ollama pull nomic-embed-text
+    # The API's /healthz reports the exact command if it is missing.
+    image: ollama/ollama:latest
+    container_name: dochub-ollama
+    restart: unless-stopped
+    ports:
+      - '11434:11434'
+    volumes:
+      - ollama-data:/root/.ollama
+    healthcheck:
+      # Ollama has no shell utilities beyond its own CLI in this image, so the
+      # CLI is the probe.
+      test: ['CMD', 'ollama', 'list']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
 volumes:
   postgres-data:
   azurite-data:
+  ollama-data:
