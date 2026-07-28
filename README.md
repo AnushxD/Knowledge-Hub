@@ -1,14 +1,14 @@
 # DocHub — AI Documentation & Knowledge Hub
 
 An internal Documentation & Knowledge Hub: upload, organise and search team
-documentation, with an AI assistant (from phase 3) that answers questions
-grounded strictly in indexed content and always cites its sources.
+documentation, with an AI assistant that answers questions grounded strictly
+in indexed content and always cites its sources.
 
-> **Status:** phases 1 and 2 are **complete** — upload, folders, metadata and
-> versioning work end to end, and uploaded documents are automatically
-> extracted, chunked, embedded and made searchable by hybrid keyword +
-> semantic search. Phase 3 (the AI assistant) is next. See
-> [Current state](#current-state).
+> **Status:** phases 1–3 are **complete**. Documents upload, index and become
+> searchable by hybrid keyword + semantic search, and an AI assistant answers
+> questions from them — citing the exact passage behind every claim, and
+> saying "I don't know" when the answer isn't there. Phase 4 (MCP knowledge
+> sources) is next. See [Current state](#current-state).
 
 ---
 
@@ -55,8 +55,8 @@ export PATH="$PATH:$HOME/.dotnet/tools"
 ### 2. Start local infrastructure
 
 Postgres (with the pgvector extension), Azurite (the Azure Blob Storage
-emulator) and Ollama (the local embedding model) all run in Docker. Nothing
-else needs installing locally.
+emulator) and Ollama (the local AI models) all run in Docker. Nothing else
+needs installing locally.
 
 ```bash
 docker compose up -d --wait
@@ -102,17 +102,26 @@ dotnet run --project server/src/DocHub.Api -- init-storage
 This creates the private `documents` container in Azurite and exits. It is
 idempotent — running it again just reports that the container already exists.
 
-### 6. Pull the embedding model
+### 6. Pull the models
 
-Ingestion turns document text into vectors with a local model. It is not
-bundled with the Ollama image, so pull it once:
+Two local models do the AI work — one turns text into vectors for search, the
+other writes the assistant's answers. Neither is bundled with the Ollama
+image, so pull them once:
 
 ```bash
 docker compose exec ollama ollama pull nomic-embed-text
 ```
+```bash
+docker compose exec ollama ollama pull llama3.2:3b
+```
 
-That is a ~275 MB download and needs no API key or account. Everything stays
-on your machine — document text is never sent anywhere.
+About 2.3 GB in total, with no API key or account needed. Everything stays on
+your machine — neither your documents nor your questions are sent anywhere.
+
+On CPU-only Docker expect the assistant to produce roughly 5–15 tokens a
+second, so an answer streams in over several seconds. That is the cost of
+running locally for free; see [Configuration](#configuration) for what to
+change if you'd rather use a hosted model.
 
 ### 7. Confirm setup is complete
 
@@ -151,7 +160,7 @@ npm --prefix client start
 | Ollama | `localhost:11434` |
 
 `GET /healthz` should return `"status": "Healthy"` with the `postgres`,
-`blob-storage` and `embeddings` checks green. A `Degraded` status means a setup
+`blob-storage`, `embeddings` and `assistant-model` checks green. A `Degraded` status means a setup
 step is missing — the response says which, and the command that fixes it. See
 [Troubleshooting](#troubleshooting).
 
@@ -192,8 +201,8 @@ PDF takes far longer to process than an upload should. The job:
 4. **Stores** chunks, embeddings and section references in Postgres
 5. **Marks** the document `Indexed`, or `Failed` with a reason you can read
 
-A chunk never spans two sections, which is what lets a search result and
-(from phase 3) a citation say "Page 4" rather than pointing vaguely at a file.
+A chunk never spans two sections, which is what lets a search result or a
+citation say "Page 4" rather than pointing vaguely at a file.
 
 Watch a document move through the pipeline on the
 [jobs dashboard](http://localhost:5080/jobs), or by its status in the library.
@@ -228,6 +237,41 @@ quietly returning half the answer.
 
 ---
 
+## How the assistant answers
+
+The assistant answers **only** from indexed documents. Asking it a question:
+
+1. **Retrieves** passages using the same hybrid search the search screen uses —
+   deliberately, so what it reasons over is what you could have found yourself
+2. **Refuses immediately if nothing was retrieved.** The model is never called
+   with no sources; that is precisely the situation that produces confident,
+   fabricated answers
+3. **Builds a grounded prompt** — the numbered passages plus rules that permit
+   nothing outside them
+4. **Streams** the answer back token by token
+5. **Verifies every citation** against the passages actually supplied, then
+   persists the turn
+
+Step 5 is what makes the citations trustworthy. A model asked to cite will
+occasionally produce a plausible `[7]` when it was given four sources; those
+markers are stripped rather than rendered as links to nothing. If an answer
+ends up citing nothing at all, the UI says so instead of letting it pass as
+grounded.
+
+**"I don't know" is a designed outcome, not a failure.** When the documents
+don't cover a question the assistant says so plainly, and that turn is saved
+like any other — a recorded refusal is what makes the grounding auditable.
+
+Everything is persisted: questions, answers, and the sources each answer
+cited, with the document title and heading copied onto the citation. Renaming
+or deleting a document later cannot rewrite what a historical answer claimed
+to be based on.
+
+Citations link to `/docs/:id?chunk=N`, which opens the document with that exact
+passage highlighted.
+
+---
+
 ## Running tests
 
 ```bash
@@ -250,11 +294,13 @@ providers. Docker must be running.
   to free its documents' files, or the two search branches colliding on a
   shared DbContext.
 
-  The embedding model is the one thing faked here, using the deterministic
-  `hashing` provider — tests must not depend on a model being pulled, and what
-  is under test is the pipeline's wiring rather than the quality of the
-  vectors. Chunking and extraction need no infrastructure at all and run as
-  plain unit tests.
+  The two AI models are the only things faked: embeddings use the
+  deterministic `hashing` provider, and the assistant's model is scripted per
+  test. Tests must not depend on a model being pulled, and what is under test
+  is the orchestrator's judgement — what it retrieves, whether it calls the
+  model at all, what it does with a fabricated citation — none of which
+  depends on a model being good. Chunking, extraction and citation
+  verification need no infrastructure at all and run as plain unit tests.
 
 None of them touch your development data. Override the targets with the
 `DOCHUB_TEST_DB` and `DOCHUB_TEST_BLOBS` environment variables if you need to.
@@ -271,12 +317,12 @@ Knowledge-Hub/
 ├── client/                       # Angular 22 SPA
 │   ├── src/app/core/             # models, gateway, state, theme
 │   ├── src/app/layout/           # shell, nav rail, folder tree, command palette
-│   ├── src/app/features/         # dashboard, browse, document detail, search, settings
+│   ├── src/app/features/         # dashboard, browse, document detail, search, chat, settings
 │   ├── src/app/shared/           # reusable components, pipes, directives
 │   └── tools/gen-icons.mjs       # regenerates the Lucide icon CSS
 ├── server/
 │   ├── src/DocHub.Api/           # controllers, DI composition, health checks
-│   ├── src/DocHub.Services/      # business logic: documents, ingestion, search
+│   ├── src/DocHub.Services/      # business logic: documents, ingestion, search, chat
 │   ├── src/DocHub.DataAccess/    # EF Core, entities, repositories, migrations
 │   ├── src/DocHub.Integrations/  # external systems: blob storage, embeddings, LLM, MCP
 │   └── tests/                    # integration tests
@@ -312,7 +358,23 @@ Key settings, one strongly-typed Options class per external dependency:
 | `Embeddings:Dimensions` | Vector width — **must match the migrated column**, see below |
 | `Ingestion:TargetTokens` | Chunk size target (default 800) |
 | `Ingestion:OverlapTokens` | Tokens repeated between chunks (default 120) |
+| `Llm:Provider` | `ollama` — the model that writes answers |
+| `Llm:Model` | Answer model (default `llama3.2:3b`) |
+| `Llm:Temperature` | Low by default (0.1); sampling variety is how a model starts inventing |
+| `Chat:PassageCount` | Passages retrieved per question (default 6) |
+| `Chat:HistoryTurns` | Prior turns replayed for follow-ups (default 4) |
 | `Cors:AllowedOrigins` | Origins allowed to call the API in development |
+
+**Using a bigger or hosted model.** `Llm:Model` takes any model Ollama can
+serve — `llama3.1:8b` or `qwen2.5:7b` follow the citation format noticeably
+better than the 3B default, at the cost of speed and disk. Pull it, change the
+setting, restart; nothing is re-indexed, because generation and retrieval are
+separate concerns.
+
+Switching to a hosted API (Claude, OpenAI) is one more `ILlmProvider`
+implementation and one more branch in `AddIntegrations` — the RAG orchestrator
+never learns which model answered. That is why `ILlmProvider` exists rather
+than the orchestrator calling Ollama directly.
 
 **Running without a model.** Setting `Embeddings:Provider` to `hashing` uses
 deterministic in-process vectors instead — no download, no network. The
@@ -363,7 +425,7 @@ dotnet ef database update --project server/src/DocHub.DataAccess --startup-proje
 dotnet run --project server/src/DocHub.Api -- init-storage
 ```
 ```bash
-docker compose exec ollama ollama pull nomic-embed-text
+docker compose exec ollama ollama pull nomic-embed-text && docker compose exec ollama ollama pull llama3.2:3b
 ```
 
 **Re-index a document** after it fails, or after changing the chunking
@@ -417,15 +479,19 @@ docker compose down
 | Chunking + embeddings (`IEmbeddingProvider`) | Done |
 | Background ingestion on Hangfire | Done |
 | Hybrid keyword + semantic search, with a search screen | Done |
+| Answer generation (`ILlmProvider`) | Done |
+| RAG orchestrator with citation verification | Done |
+| Assistant screen: streaming answers, sources, session history | Done |
 
-**Phases 1 and 2 are complete.** Upload a Markdown, PDF or Word file and it is
-extracted, chunked, embedded and searchable within seconds — by exact term or
-by a question in your own words.
+**Phases 1–3 are complete.** Upload a Markdown, PDF or Word file and it is
+extracted, chunked, embedded and searchable within seconds. Ask a question and
+the assistant answers from those documents, links every claim to the exact
+passage behind it, and declines when the answer isn't there.
 
-Not yet built, by design (later phases): the AI chat assistant with citations;
-MCP repository sources; authentication and roles; the deployment pipeline. OCR
-for scanned documents is also deferred, so image-only PDFs are reported as
-failed rather than silently indexed as empty.
+Not yet built, by design (later phases): MCP repository sources;
+authentication and roles; the deployment pipeline. OCR for scanned documents is
+also deferred, so image-only PDFs are reported as failed rather than silently
+indexed as empty.
 
 The client talks to the API through one seam, `KnowledgeGateway`. Two
 implementations exist:
@@ -459,6 +525,10 @@ requests are same-origin and CORS never applies.
 | `GET` | `/api/documents/supported-types` | File extensions ingestion can index |
 | `POST` | `/api/documents/{id}/reindex` | Requeue a document for ingestion |
 | `GET` | `/api/search?query=…` | Hybrid keyword + semantic search over indexed chunks |
+| `POST` | `/api/chat` | Ask a question; streams the grounded answer as server-sent events |
+| `GET` | `/api/chat/sessions` | Conversation history |
+| `GET` | `/api/chat/sessions/{id}` | One conversation with citations |
+| `DELETE` | `/api/chat/sessions/{id}` | Delete a conversation |
 
 Errors come back as RFC 7807 problem details — 400 for a rejected business
 rule (with a message meant for the user), 404 for a missing entity.
@@ -496,6 +566,7 @@ says which one:
 - `no migrations have been applied` → run step 4
 - `container does not exist` → run step 5
 - `the 'nomic-embed-text' model is not installed` → run step 6
+- `the 'llama3.2:3b' model is not installed` → run step 6
 
 **Documents never leave Pending** — the background worker is not processing
 them. Check the [jobs dashboard](http://localhost:5080/jobs) for failed jobs
@@ -514,6 +585,21 @@ or the model is missing. Results shown are keyword-only. Run `docker compose up
 **Search finds nothing** — only documents that reached `Indexed` are
 searchable, by design: a half-processed document must not be citable. Check the
 library for anything still pending or failed.
+
+**The assistant says it has no information, but the document is right there** —
+it only sees what retrieval returned. Search the same wording first: if the
+search screen doesn't surface the passage either, the problem is retrieval, not
+the assistant. Narrowing the question to the words the document actually uses
+usually fixes it.
+
+**Answers arrive but cite nothing** — the model ignored the citation format.
+Smaller models do this more often; `llama3.1:8b` or `qwen2.5:7b` follow it
+noticeably better (see [Configuration](#configuration)). The UI flags these
+answers rather than passing them off as grounded.
+
+**The assistant is very slow** — a local model on CPU-only Docker produces
+roughly 5–15 tokens a second. Answers stream so you can read as they arrive.
+A smaller model, or a hosted provider, is the fix if that isn't fast enough.
 
 **A request fails with "container does not exist"** — same cause. The app
 deliberately does not create storage at runtime, so run step 5.

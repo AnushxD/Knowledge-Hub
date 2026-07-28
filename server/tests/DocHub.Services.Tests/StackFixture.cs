@@ -2,8 +2,10 @@ using Azure.Storage.Blobs;
 using DocHub.DataAccess;
 using DocHub.DataAccess.Repositories;
 using DocHub.Integrations.Embeddings;
+using DocHub.Integrations.Llm;
 using DocHub.Integrations.Storage;
 using DocHub.Services;
+using DocHub.Services.Chat;
 using DocHub.Services.Documents;
 using DocHub.Services.Folders;
 using DocHub.Services.Ingestion;
@@ -98,6 +100,11 @@ public sealed class StackFixture : IAsyncLifetime
         var extractors = new TextExtractorRegistry(
             [new PlainTextExtractor(), new PdfTextExtractor(), new OpenXmlTextExtractor()]);
 
+        var searchService = new SearchService(
+            chunkRepo, embeddings, NullLogger<SearchService>.Instance);
+
+        var llm = new ScriptedLlmProvider();
+
         return new Scope(
             db,
             new FolderService(folderRepo, Storage, user, NullLogger<FolderService>.Instance),
@@ -108,10 +115,63 @@ public sealed class StackFixture : IAsyncLifetime
                 documentRepo, chunkRepo, Storage, extractors,
                 new TextChunker(ingestionOptions), embeddings, queue,
                 NullLogger<IngestionService>.Instance),
-            new SearchService(
-                chunkRepo, embeddings, NullLogger<SearchService>.Instance),
+            searchService,
+            new ChatService(
+                new ChatRepository(db), searchService, llm, user,
+                Options.Create(new ChatOptions()), NullLogger<ChatService>.Instance),
             chunkRepo,
-            queue);
+            queue,
+            llm);
+    }
+
+    /// <summary>
+    /// Returns whatever the test tells it to, and records the prompt it was
+    /// given.
+    ///
+    /// A real model would make these tests non-deterministic and slow, and the
+    /// behaviour under test is the orchestrator's — what it retrieves, what it
+    /// does with a fabricated citation, whether it calls the model at all —
+    /// none of which depends on a model being good.
+    /// </summary>
+    public sealed class ScriptedLlmProvider : ILlmProvider
+    {
+        public string Name => "scripted";
+
+        /// <summary>What the next answer will be.</summary>
+        public string Answer { get; set; } = "A grounded answer [1].";
+
+        /// <summary>Set to throw mid-generation instead of answering.</summary>
+        public Exception? Failure { get; set; }
+
+        /// <summary>The system prompt of the most recent call, or null if never called.</summary>
+        public string? LastPrompt { get; private set; }
+
+        public int CallCount { get; private set; }
+
+        public async IAsyncEnumerable<string> StreamAsync(
+            string systemPrompt,
+            IReadOnlyList<LlmMessage> messages,
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+        {
+            LastPrompt = systemPrompt;
+            LastMessages = messages;
+            CallCount++;
+
+            if (Failure is not null) throw Failure;
+
+            // Fragmented, so the streaming path is exercised rather than a
+            // single-chunk shortcut that would hide reassembly bugs.
+            foreach (var word in Answer.Split(' '))
+            {
+                await Task.Yield();
+                yield return word + " ";
+            }
+        }
+
+        public IReadOnlyList<LlmMessage> LastMessages { get; private set; } = [];
+
+        public Task<LlmAvailability> CheckAvailabilityAsync(CancellationToken ct = default) =>
+            Task.FromResult(new LlmAvailability(true, "Scripted."));
     }
 
     public sealed record Scope(
@@ -120,8 +180,10 @@ public sealed class StackFixture : IAsyncLifetime
         IDocumentService Documents,
         IIngestionService Ingestion,
         ISearchService Search,
+        IChatService Chat,
         IChunkRepository Chunks,
-        RecordingIngestionQueue Queue) : IAsyncDisposable
+        RecordingIngestionQueue Queue,
+        ScriptedLlmProvider Llm) : IAsyncDisposable
     {
         public ValueTask DisposeAsync() => Db.DisposeAsync();
     }
