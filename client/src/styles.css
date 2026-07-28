@@ -374,6 +374,16 @@
     font-weight: 500;
   }
 
+  /* Matched query words inside a search snippet. Tinted rather than the
+     browser's yellow default, which is unreadable on the dark theme. */
+  .dh-mark {
+    border-radius: 3px;
+    padding: 0 2px;
+    background: color-mix(in oklab, var(--dh-brand-500) 22%, transparent);
+    color: var(--dh-text);
+    font-weight: 500;
+  }
+
   .dh-seg {
     display: grid;
     place-items: center;

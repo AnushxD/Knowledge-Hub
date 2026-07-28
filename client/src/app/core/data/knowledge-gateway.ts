@@ -7,6 +7,8 @@ import {
   Folder,
   LibraryStats,
   Person,
+  SearchQuery,
+  SearchResponse,
 } from '../models/knowledge.models';
 
 /**
@@ -23,6 +25,14 @@ export abstract class KnowledgeGateway {
   abstract documents(query: DocumentQuery): Observable<DocumentSummary[]>;
   abstract document(id: string): Observable<DocumentDetail | undefined>;
   abstract stats(): Observable<LibraryStats>;
+
+  /**
+   * Hybrid keyword + semantic search over indexed chunks. Distinct from
+   * `documents()`, which filters the library by metadata — this searches
+   * inside the content.
+   */
+  abstract search(query: SearchQuery): Observable<SearchResponse>;
+
   abstract activity(limit?: number): Observable<ActivityEvent[]>;
   abstract people(): Observable<Person[]>;
   abstract allTags(): Observable<string[]>;

@@ -148,7 +148,7 @@
                 >
                   <div class="mb-1.5 flex items-baseline gap-2">
                     <h2 class="text-[14px] font-semibold text-ink">{{ section.heading }}</h2>
-                    <span class="text-[11px] text-subtle">page {{ section.page }}</span>
+                    <span class="text-[11px] text-subtle">~{{ section.tokenCount }} tokens</span>
                     @if (highlightChunk() === section.chunkId) {
                       <span
                         class="rounded-full px-2 py-px text-[10px] font-medium"
@@ -230,7 +230,7 @@
                     {{ section.body }}
                   </span>
                 </span>
-                <span class="shrink-0 text-[11px] text-subtle">p.{{ section.page }}</span>
+                <span class="shrink-0 text-[11px] text-subtle">~{{ section.tokenCount }}t</span>
               </button>
             }
           </div>

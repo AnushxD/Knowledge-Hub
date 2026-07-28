@@ -66,9 +66,14 @@ export interface DocumentDetail extends DocumentSummary {
 export interface DocumentSection {
   /** Matches the chunk id used by citations (`/docs/:id?chunk=17`). */
   chunkId: number;
+  /**
+   * Where in the document this came from — "Page 4", "Slide 2", a Markdown
+   * heading, a worksheet name. Which one depends on the file type, so it is
+   * shown as-is rather than parsed.
+   */
   heading: string;
-  page: number;
   body: string;
+  tokenCount: number;
 }
 
 export interface DocumentVersion {
@@ -122,6 +127,59 @@ export interface DocumentQuery {
 }
 
 export type SortKey = 'updated-desc' | 'updated-asc' | 'name-asc' | 'name-desc' | 'size-desc';
+
+// ---- search -----------------------------------------------------------------
+
+/** Which retrieval branch produced a result. */
+export type MatchStrategy = 'keyword' | 'vector' | 'both';
+
+export interface SearchResult {
+  documentId: string;
+  title: string;
+  fileName: string;
+  kind: FileKind;
+  extension: string;
+  folderId: string;
+  folderPath: string;
+  /** Chunk position — links straight to the passage: `/docs/:id?chunk=:chunkId`. */
+  chunkId: number;
+  heading: string;
+  snippet: string;
+  score: number;
+  matchedBy: MatchStrategy;
+}
+
+/**
+ * How the two branches contributed. Surfaced in the UI because hybrid results
+ * are otherwise unexplainable — this is what separates "nothing matched" from
+ * "semantic matching is down".
+ */
+export interface SearchDiagnostics {
+  keywordMatches: number;
+  vectorMatches: number;
+  embeddingProvider: string;
+  vectorSearchAvailable: boolean;
+  vectorSearchError?: string;
+}
+
+export interface SearchResponse {
+  query: string;
+  totalMatches: number;
+  elapsedMs: number;
+  /** Normalised query words, so the client highlights exactly what was searched. */
+  terms: string[];
+  results: SearchResult[];
+  diagnostics: SearchDiagnostics;
+}
+
+/** Filters carried alongside a search, mirroring the library's own. */
+export interface SearchQuery {
+  text: string;
+  folderId?: string | null;
+  kinds?: FileKind[];
+  tags?: string[];
+  ownerId?: string;
+}
 
 export interface UploadTask {
   id: string;

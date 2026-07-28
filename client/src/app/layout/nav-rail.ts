@@ -29,7 +29,7 @@ export class NavRail {
   protected readonly items: RailItem[] = [
     { route: '/', icon: 'pi-home', label: 'Home', exact: true },
     { route: '/browse', icon: 'pi-folder', label: 'Library' },
-    { route: '/search', icon: 'pi-search', label: 'Search', phase: 2 },
+    { route: '/search', icon: 'pi-search', label: 'Search' },
     { route: '/chat', icon: 'pi-comments', label: 'Assistant', phase: 3 },
     { route: '/sources', icon: 'pi-share-alt', label: 'Knowledge sources', phase: 4 },
     { route: '/settings', icon: 'pi-cog', label: 'Settings' },

@@ -10,7 +10,10 @@ import {
   Folder,
   IngestionStatus,
   LibraryStats,
+  MatchStrategy,
   Person,
+  SearchQuery,
+  SearchResponse,
 } from '../models/knowledge.models';
 import { extensionsForKind, kindFromExtension } from '../utils/file-kind';
 import { KnowledgeGateway } from './knowledge-gateway';
@@ -63,7 +66,36 @@ interface ApiDocumentDetail {
     changedBy: ApiUser;
     changedAt: string;
   }[];
-  sections: { chunkId: number; heading: string; page: number; body: string }[];
+  sections: { chunkId: number; heading: string; body: string; tokenCount: number }[];
+}
+
+interface ApiSearchResult {
+  documentId: string;
+  title: string;
+  fileName: string;
+  extension: string;
+  folderId: string;
+  folderPath: string;
+  chunkId: number;
+  heading: string;
+  snippet: string;
+  score: number;
+  matchedBy: MatchStrategy;
+}
+
+interface ApiSearchResponse {
+  query: string;
+  totalMatches: number;
+  elapsedMs: number;
+  terms: string[];
+  results: ApiSearchResult[];
+  diagnostics: {
+    keywordMatches: number;
+    vectorMatches: number;
+    embeddingProvider: string;
+    vectorSearchAvailable: boolean;
+    vectorSearchError: string | null;
+  };
 }
 
 interface ApiStats {
@@ -116,7 +148,8 @@ export class HttpKnowledgeGateway extends KnowledgeGateway {
           sizeBytes: version.sizeBytes,
           current: index === 0,
         })),
-        // Empty until the phase 2 ingestion pipeline produces chunks.
+        // Empty until ingestion finishes; the detail screen shows pipeline
+        // state instead of a preview while that is the case.
         sections: detail.sections,
         citedInAnswers: 0,
         createdAt: detail.document.createdAt,
@@ -157,6 +190,38 @@ export class HttpKnowledgeGateway extends KnowledgeGateway {
     return this.http.get<string[]>(`${this.base}/documents/tags`);
   }
 
+  search(query: SearchQuery): Observable<SearchResponse> {
+    let params = new HttpParams().set('query', query.text.trim());
+
+    if (query.folderId) params = params.set('folderId', query.folderId);
+    if (query.ownerId) params = params.set('ownerId', query.ownerId);
+    for (const tag of query.tags ?? []) params = params.append('tag', tag);
+
+    // Same kind-to-extension expansion the library filter uses.
+    for (const kind of query.kinds ?? []) {
+      for (const extension of extensionsForKind(kind)) {
+        params = params.append('extension', extension);
+      }
+    }
+
+    return this.http.get<ApiSearchResponse>(`${this.base}/search`, { params }).pipe(
+      map((response) => ({
+        query: response.query,
+        totalMatches: response.totalMatches,
+        elapsedMs: response.elapsedMs,
+        terms: response.terms,
+        results: response.results.map((result) => ({
+          ...result,
+          kind: kindFromExtension(result.extension) as FileKind,
+        })),
+        diagnostics: {
+          ...response.diagnostics,
+          vectorSearchError: response.diagnostics.vectorSearchError ?? undefined,
+        },
+      })),
+    );
+  }
+
   // ---- folder commands -----------------------------------------------------
 
   createFolder(parentId: string | null, name: string): Observable<Folder> {
@@ -191,13 +256,10 @@ export class HttpKnowledgeGateway extends KnowledgeGateway {
     ).pipe(map(() => void 0));
   }
 
-  /**
-   * Re-ingestion needs the phase 2 pipeline to exist. Nothing can reach the
-   * Failed state until then, so this path is currently unreachable rather than
-   * silently doing nothing on a live document.
-   */
-  retryIngestion(): Observable<void> {
-    return of(void 0);
+  retryIngestion(documentId: string): Observable<void> {
+    return this.http
+      .post<ApiDocument>(`${this.base}/documents/${documentId}/reindex`, {})
+      .pipe(map(() => void 0));
   }
 
   toggleStar(documentId: string): Observable<void> {

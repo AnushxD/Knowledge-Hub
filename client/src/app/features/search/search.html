@@ -1,0 +1,239 @@
+<!-- ── Header ──────────────────────────────────────────────────────────── -->
+<header class="sticky top-0 z-20 border-b border-hairline bg-canvas/85 backdrop-blur-md">
+  <div class="px-5 pt-4 lg:px-7">
+    <div class="flex items-baseline gap-2.5">
+      <h1 class="text-[19px] font-semibold text-ink">Search</h1>
+      <span class="text-[12.5px] text-subtle">
+        Keyword and meaning, across every indexed passage
+      </span>
+    </div>
+
+    <!-- The query box. Submitting writes `?q=` so a search is linkable. -->
+    <form class="mt-3" (submit)="$event.preventDefault(); submit()">
+      <div
+        class="flex h-11 items-center gap-2.5 rounded-dh border border-hairline bg-surface-1 px-3.5 transition focus-within:border-brand-400"
+      >
+        <i class="pi pi-search text-[14px] text-subtle"></i>
+        <input
+          type="search"
+          class="min-w-0 flex-1 bg-transparent text-[14px] text-ink outline-none placeholder:text-subtle"
+          placeholder="Ask in your own words, or search for an exact term…"
+          autocomplete="off"
+          [value]="draft()"
+          (input)="onInput($event)"
+        />
+        @if (draft()) {
+          <button
+            type="button"
+            class="text-subtle transition hover:text-ink"
+            (click)="clear()"
+            aria-label="Clear search"
+          >
+            <i class="pi pi-times-circle text-[13px]"></i>
+          </button>
+        }
+        <button
+          type="submit"
+          class="flex h-8 shrink-0 items-center gap-2 rounded-dh px-3.5 text-[12.5px] font-medium text-white transition hover:brightness-110"
+          style="background: linear-gradient(135deg, var(--dh-brand-600), var(--dh-brand-500))"
+        >
+          Search
+        </button>
+      </div>
+    </form>
+  </div>
+
+  <!-- ── Filters ───────────────────────────────────────────────────────── -->
+  <div class="flex flex-wrap items-center gap-2 px-5 py-3 lg:px-7">
+    <button
+      type="button"
+      class="dh-chip"
+      [class.dh-chip-active]="folderScope() === null"
+      (click)="setScope(null)"
+    >
+      Everywhere
+    </button>
+
+    @if (store.currentFolder(); as folder) {
+      <button
+        type="button"
+        class="dh-chip"
+        [class.dh-chip-active]="folderScope() === folder.id"
+        (click)="setScope(folder.id)"
+      >
+        <i class="pi pi-folder text-[11px]"></i>
+        {{ folder.name }}
+      </button>
+    }
+
+    @if (availableKinds().length) {
+      <span class="mx-1 h-4 w-px bg-hairline"></span>
+    }
+
+    @for (kind of availableKinds(); track kind) {
+      <button
+        type="button"
+        class="dh-chip"
+        [class.dh-chip-active]="kinds().includes(kind)"
+        (click)="toggleKind(kind)"
+      >
+        {{ kindLabel(kind) }}
+      </button>
+    }
+  </div>
+</header>
+
+<div class="px-5 py-5 lg:px-7">
+  <!-- ── Diagnostics ─────────────────────────────────────────────────── -->
+  @if (hasQuery() && !searching() && diagnostics(); as info) {
+    <div class="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[12px] text-subtle">
+      <span class="text-muted">
+        <strong class="font-semibold text-ink">{{ total() }}</strong>
+        {{ total() === 1 ? 'passage' : 'passages' }} in {{ elapsed() }}ms
+      </span>
+      <span class="h-3 w-px bg-hairline"></span>
+      <span dhTooltip="Passages whose text contains your words">
+        <i class="pi pi-align-left text-[10px]"></i>
+        {{ info.keywordMatches }} keyword
+      </span>
+      <span dhTooltip="Passages whose meaning is close to your question">
+        <i class="pi pi-compass text-[10px]"></i>
+        {{ info.vectorMatches }} semantic
+      </span>
+      <span class="h-3 w-px bg-hairline"></span>
+      <span class="opacity-70">{{ info.embeddingProvider }}</span>
+    </div>
+
+    <!-- Never silently degrade: if the vector branch is down, say so, because
+         the results are keyword-only and that changes what they mean. -->
+    @if (!info.vectorSearchAvailable && info.vectorSearchError) {
+      <div
+        class="mb-4 flex items-start gap-2.5 rounded-dh border px-3.5 py-2.5 text-[12.5px]"
+        style="
+          border-color: color-mix(in oklab, var(--dh-status-indexing) 30%, transparent);
+          background: color-mix(in oklab, var(--dh-status-indexing) 10%, transparent);
+        "
+      >
+        <i class="pi pi-info-circle mt-px text-[12px] text-status-indexing"></i>
+        <span class="text-muted">{{ info.vectorSearchError }}</span>
+      </div>
+    }
+  }
+
+  @if (failed(); as error) {
+    <div
+      class="mb-4 flex items-start gap-2.5 rounded-dh border px-3.5 py-2.5 text-[12.5px]"
+      style="
+        border-color: color-mix(in oklab, var(--dh-status-failed) 30%, transparent);
+        background: color-mix(in oklab, var(--dh-status-failed) 10%, transparent);
+      "
+    >
+      <i class="pi pi-exclamation-triangle mt-px text-[12px] text-status-failed"></i>
+      <span class="text-muted">{{ error }}</span>
+    </div>
+  }
+
+  <!-- ── Results ─────────────────────────────────────────────────────── -->
+  @if (searching()) {
+    <div class="dh-card overflow-hidden">
+      <dh-row-skeleton [count]="5" />
+    </div>
+  } @else if (!hasQuery()) {
+    <dh-empty-state
+      icon="pi-search"
+      heading="Search inside your documents"
+      message="This searches the extracted text of every indexed document — not just titles. Ask a question in plain words and semantic matching finds the passage even when it uses different wording."
+    >
+      @for (suggestion of suggestions; track suggestion) {
+        <button type="button" class="dh-chip" (click)="runSuggestion(suggestion)">
+          {{ suggestion }}
+        </button>
+      }
+    </dh-empty-state>
+  } @else if (!results().length) {
+    <dh-empty-state
+      icon="pi-filter-slash"
+      heading="Nothing matched"
+      message="Only documents that finished ingestion are searchable. Check the library for anything still pending or failed, and try fewer filters or broader wording."
+    >
+      <a routerLink="/browse" class="dh-chip">Open the library</a>
+    </dh-empty-state>
+  } @else {
+    <ul class="space-y-2.5">
+      @for (result of results(); track result.documentId + '-' + result.chunkId) {
+        <li>
+          <a
+            class="dh-card dh-card-interactive block px-4 py-3.5"
+            [routerLink]="['/docs', result.documentId]"
+            [queryParams]="{ chunk: result.chunkId }"
+          >
+            <div class="flex items-start gap-3">
+              <dh-file-icon [kind]="result.kind" size="sm" />
+
+              <div class="min-w-0 flex-1">
+                <!-- Title and location -->
+                <div class="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                  <span class="truncate text-[13.5px] font-semibold text-ink">
+                    {{ result.title }}
+                  </span>
+                  <span class="truncate text-[11.5px] text-subtle">{{ result.folderPath }}</span>
+                </div>
+
+                <!-- Where in the document, and how it was found -->
+                <div class="mt-1.5 flex flex-wrap items-center gap-2">
+                  <span
+                    class="inline-flex items-center gap-1.5 rounded-full bg-surface-2 px-2 py-[3px] text-[11px] font-medium text-muted"
+                  >
+                    <i class="pi pi-align-left text-[9px] opacity-70"></i>
+                    {{ result.heading }}
+                  </span>
+
+                  <span
+                    class="inline-flex items-center gap-1.5 rounded-full border px-2 py-[3px] text-[11px] font-medium"
+                    [style.color]="
+                      result.matchedBy === 'vector'
+                        ? 'var(--dh-ai-to)'
+                        : result.matchedBy === 'both'
+                          ? 'var(--dh-brand-500)'
+                          : 'var(--dh-text-muted)'
+                    "
+                    [style.borderColor]="
+                      'color-mix(in oklab, ' +
+                      (result.matchedBy === 'vector'
+                        ? 'var(--dh-ai-to)'
+                        : result.matchedBy === 'both'
+                          ? 'var(--dh-brand-500)'
+                          : 'var(--dh-text-muted)') +
+                      ' 30%, transparent)'
+                    "
+                    [dhTooltip]="strategyTooltip(result.matchedBy)"
+                  >
+                    <i
+                      class="pi text-[9px]"
+                      [class.pi-align-left]="result.matchedBy === 'keyword'"
+                      [class.pi-compass]="result.matchedBy === 'vector'"
+                      [class.pi-sparkles]="result.matchedBy === 'both'"
+                    ></i>
+                    {{ strategyLabel(result.matchedBy) }}
+                  </span>
+                </div>
+
+                <!-- The passage, with the searched words marked -->
+                <!-- Written without line breaks between the parts on purpose:
+                     Angular keeps whitespace next to an interpolation, and any
+                     newline here becomes a visible space mid-word. -->
+                <p
+                  class="mt-2 text-[12.5px] leading-relaxed text-muted"
+                >@for (part of highlight(result.snippet); track $index) {<span
+                    [class.dh-mark]="part.matched"
+                  >{{ part.text }}</span>}</p>
+              </div>
+
+              <i class="pi pi-angle-right mt-1 shrink-0 text-[11px] text-subtle"></i>
+            </div>
+          </a>
+        </li>
+      }
+    </ul>
+  }
+</div>

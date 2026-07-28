@@ -12,6 +12,9 @@ import {
   IngestionStatus,
   LibraryStats,
   Person,
+  SearchQuery,
+  SearchResponse,
+  SearchResult,
 } from '../models/knowledge.models';
 import { kindFromFileName } from '../utils/file-kind';
 import { KnowledgeGateway } from './knowledge-gateway';
@@ -481,63 +484,79 @@ const SEEDS: Seed[] = [
   },
 ];
 
+/**
+ * Same rough characters-per-token estimate the server's chunker uses, so the
+ * mock's numbers look like the real ones rather than like round figures.
+ */
+const estimateTokens = (body: string) => Math.max(1, Math.ceil(body.length / 4));
+
+const withTokens = (sections: Omit<DocumentSection, 'tokenCount'>[]): DocumentSection[] =>
+  sections.map((section) => ({ ...section, tokenCount: estimateTokens(section.body) }));
+
 /** Real content for the hero document so the preview and citations feel true. */
-const HERO_SECTIONS: DocumentSection[] = [
+const HERO_SECTIONS: DocumentSection[] = withTokens([
   {
     chunkId: 1,
     heading: '1. Prerequisites',
-    page: 1,
     body: 'You need Docker Desktop, the .NET SDK and Node.js LTS installed before anything else. The team works on macOS day to day; the Windows box is only used for IIS deployment testing, so do not expect to run IIS locally.',
   },
   {
     chunkId: 2,
     heading: '2.1 Starting local infrastructure with Docker',
-    page: 2,
     body: 'Run `docker compose up -d` from the repository root. This starts PostgreSQL (with the pgvector extension pre-installed) and Azurite, the Azure Blob Storage emulator. Wait for both containers to report healthy before starting the API — the API fails fast if it cannot reach either.',
   },
   {
     chunkId: 3,
     heading: '2.2 Connection strings and configuration',
-    page: 2,
     body: 'The local connection string lives in appsettings.Development.json, which is safe to commit because it contains no real credentials. Blob storage uses UseDevelopmentStorage=true, which points the Azure SDK at Azurite. Real secrets — the LLM API key in particular — go into dotnet user-secrets and never into any appsettings file.',
   },
   {
     chunkId: 4,
     heading: '3. Applying database migrations',
-    page: 3,
     body: 'From server/src/DocHub.Api run `dotnet ef database update`. The initial migration creates the relational schema and enables the vector extension. If the extension step fails, confirm you are on the pgvector-enabled Postgres image rather than the stock one.',
   },
   {
     chunkId: 5,
     heading: '4. Running the API and client',
-    page: 3,
     body: 'Start the backend with `dotnet run` from server/src/DocHub.Api — this uses Kestrel, not IIS. In a second terminal, run `ng serve` from client. The Angular dev server proxies API calls, so no CORS configuration is needed for local development.',
   },
   {
     chunkId: 6,
     heading: '5. Verifying the ingestion pipeline',
-    page: 4,
     body: 'Upload any small Markdown file and watch the Hangfire dashboard at /hangfire. You should see an ingestion job move through extract, chunk and embed stages. The document status in the UI moves from Pending to Indexing to Indexed as the job progresses.',
   },
   {
     chunkId: 7,
     heading: '6. Common problems',
-    page: 4,
     body: 'If uploads succeed but documents never leave Pending, the Hangfire server is probably not running — check the API logs on startup. If embeddings fail with a 401, the LLM API key is missing from user-secrets.',
   },
-];
+]);
+
+/** A readable window of `body` centred on the first matching term. */
+function snippetAround(body: string, terms: string[]): string {
+  const lower = body.toLowerCase();
+  const at = terms.map((term) => lower.indexOf(term)).find((index) => index >= 0) ?? 0;
+
+  const start = Math.max(0, at - 90);
+  const end = Math.min(body.length, start + 300);
+
+  return (
+    (start > 0 ? '…' : '') + body.slice(start, end).trim() + (end < body.length ? '…' : '')
+  );
+}
 
 function sectionsFor(seed: Seed): DocumentSection[] {
   if (seed.id === 'd-1') return HERO_SECTIONS;
   const count = Math.max(3, Math.min(7, Math.round((seed.chunkCount ?? 9) / 6)));
-  return Array.from({ length: count }, (_, i) => ({
-    chunkId: i + 1,
-    heading: `${i + 1}. ${['Overview', 'Scope', 'Approach', 'Details', 'Configuration', 'Operations', 'Appendix'][i] ?? 'Section'}`,
-    page: i + 1,
-    body:
-      `This section of “${seed.title}” covers ${['the purpose and audience', 'what is in and out of scope', 'the approach the team agreed on', 'the detailed steps involved', 'configuration values and defaults', 'day-two operational concerns', 'supporting reference material'][i] ?? 'additional material'}. ` +
-      'Once the ingestion pipeline is live this text is replaced by the real extracted content, chunked at roughly 500–1000 tokens with 15% overlap so citations can point at an exact section rather than a whole file.',
-  }));
+  return withTokens(
+    Array.from({ length: count }, (_, i) => ({
+      chunkId: i + 1,
+      heading: `${i + 1}. ${['Overview', 'Scope', 'Approach', 'Details', 'Configuration', 'Operations', 'Appendix'][i] ?? 'Section'}`,
+      body:
+        `This section of “${seed.title}” covers ${['the purpose and audience', 'what is in and out of scope', 'the approach the team agreed on', 'the detailed steps involved', 'configuration values and defaults', 'day-two operational concerns', 'supporting reference material'][i] ?? 'additional material'}. ` +
+        'Running against the real API replaces this text with the actual extracted content, chunked at roughly 800 tokens with 15% overlap so citations can point at an exact section rather than a whole file.',
+    })),
+  );
 }
 
 function versionsFor(seed: Seed): DocumentVersion[] {
@@ -831,6 +850,76 @@ export class MockKnowledgeGateway extends KnowledgeGateway {
 
   allTags(): Observable<string[]> {
     return this.read((db) => [...new Set(db.documents.flatMap((d) => d.tags))].sort());
+  }
+
+  /**
+   * Substring matching over the seeded section text.
+   *
+   * Deliberately not a fake of semantic search: pretending to understand a
+   * question the mock cannot answer would make the screen look right while
+   * hiding whether the real pipeline works. Every result here is reported as a
+   * keyword match, which is exactly what it is.
+   */
+  search(query: SearchQuery): Observable<SearchResponse> {
+    const text = query.text.trim();
+    const terms = text
+      .split(/[\s"',.?!():;]+/)
+      .filter((term) => term.length > 1)
+      .map((term) => term.toLowerCase());
+
+    return this.read((db) => {
+      const results: SearchResult[] = [];
+
+      for (const document of db.documents) {
+        if (document.status !== 'indexed') continue;
+        if (query.folderId && document.folderId !== query.folderId) continue;
+        if (query.kinds?.length && !query.kinds.includes(document.kind)) continue;
+        if (query.ownerId && document.owner.id !== query.ownerId) continue;
+        if (query.tags?.length && !query.tags.some((tag) => document.tags.includes(tag))) continue;
+
+        const folder = db.folders.find((candidate) => candidate.id === document.folderId);
+
+        for (const section of sectionsFor(SEEDS.find((s) => s.id === document.id) ?? SEEDS[0])) {
+          const haystack = `${section.heading} ${section.body}`.toLowerCase();
+          const hits = terms.filter((term) => haystack.includes(term)).length;
+          if (!hits) continue;
+
+          results.push({
+            documentId: document.id,
+            title: document.title,
+            fileName: document.fileName,
+            kind: document.kind,
+            extension: document.extension,
+            folderId: document.folderId,
+            folderPath: folder?.path ?? '',
+            chunkId: section.chunkId,
+            heading: section.heading,
+            snippet: snippetAround(section.body, terms),
+            score: hits / terms.length,
+            matchedBy: 'keyword',
+          });
+        }
+      }
+
+      results.sort((a, b) => b.score - a.score);
+      const top = results.slice(0, 20);
+
+      return {
+        query: text,
+        totalMatches: results.length,
+        elapsedMs: 12,
+        terms,
+        results: top,
+        diagnostics: {
+          keywordMatches: results.length,
+          vectorMatches: 0,
+          embeddingProvider: 'mock (no embeddings)',
+          vectorSearchAvailable: false,
+          vectorSearchError:
+            'This is the mock gateway — semantic matching needs the real API and an embedding provider.',
+        },
+      } satisfies SearchResponse;
+    });
   }
 
   createFolder(parentId: string | null, name: string): Observable<Folder> {

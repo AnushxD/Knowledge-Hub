@@ -25,8 +25,7 @@ export const routes: Routes = [
       {
         path: 'search',
         title: 'Search · DocHub',
-        loadComponent: () =>
-          import('./features/roadmap/search-placeholder').then((m) => m.SearchPlaceholder),
+        loadComponent: () => import('./features/search/search').then((m) => m.SearchPage),
       },
       {
         path: 'chat',

@@ -142,6 +142,25 @@ export class CommandPalette {
       }));
   });
 
+  /**
+   * Hands the query to full-text search. The palette only matches titles and
+   * tags; this is the way through to the content itself.
+   */
+  private readonly searchItem = computed<PaletteItem[]>(() => {
+    const term = this.term().trim();
+    if (term.length < 2) return [];
+    return [
+      {
+        id: 'search',
+        kind: 'action',
+        icon: 'pi-search',
+        label: `Search inside documents for “${term}”`,
+        hint: 'Keyword and semantic matching over every indexed passage',
+        run: () => this.go(['/search'], { q: term }),
+      },
+    ];
+  });
+
   /** Phase 3 hook: the same box will hand the query to the assistant. */
   private readonly askItem = computed<PaletteItem[]>(() => {
     const term = this.term().trim();
@@ -159,6 +178,7 @@ export class CommandPalette {
   });
 
   protected readonly groups = computed(() => [
+    { title: 'Search', items: this.searchItem() },
     { title: 'Ask', items: this.askItem() },
     { title: this.term() ? 'Documents' : 'Recent documents', items: this.documentMatches() },
     { title: 'Folders', items: this.folderMatches() },
