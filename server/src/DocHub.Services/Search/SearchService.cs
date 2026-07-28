@@ -1,0 +1,268 @@
+using System.Diagnostics;
+using System.Text;
+using DocHub.DataAccess.Dtos;
+using DocHub.DataAccess.Repositories;
+using DocHub.Integrations.Embeddings;
+using DocHub.Services.ViewModels;
+using Microsoft.Extensions.Logging;
+
+namespace DocHub.Services.Search;
+
+internal sealed class SearchService(
+    IChunkRepository chunks,
+    IEmbeddingProvider embeddings,
+    ILogger<SearchService> logger) : ISearchService
+{
+    /// <summary>
+    /// Reciprocal rank fusion constant. 60 is the value from the original RRF
+    /// paper and behaves well without tuning: large enough that the top few
+    /// ranks are not winner-take-all, small enough that rank still dominates.
+    /// </summary>
+    private const double RankFusionConstant = 60;
+
+    /// <summary>Characters of context shown around the matched text.</summary>
+    private const int SnippetLength = 320;
+
+    public async Task<SearchResponseViewModel> SearchAsync(
+        SearchRequest request,
+        CancellationToken ct = default)
+    {
+        var query = request.Query?.Trim() ?? string.Empty;
+
+        if (query.Length == 0)
+            throw new ValidationException("Enter something to search for.");
+
+        var take = Math.Clamp(request.Take, 1, 100);
+        var stopwatch = Stopwatch.StartNew();
+
+        var filter = new ChunkSearchDto
+        {
+            Text = query,
+            FolderId = request.FolderId,
+            Extensions = request.Extension?
+                .Select(extension => extension.TrimStart('.').ToLowerInvariant())
+                .ToList(),
+            Tags = request.Tag?.Select(tag => tag.Trim().ToLowerInvariant()).ToList(),
+            OwnerId = request.OwnerId,
+            // Deeper than the page size: fusion can only reorder what it was
+            // given, so each branch has to offer more than the caller will see.
+            Limit = Math.Max(take * 3, 40),
+        };
+
+        var keywordTask = chunks.SearchKeywordAsync(filter, ct);
+        var vectorTask = SearchVectorAsync(filter, query, ct);
+
+        // Both branches hit the same Postgres but different indexes, and
+        // neither depends on the other's result.
+        await Task.WhenAll(keywordTask, vectorTask);
+
+        var keyword = await keywordTask;
+        var (vector, vectorError) = await vectorTask;
+
+        var fused = Fuse(keyword, vector);
+        var terms = ExtractTerms(query);
+
+        var results = fused
+            .Take(take)
+            .Select(match => ToViewModel(match, terms))
+            .ToList();
+
+        stopwatch.Stop();
+
+        logger.LogInformation(
+            "Search '{Query}' matched {Keyword} keyword and {Vector} vector chunks, "
+            + "{Fused} after fusion, in {ElapsedMs}ms",
+            query, keyword.Count, vector.Count, fused.Count, stopwatch.ElapsedMilliseconds);
+
+        return new SearchResponseViewModel(
+            query,
+            fused.Count,
+            stopwatch.ElapsedMilliseconds,
+            terms,
+            results,
+            new SearchDiagnosticsViewModel(
+                keyword.Count,
+                vector.Count,
+                embeddings.Name,
+                vectorError is null,
+                vectorError));
+    }
+
+    /// <summary>
+    /// Runs the vector branch, degrading to keyword-only if the embedding
+    /// provider is unavailable.
+    ///
+    /// A search that returns the keyword half is far more useful than an error
+    /// page, so this failure is reported in the diagnostics rather than thrown
+    /// — but it is never hidden.
+    /// </summary>
+    private async Task<(IReadOnlyList<ChunkMatchDto> Matches, string? Error)> SearchVectorAsync(
+        ChunkSearchDto filter,
+        string query,
+        CancellationToken ct)
+    {
+        try
+        {
+            var embedding = await embeddings.EmbedQueryAsync(query, ct);
+            return (await chunks.SearchVectorAsync(filter, embedding, ct), null);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            logger.LogWarning(exception,
+                "Vector search unavailable; falling back to keyword-only results.");
+
+            return ([], $"Semantic matching is unavailable ({exception.Message}). "
+                + "Showing keyword results only.");
+        }
+    }
+
+    /// <summary>
+    /// Merges the two branches by reciprocal rank fusion: each chunk scores
+    /// 1/(k + rank) in every branch that found it, and the scores add.
+    ///
+    /// Fusing on rank rather than on the branches' own scores is the whole
+    /// point — ts_rank and cosine similarity are on unrelated scales, and any
+    /// attempt to weight them directly would be arbitrary. A chunk both
+    /// branches agree on naturally outranks one only a single branch found.
+    /// </summary>
+    private static List<FusedMatch> Fuse(
+        IReadOnlyList<ChunkMatchDto> keyword,
+        IReadOnlyList<ChunkMatchDto> vector)
+    {
+        var scores = new Dictionary<Guid, FusedMatch>();
+
+        void Accumulate(IReadOnlyList<ChunkMatchDto> branch, bool isKeyword)
+        {
+            for (var rank = 0; rank < branch.Count; rank++)
+            {
+                var match = branch[rank];
+                var contribution = 1 / (RankFusionConstant + rank + 1);
+
+                if (scores.TryGetValue(match.ChunkId, out var existing))
+                {
+                    scores[match.ChunkId] = existing with
+                    {
+                        Score = existing.Score + contribution,
+                        FoundByKeyword = existing.FoundByKeyword || isKeyword,
+                        FoundByVector = existing.FoundByVector || !isKeyword,
+                    };
+                }
+                else
+                {
+                    scores[match.ChunkId] = new FusedMatch(
+                        match, contribution, isKeyword, !isKeyword);
+                }
+            }
+        }
+
+        Accumulate(keyword, isKeyword: true);
+        Accumulate(vector, isKeyword: false);
+
+        return [.. scores.Values.OrderByDescending(match => match.Score)];
+    }
+
+    private static SearchResultViewModel ToViewModel(FusedMatch match, IReadOnlyList<string> terms)
+    {
+        var chunk = match.Chunk;
+
+        return new SearchResultViewModel(
+            chunk.DocumentId,
+            chunk.DocumentTitle,
+            chunk.FileName,
+            chunk.Extension,
+            chunk.FolderId,
+            chunk.FolderPath,
+            chunk.Ordinal,
+            chunk.SectionRef ?? $"Section {chunk.Ordinal + 1}",
+            Snippet(chunk.Text, terms),
+            Math.Round(match.Score, 6),
+            (match.FoundByKeyword, match.FoundByVector) switch
+            {
+                (true, true) => "both",
+                (true, false) => "keyword",
+                _ => "vector",
+            });
+    }
+
+    /// <summary>
+    /// A readable window of the chunk, centred on the first query term it
+    /// contains. Pure vector matches often contain no query term at all, and
+    /// fall back to the opening of the chunk.
+    /// </summary>
+    private static string Snippet(string text, IReadOnlyList<string> terms)
+    {
+        var collapsed = CollapseWhitespace(text);
+
+        if (collapsed.Length <= SnippetLength) return collapsed;
+
+        var position = -1;
+        foreach (var term in terms)
+        {
+            position = collapsed.IndexOf(term, StringComparison.OrdinalIgnoreCase);
+            if (position >= 0) break;
+        }
+
+        if (position < 0) return collapsed[..SnippetLength].TrimEnd() + "…";
+
+        var start = Math.Max(0, position - SnippetLength / 3);
+        var length = Math.Min(SnippetLength, collapsed.Length - start);
+
+        // Nudge to word boundaries so the snippet never opens or closes
+        // mid-word.
+        if (start > 0)
+        {
+            var space = collapsed.IndexOf(' ', start);
+            if (space > 0 && space - start < 30) start = space + 1;
+        }
+
+        length = Math.Min(length, collapsed.Length - start);
+        var window = collapsed.Substring(start, length).Trim();
+
+        return (start > 0 ? "…" : string.Empty)
+            + window
+            + (start + length < collapsed.Length ? "…" : string.Empty);
+    }
+
+    private static string CollapseWhitespace(string text)
+    {
+        var builder = new StringBuilder(text.Length);
+        var previousWasSpace = false;
+
+        foreach (var character in text)
+        {
+            var isSpace = char.IsWhiteSpace(character);
+            if (isSpace && previousWasSpace) continue;
+
+            builder.Append(isSpace ? ' ' : character);
+            previousWasSpace = isSpace;
+        }
+
+        return builder.ToString().Trim();
+    }
+
+    /// <summary>
+    /// The words worth highlighting. Single characters and the handful of
+    /// operator words websearch_to_tsquery understands are dropped — marking
+    /// "or" in every result is noise, not help.
+    /// </summary>
+    private static IReadOnlyList<string> ExtractTerms(string query)
+    {
+        var stopWords = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "or", "and", "not" };
+
+        return
+        [
+            .. query
+                .Split([' ', '\t', '\n', '"', '\'', ',', '.', '?', '!', '(', ')', ':', ';'],
+                    StringSplitOptions.RemoveEmptyEntries)
+                .Select(term => term.Trim())
+                .Where(term => term.Length > 1 && !stopWords.Contains(term))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+        ];
+    }
+
+    private sealed record FusedMatch(
+        ChunkMatchDto Chunk,
+        double Score,
+        bool FoundByKeyword,
+        bool FoundByVector);
+}

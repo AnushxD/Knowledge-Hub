@@ -1,5 +1,6 @@
 using DocHub.DataAccess.Dtos;
 using DocHub.DataAccess.Entities;
+using DocHub.Services.Ingestion;
 using DocHub.Services.ViewModels;
 
 namespace DocHub.Services;
@@ -45,13 +46,23 @@ internal static class Mapping
             version.ChangedBy.ToViewModel(),
             version.ChangedAt);
 
-    public static DocumentDetailViewModel ToViewModel(this DocumentDetailDto detail) =>
+    public static DocumentDetailViewModel ToViewModel(
+        this DocumentDetailDto detail,
+        IReadOnlyList<ChunkMatchDto> sections) =>
         new(
             detail.Document.ToViewModel(),
             [.. detail.Breadcrumb.Select(ToViewModel)],
             [.. detail.Versions.Select(ToViewModel)],
-            // Populated by the phase 2 ingestion pipeline.
-            []);
+            [.. sections.Select(ToViewModel)]);
+
+    public static DocumentSectionViewModel ToViewModel(this ChunkMatchDto chunk) =>
+        new(
+            chunk.Ordinal,
+            // A chunk always gets a label, so the preview never renders a blank
+            // heading for a format that carries no structure.
+            chunk.SectionRef ?? $"Section {chunk.Ordinal + 1}",
+            chunk.Text,
+            TextChunker.EstimateTokens(chunk.Text));
 
     public static LibraryStatsViewModel ToViewModel(this LibraryStatsDto stats) =>
         new(

@@ -1,10 +1,14 @@
 using Azure.Storage.Blobs;
 using DocHub.DataAccess;
 using DocHub.DataAccess.Repositories;
+using DocHub.Integrations.Embeddings;
 using DocHub.Integrations.Storage;
 using DocHub.Services;
 using DocHub.Services.Documents;
 using DocHub.Services.Folders;
+using DocHub.Services.Ingestion;
+using DocHub.Services.Ingestion.Extraction;
+using DocHub.Services.Search;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -65,25 +69,55 @@ public sealed class StackFixture : IAsyncLifetime
     private DocHubDbContext CreateContext() =>
         new(new DbContextOptionsBuilder<DocHubDbContext>().UseNpgsql(ConnectionString).Options);
 
-    /// <summary>A service pair sharing one DbContext, as a request would.</summary>
+    /// <summary>The services of one request, sharing a DbContext as a request would.</summary>
     public Scope NewScope()
     {
         var db = CreateContext();
         var folderRepo = new FolderRepository(db);
         var documentRepo = new DocumentRepository(db);
+        var chunkRepo = new ChunkRepository(db);
         var user = new TestCurrentUser();
+        var queue = new RecordingIngestionQueue();
+
+        var ingestionOptions = Options.Create(new IngestionOptions());
+
+        // Hashing embeddings, not Ollama: tests must not depend on a model
+        // being pulled, and the pipeline's wiring is what is under test here,
+        // not the quality of the vectors.
+        var embeddings = new HashingEmbeddingProvider(
+            Options.Create(new EmbeddingOptions
+            {
+                Provider = EmbeddingOptions.HashingProvider,
+                Dimensions = DocHubDbContext.EmbeddingDimensions,
+            }));
+
+        var extractors = new TextExtractorRegistry(
+            [new PlainTextExtractor(), new PdfTextExtractor(), new OpenXmlTextExtractor()]);
 
         return new Scope(
             db,
             new FolderService(folderRepo, Storage, user, NullLogger<FolderService>.Instance),
             new DocumentService(
-                documentRepo, folderRepo, Storage, user, NullLogger<DocumentService>.Instance));
+                documentRepo, folderRepo, chunkRepo, Storage, queue, user,
+                NullLogger<DocumentService>.Instance),
+            new IngestionService(
+                documentRepo, chunkRepo, Storage, extractors,
+                new TextChunker(ingestionOptions), embeddings, queue,
+                NullLogger<IngestionService>.Instance),
+            new SearchService(
+                chunkRepo, embeddings, NullLogger<SearchService>.Instance),
+            chunkRepo,
+            queue);
     }
 
     public sealed record Scope(
         DocHubDbContext Db,
         IFolderService Folders,
-        IDocumentService Documents) : IAsyncDisposable
+        IDocumentService Documents,
+        IIngestionService Ingestion,
+        ISearchService Search,
+        IChunkRepository Chunks,
+        RecordingIngestionQueue Queue) : IAsyncDisposable
     {
         public ValueTask DisposeAsync() => Db.DisposeAsync();
     }
@@ -91,6 +125,19 @@ public sealed class StackFixture : IAsyncLifetime
     private sealed class TestCurrentUser : ICurrentUser
     {
         public Guid Id => DocHubDbContext.SystemUserId;
+    }
+
+    /// <summary>
+    /// Records what would have been queued instead of running it. Ingestion is
+    /// triggered explicitly in tests, so an assertion never races a worker.
+    /// </summary>
+    public sealed class RecordingIngestionQueue : IIngestionQueue
+    {
+        private readonly List<Guid> queued = [];
+
+        public IReadOnlyList<Guid> Queued => queued;
+
+        public void Enqueue(Guid documentId) => queued.Add(documentId);
     }
 
     public static Stream FileOf(string content) =>

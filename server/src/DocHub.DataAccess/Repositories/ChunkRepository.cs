@@ -78,12 +78,18 @@ internal sealed class ChunkRepository(DocHubDbContext db) : IChunkRepository
         // websearch_to_tsquery rather than to_tsquery: it accepts whatever the
         // user typed — quotes, OR, stray punctuation — without ever throwing a
         // syntax error back at them.
-        var tsQuery = EF.Functions.WebSearchToTsQuery(
-            DocHubDbContext.SearchConfiguration, query.Text);
+        //
+        // Repeated inline rather than hoisted into a local: EF only translates
+        // EF.Functions calls that appear inside the expression tree, and a
+        // hoisted one throws at run time asking to be rewritten like this.
+        const string configuration = DocHubDbContext.SearchConfiguration;
+        var text = query.Text;
 
         return await candidates
-            .Where(chunk => chunk.SearchVector!.Matches(tsQuery))
-            .OrderByDescending(chunk => chunk.SearchVector!.Rank(tsQuery))
+            .Where(chunk => chunk.SearchVector!.Matches(
+                EF.Functions.WebSearchToTsQuery(configuration, text)))
+            .OrderByDescending(chunk => chunk.SearchVector!.Rank(
+                EF.Functions.WebSearchToTsQuery(configuration, text)))
             .Take(query.Limit)
             .Select(chunk => new ChunkMatchDto(
                 chunk.Id,
@@ -96,7 +102,8 @@ internal sealed class ChunkRepository(DocHubDbContext db) : IChunkRepository
                 chunk.Ordinal,
                 chunk.SectionRef,
                 chunk.Text,
-                chunk.SearchVector!.Rank(tsQuery)))
+                chunk.SearchVector!.Rank(
+                    EF.Functions.WebSearchToTsQuery(configuration, text))))
             .ToListAsync(ct);
     }
 

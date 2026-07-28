@@ -39,18 +39,33 @@ public record DocumentVersionViewModel(
     UserViewModel ChangedBy,
     DateTimeOffset ChangedAt);
 
+/// <param name="Sections">
+/// The document's indexed chunks, in reading order. Empty until ingestion
+/// succeeds — which is also when the client shows pipeline state rather than a
+/// preview.
+/// </param>
 public record DocumentDetailViewModel(
     DocumentViewModel Document,
     IReadOnlyList<FolderViewModel> Breadcrumb,
     IReadOnlyList<DocumentVersionViewModel> Versions,
-    /// <summary>
-    /// Extracted, embedded chunks. Always empty until the phase 2 ingestion
-    /// pipeline exists — the field is here so the citation contract the client
-    /// already implements does not change shape later.
-    /// </summary>
     IReadOnlyList<DocumentSectionViewModel> Sections);
 
-public record DocumentSectionViewModel(int ChunkId, string Heading, int Page, string Body);
+/// <summary>One indexed chunk, as shown in the preview and pointed at by a citation.</summary>
+/// <param name="ChunkId">
+/// The chunk's position in the document. Used rather than its database id
+/// because it is stable in a URL (<c>/docs/:id?chunk=17</c>), readable, and
+/// still unique within the document.
+/// </param>
+/// <param name="Heading">
+/// Where in the document this came from — "Page 4", "Slide 2", a Markdown
+/// heading, a worksheet name. Falls back to the position when the format
+/// offers nothing.
+/// </param>
+public record DocumentSectionViewModel(
+    int ChunkId,
+    string Heading,
+    string Body,
+    int TokenCount);
 
 public record LibraryStatsViewModel(
     int Documents,
@@ -60,6 +75,67 @@ public record LibraryStatsViewModel(
     int Folders,
     long StorageBytes,
     int Chunks);
+
+// ---- search -----------------------------------------------------------------
+
+/// <summary>A single ranked passage, with everything a result card and a citation need.</summary>
+/// <param name="ChunkId">
+/// Chunk position within its document, so a result links straight to the
+/// passage: <c>/docs/:documentId?chunk=:chunkId</c>.
+/// </param>
+/// <param name="MatchedBy">
+/// Which branch found this — "keyword", "vector" or "both". Surfaced because
+/// hybrid results are otherwise inexplicable to a user: it is the difference
+/// between "this contains your words" and "this is about your question".
+/// </param>
+public record SearchResultViewModel(
+    Guid DocumentId,
+    string Title,
+    string FileName,
+    string Extension,
+    Guid FolderId,
+    string FolderPath,
+    int ChunkId,
+    string Heading,
+    string Snippet,
+    double Score,
+    string MatchedBy);
+
+/// <param name="Terms">
+/// Normalised query words, so the client highlights exactly what was searched
+/// for. Sent as data rather than as pre-marked HTML — the server never builds
+/// markup the client has to trust.
+/// </param>
+public record SearchResponseViewModel(
+    string Query,
+    int TotalMatches,
+    long ElapsedMs,
+    IReadOnlyList<string> Terms,
+    IReadOnlyList<SearchResultViewModel> Results,
+    SearchDiagnosticsViewModel Diagnostics);
+
+/// <summary>
+/// How the two branches contributed. Shown in the UI and invaluable when
+/// results look wrong — it separates "nothing matched" from "the embedding
+/// provider is down".
+/// </summary>
+public record SearchDiagnosticsViewModel(
+    int KeywordMatches,
+    int VectorMatches,
+    string EmbeddingProvider,
+    bool VectorSearchAvailable,
+    string? VectorSearchError);
+
+/// <summary>A search as it arrives from the query string.</summary>
+public record SearchRequest
+{
+    public string Query { get; init; } = string.Empty;
+    public Guid? FolderId { get; init; }
+    public string[]? Extension { get; init; }
+    public string[]? Tag { get; init; }
+    public Guid? OwnerId { get; init; }
+    public int Take { get; init; } = 20;
+}
 
 // ---- requests ---------------------------------------------------------------
 
