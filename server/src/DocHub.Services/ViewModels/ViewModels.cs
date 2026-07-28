@@ -137,6 +137,53 @@ public record SearchRequest
     public int Take { get; init; } = 20;
 }
 
+// ---- chat -------------------------------------------------------------------
+
+/// <summary>A source backing an answer, resolvable to the exact passage.</summary>
+/// <param name="Marker">The bracketed number used in the answer text.</param>
+public record CitationViewModel(
+    int Marker,
+    Guid DocumentId,
+    string DocumentTitle,
+    int ChunkId,
+    string Heading);
+
+public record ChatSessionViewModel(
+    Guid Id,
+    string Title,
+    int MessageCount,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset UpdatedAt);
+
+/// <param name="IsRefusal">
+/// True when the assistant declined for lack of grounding. The client renders
+/// this very differently from an answer — it is a designed outcome, not a
+/// failure.
+/// </param>
+public record ChatMessageViewModel(
+    Guid Id,
+    string Role,
+    string Content,
+    IReadOnlyList<CitationViewModel> Citations,
+    bool IsRefusal,
+    DateTimeOffset CreatedAt);
+
+public record ChatTranscriptViewModel(
+    ChatSessionViewModel Session,
+    IReadOnlyList<ChatMessageViewModel> Messages);
+
+/// <summary>A question, optionally continuing an existing conversation.</summary>
+public record AskRequest
+{
+    public string Question { get; init; } = string.Empty;
+
+    /// <summary>Null starts a new conversation.</summary>
+    public Guid? SessionId { get; init; }
+
+    /// <summary>Restricts retrieval to a folder and its subtree.</summary>
+    public Guid? FolderId { get; init; }
+}
+
 // ---- requests ---------------------------------------------------------------
 
 public record CreateFolderRequest(Guid? ParentId, string Name);

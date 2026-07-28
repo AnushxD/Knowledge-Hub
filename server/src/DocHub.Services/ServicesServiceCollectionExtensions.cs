@@ -1,3 +1,4 @@
+using DocHub.Services.Chat;
 using DocHub.Services.Documents;
 using DocHub.Services.Folders;
 using DocHub.Services.Ingestion;
@@ -33,6 +34,15 @@ public static class ServicesServiceCollectionExtensions
         services.AddScoped<IDocumentService, DocumentService>();
         services.AddScoped<IIngestionService, IngestionService>();
         services.AddScoped<ISearchService, SearchService>();
+        services.AddScoped<IChatService, ChatService>();
+
+        services
+            .AddOptions<ChatOptions>()
+            .Bind(configuration.GetSection(ChatOptions.SectionName))
+            .Validate(
+                options => options.PassageCount > 0,
+                "Chat:PassageCount must be greater than zero.")
+            .ValidateOnStart();
 
         // Singletons: extraction and chunking are stateless transformations
         // over their arguments, holding nothing per request.

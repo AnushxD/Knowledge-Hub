@@ -27,13 +27,74 @@ internal sealed class SearchService(
         SearchRequest request,
         CancellationToken ct = default)
     {
+        var stopwatch = Stopwatch.StartNew();
+        var (query, take, keyword, vector, vectorError) = await RankAsync(request, ct);
+
+        var fused = Fuse(keyword, vector);
+        var terms = ExtractTerms(query);
+
+        var results = fused
+            .Take(take)
+            .Select(match => ToViewModel(match, terms))
+            .ToList();
+
+        stopwatch.Stop();
+
+        logger.LogInformation(
+            "Search '{Query}' matched {Keyword} keyword and {Vector} vector chunks, "
+            + "{Fused} after fusion, in {ElapsedMs}ms",
+            query, keyword.Count, vector.Count, fused.Count, stopwatch.ElapsedMilliseconds);
+
+        return new SearchResponseViewModel(
+            query,
+            fused.Count,
+            stopwatch.ElapsedMilliseconds,
+            terms,
+            results,
+            new SearchDiagnosticsViewModel(
+                keyword.Count,
+                vector.Count,
+                embeddings.Name,
+                vectorError is null,
+                vectorError));
+    }
+
+    public async Task<RetrievalResult> RetrieveAsync(
+        SearchRequest request,
+        CancellationToken ct = default)
+    {
+        var (_, take, keyword, vector, vectorError) = await RankAsync(request, ct);
+
+        var passages = Fuse(keyword, vector)
+            .Take(take)
+            .Select(match => new RetrievedPassage(
+                match.Chunk.DocumentId,
+                match.Chunk.DocumentTitle,
+                match.Chunk.Ordinal,
+                match.Chunk.SectionRef ?? $"Section {match.Chunk.Ordinal + 1}",
+                // Full text, not a snippet — this is what the model reasons over.
+                match.Chunk.Text,
+                Math.Round(match.Score, 6),
+                Describe(match)))
+            .ToList();
+
+        return new RetrievalResult(passages, vectorError);
+    }
+
+    /// <summary>
+    /// Runs both retrieval branches for a request. Shared by search and by
+    /// grounding so there is exactly one ranking implementation — if they
+    /// diverged, the assistant would cite passages the search screen never
+    /// showed, and neither result would explain the other.
+    /// </summary>
+    private async Task<RankedBranches> RankAsync(SearchRequest request, CancellationToken ct)
+    {
         var query = request.Query?.Trim() ?? string.Empty;
 
         if (query.Length == 0)
             throw new ValidationException("Enter something to search for.");
 
         var take = Math.Clamp(request.Take, 1, 100);
-        var stopwatch = Stopwatch.StartNew();
 
         var filter = new ChunkSearchDto
         {
@@ -68,34 +129,15 @@ internal sealed class SearchService(
             ? ([], embeddingError)
             : await SearchVectorAsync(filter, embedding, ct);
 
-        var fused = Fuse(keyword, vector);
-        var terms = ExtractTerms(query);
-
-        var results = fused
-            .Take(take)
-            .Select(match => ToViewModel(match, terms))
-            .ToList();
-
-        stopwatch.Stop();
-
-        logger.LogInformation(
-            "Search '{Query}' matched {Keyword} keyword and {Vector} vector chunks, "
-            + "{Fused} after fusion, in {ElapsedMs}ms",
-            query, keyword.Count, vector.Count, fused.Count, stopwatch.ElapsedMilliseconds);
-
-        return new SearchResponseViewModel(
-            query,
-            fused.Count,
-            stopwatch.ElapsedMilliseconds,
-            terms,
-            results,
-            new SearchDiagnosticsViewModel(
-                keyword.Count,
-                vector.Count,
-                embeddings.Name,
-                vectorError is null,
-                vectorError));
+        return new RankedBranches(query, take, keyword, vector, vectorError);
     }
+
+    private sealed record RankedBranches(
+        string Query,
+        int Take,
+        IReadOnlyList<ChunkMatchDto> Keyword,
+        IReadOnlyList<ChunkMatchDto> Vector,
+        string? VectorError);
 
     /// <summary>
     /// Embeds the query, degrading to keyword-only if the provider is down.
@@ -202,13 +244,17 @@ internal sealed class SearchService(
             chunk.SectionRef ?? $"Section {chunk.Ordinal + 1}",
             Snippet(chunk.Text, terms),
             Math.Round(match.Score, 6),
-            (match.FoundByKeyword, match.FoundByVector) switch
-            {
-                (true, true) => "both",
-                (true, false) => "keyword",
-                _ => "vector",
-            });
+            Describe(match));
     }
+
+    /// <summary>Which branch or branches found a match.</summary>
+    private static string Describe(FusedMatch match) =>
+        (match.FoundByKeyword, match.FoundByVector) switch
+        {
+            (true, true) => "both",
+            (true, false) => "keyword",
+            _ => "vector",
+        };
 
     /// <summary>
     /// A readable window of the chunk, centred on the first query term it
