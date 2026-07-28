@@ -30,6 +30,10 @@ builder.Services.AddCors(options => options.AddPolicy(DevCorsPolicy, policy => p
 
 var app = builder.Build();
 
+// Create the blob container if it is missing. Idempotent and cheap, and it
+// surfaces a bad storage configuration at boot instead of on first upload.
+await app.Services.InitializeIntegrationsAsync();
+
 if (app.Environment.IsDevelopment())
 {
     // Keeps a fresh clone one `dotnet run` away from a working database.

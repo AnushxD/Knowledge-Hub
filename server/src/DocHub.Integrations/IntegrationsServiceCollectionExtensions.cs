@@ -33,9 +33,25 @@ public static class IntegrationsServiceCollectionExtensions
             return new BlobServiceClient(options.ConnectionString);
         });
 
+        // Singleton to match BlobServiceClient's lifetime; the implementation
+        // holds no per-request state.
+        services.AddSingleton<IFileStorage, AzureBlobFileStorage>();
+
         services.AddHealthChecks()
             .AddCheck<BlobStorageHealthCheck>("blob-storage", tags: ["ready", "storage"]);
 
         return services;
+    }
+
+    /// <summary>
+    /// Prepares external systems at startup — currently just the blob
+    /// container. Mirrors <c>MigrateDataAccessAsync</c>, so the host has one
+    /// obvious place to make each layer ready before serving traffic.
+    /// </summary>
+    public static async Task InitializeIntegrationsAsync(this IServiceProvider services)
+    {
+        await using var scope = services.CreateAsyncScope();
+        var storage = scope.ServiceProvider.GetRequiredService<IFileStorage>();
+        await storage.EnsureReadyAsync();
     }
 }

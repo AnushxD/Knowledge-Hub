@@ -139,14 +139,18 @@ Breakpoints work in both C# and TypeScript. The API config runs
 dotnet test server/DocHub.slnx
 ```
 
-The data access tests run against a **real Postgres**, not an in-memory
-provider — materialised-path queries, `text[]` columns and the GIN index are
-exactly what an in-memory provider would fail to catch. They use a separate
-`dochub_test` database that is created and dropped per run, so your development
-data is never touched. Docker must be running.
+Both test projects run against the **real containers**, not fakes or in-memory
+providers. Docker must be running.
 
-Point them at a different database with the `DOCHUB_TEST_DB` environment
-variable if you need to.
+- **Data access** — materialised-path queries, `text[]` columns and the GIN
+  index are exactly what an in-memory provider would fail to catch. Uses a
+  separate `dochub_test` database, created and dropped per run.
+- **Integrations** — exercises the actual Azure SDK against Azurite, including
+  the 404 behaviour the code depends on. Uses a throwaway blob container per
+  run.
+
+Neither touches your development data. Override the targets with the
+`DOCHUB_TEST_DB` and `DOCHUB_TEST_BLOBS` environment variables if you need to.
 
 Client tests (`npm --prefix client test`) exist as a harness but there are no
 specs yet.
@@ -188,6 +192,18 @@ handling) live in [CLAUDE.md](CLAUDE.md). Read it before adding code.
 | `dotnet user-secrets` | Real secrets (LLM API keys, etc.) | Never committed |
 | Environment variables / Key Vault | Production configuration | Never committed |
 
+Key settings, one strongly-typed Options class per external dependency:
+
+| Key | Purpose |
+|---|---|
+| `Database:ConnectionString` | Postgres connection |
+| `FileStorage:ConnectionString` | `UseDevelopmentStorage=true` locally; a real Azure connection string in production |
+| `FileStorage:ContainerName` | Blob container for document files (default `documents`, created at startup) |
+| `Cors:AllowedOrigins` | Origins allowed to call the API in development |
+
+All are validated at startup, so a missing or empty value fails the boot rather
+than the first request.
+
 Never put a real secret in any `appsettings.*.json`. To add one locally:
 
 ```bash
@@ -217,6 +233,14 @@ then regenerate (never edit `icons.css` by hand):
 node client/tools/gen-icons.mjs
 ```
 
+**Inspect stored files** — Azurite blobs are browsable with the
+[Azure Storage Explorer](https://azure.microsoft.com/products/storage/storage-explorer)
+(connect to "Local storage emulator"), or from the CLI if you have it:
+
+```bash
+az storage blob list --container-name documents --connection-string "UseDevelopmentStorage=true" --output table
+```
+
 **Stop everything:**
 
 ```bash
@@ -232,7 +256,7 @@ docker compose down
 | Angular client (all phase 1 screens) | Done — runs on mock data |
 | Local infrastructure + solution skeleton | Done |
 | Data access: entities, migrations, repositories | Done |
-| Blob storage (`IFileStorage`) | Not started |
+| Blob storage (`IFileStorage`) | Done |
 | Services + API endpoints | Not started |
 | Client wired to the real API | Not started — still `MockKnowledgeGateway` |
 
