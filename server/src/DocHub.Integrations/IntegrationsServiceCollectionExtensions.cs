@@ -1,6 +1,7 @@
 using Azure.Storage.Blobs;
 using DocHub.Integrations.Embeddings;
 using DocHub.Integrations.HealthChecks;
+using DocHub.Integrations.Llm;
 using DocHub.Integrations.Storage;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -73,9 +74,33 @@ public static class IntegrationsServiceCollectionExtensions
                 });
         }
 
+        services
+            .AddOptions<LlmOptions>()
+            .Bind(configuration.GetSection(LlmOptions.SectionName))
+            .Validate(
+                options => options.MaxOutputTokens > 0,
+                "Llm:MaxOutputTokens must be greater than zero.")
+            .Validate(
+                options => options.Provider == LlmOptions.OllamaProvider,
+                $"Llm:Provider must be '{LlmOptions.OllamaProvider}'. Adding a hosted provider "
+                + "means one more ILlmProvider implementation and one more branch here.")
+            .ValidateOnStart();
+
+        var llmOptions = configuration
+            .GetSection(LlmOptions.SectionName)
+            .Get<LlmOptions>() ?? new LlmOptions();
+
+        services
+            .AddHttpClient<ILlmProvider, OllamaLlmProvider>(client =>
+            {
+                client.BaseAddress = new Uri(llmOptions.BaseUrl);
+                client.Timeout = TimeSpan.FromSeconds(llmOptions.TimeoutSeconds);
+            });
+
         services.AddHealthChecks()
             .AddCheck<BlobStorageHealthCheck>("blob-storage", tags: ["ready", "storage"])
-            .AddCheck<EmbeddingProviderHealthCheck>("embeddings", tags: ["ready", "ai"]);
+            .AddCheck<EmbeddingProviderHealthCheck>("embeddings", tags: ["ready", "ai"])
+            .AddCheck<LlmProviderHealthCheck>("assistant-model", tags: ["ready", "ai"]);
 
         return services;
     }
