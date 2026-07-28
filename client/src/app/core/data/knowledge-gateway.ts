@@ -14,11 +14,12 @@ import {
 /**
  * The single seam between the UI and the backend.
  *
- * Phase 1 runs against `MockKnowledgeGateway`; when the ASP.NET Core API
- * lands, an `HttpKnowledgeGateway` implements this same contract and the only
- * change is the provider in `app.config.ts`. No component imports HttpClient
- * directly — same "always behind an interface" discipline the backend uses for
- * its Data Access and Integrations layers.
+ * `HttpKnowledgeGateway` talks to the ASP.NET Core API and is the default;
+ * `MockKnowledgeGateway` implements the same contract with in-memory data, for
+ * working on screens without running the backend. Swapping them is one line in
+ * `app.config.ts`. No component imports HttpClient directly — same "always
+ * behind an interface" discipline the backend uses for its Data Access and
+ * Integrations layers.
  */
 export abstract class KnowledgeGateway {
   abstract folders(): Observable<Folder[]>;

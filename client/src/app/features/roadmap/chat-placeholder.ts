@@ -32,7 +32,7 @@ export class ChatPlaceholder {
   ];
 
   protected readonly dependencies = [
-    'Phase 2 — working hybrid search to retrieve against',
+    'Phase 2 — hybrid search to retrieve against (done)',
     'Phase 3 — RAG orchestrator in the Service layer',
     'Phase 3 — ILlmProvider wired to the Claude API with a strict grounding prompt',
   ];

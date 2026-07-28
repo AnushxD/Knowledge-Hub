@@ -4,9 +4,10 @@ An internal Documentation & Knowledge Hub: upload, organise and search team
 documentation, with an AI assistant (from phase 3) that answers questions
 grounded strictly in indexed content and always cites its sources.
 
-> **Status:** phase 1 (core document management) is **complete** — upload,
-> folders, metadata, preview and versioning work end to end against Postgres
-> and blob storage. Phase 2 (ingestion + search) is next. See
+> **Status:** phases 1 and 2 are **complete** — upload, folders, metadata and
+> versioning work end to end, and uploaded documents are automatically
+> extracted, chunked, embedded and made searchable by hybrid keyword +
+> semantic search. Phase 3 (the AI assistant) is next. See
 > [Current state](#current-state).
 
 ---
@@ -19,7 +20,7 @@ Install these before anything else.
 |---|---|---|---|
 | [.NET SDK](https://dotnet.microsoft.com/download) | **10.0** or later | `dotnet --version` | Built against 10.0.301 |
 | [Node.js](https://nodejs.org) | **20 LTS** or later | `node --version` | Developed on 26.5.0 |
-| [Docker Desktop](https://www.docker.com/products/docker-desktop/) | any current | `docker --version` | Must be **running** — Postgres and Azurite live here |
+| [Docker Desktop](https://www.docker.com/products/docker-desktop/) | any current | `docker --version` | Must be **running** — Postgres, Azurite and Ollama live here |
 | Git | any current | `git --version` | |
 
 Editor: **VS Code** with the [C# Dev Kit](https://marketplace.visualstudio.com/items?itemName=ms-dotnettools.csdevkit)
@@ -53,18 +54,22 @@ export PATH="$PATH:$HOME/.dotnet/tools"
 
 ### 2. Start local infrastructure
 
-Postgres (with the pgvector extension) and Azurite (the Azure Blob Storage
-emulator) both run in Docker. Nothing else needs installing locally.
+Postgres (with the pgvector extension), Azurite (the Azure Blob Storage
+emulator) and Ollama (the local embedding model) all run in Docker. Nothing
+else needs installing locally.
 
 ```bash
 docker compose up -d --wait
 ```
 
-Confirm both are healthy:
+Confirm all three are healthy:
 
 ```bash
 docker compose ps
 ```
+
+The first start pulls the Ollama image, which is large — give it a few
+minutes.
 
 ### 3. Install client dependencies
 
@@ -97,10 +102,22 @@ dotnet run --project server/src/DocHub.Api -- init-storage
 This creates the private `documents` container in Azurite and exits. It is
 idempotent — running it again just reports that the container already exists.
 
-### 6. Confirm setup is complete
+### 6. Pull the embedding model
+
+Ingestion turns document text into vectors with a local model. It is not
+bundled with the Ollama image, so pull it once:
+
+```bash
+docker compose exec ollama ollama pull nomic-embed-text
+```
+
+That is a ~275 MB download and needs no API key or account. Everything stays
+on your machine — document text is never sent anywhere.
+
+### 7. Confirm setup is complete
 
 Start the API (see below) and open http://localhost:5080/healthz. It should
-report `"status": "Healthy"`. If either step above was missed, the status is
+report `"status": "Healthy"`. If a step above was missed, the status is
 `Degraded` and the response names the exact command to run.
 
 ---
@@ -126,14 +143,20 @@ npm --prefix client start
 | Angular client | http://localhost:4200 |
 | API | http://localhost:5080 |
 | API readiness check | http://localhost:5080/healthz |
+| Background jobs dashboard | http://localhost:5080/jobs — development only |
 | OpenAPI document | http://localhost:5080/openapi/v1.json |
 | Postgres | `localhost:5432` — db `dochub`, user `dochub`, password `dochub_local_dev` |
 | Azurite blob | `localhost:10000` |
+| Ollama | `localhost:11434` |
 
-`GET /healthz` should return `"status": "Healthy"` with both the `postgres` and
-`blob-storage` checks green. A `Degraded` status means a setup step is missing —
-the response says which, and the command that fixes it. See
+`GET /healthz` should return `"status": "Healthy"` with the `postgres`,
+`blob-storage` and `embeddings` checks green. A `Degraded` status means a setup
+step is missing — the response says which, and the command that fixes it. See
 [Troubleshooting](#troubleshooting).
+
+The jobs dashboard is unauthenticated and shows job arguments, so it is
+registered in development only. It gains real authorisation when auth arrives
+in phase 5.
 
 ### Running and debugging from VS Code
 
@@ -147,6 +170,55 @@ Run and Debug panel:
 
 Breakpoints work in both C# and TypeScript. The API config runs
 `docker compose up -d --wait` first, so it can't race the containers.
+
+---
+
+## How ingestion and search work
+
+Uploading a document returns immediately and queues a background job — a large
+PDF takes far longer to process than an upload should. The job:
+
+1. **Extracts** text according to file type
+2. **Chunks** it at roughly 800 tokens with 15% overlap, splitting on the
+   structure the document already has (headings, pages, slides) and only
+   falling back to sentences and then raw length when a block will not fit
+3. **Embeds** each chunk with the local model
+4. **Stores** chunks, embeddings and section references in Postgres
+5. **Marks** the document `Indexed`, or `Failed` with a reason you can read
+
+A chunk never spans two sections, which is what lets a search result and
+(from phase 3) a citation say "Page 4" rather than pointing vaguely at a file.
+
+Watch a document move through the pipeline on the
+[jobs dashboard](http://localhost:5080/jobs), or by its status in the library.
+
+**Supported file types** — `GET /api/documents/supported-types` returns the
+live list:
+
+| Type | Handling |
+|---|---|
+| Markdown | Split on headings, which become the citation labels |
+| Text, CSV, JSON, YAML, XML, SQL, config, logs | Read directly |
+| PDF | Text layer via PdfPig, one section per page |
+| Word, PowerPoint, Excel | OpenXML — headings, slide numbers and sheet names become labels |
+
+Images and scanned PDFs have no text layer and are marked `Failed` with a clear
+reason; OCR is a later phase. Legacy binary `.doc`/`.ppt`/`.xls` are not
+OpenXML and are not supported.
+
+**Search** runs two branches and merges them with reciprocal rank fusion:
+
+- **Keyword** — Postgres full-text search over a generated `tsvector` column.
+  Finds exact things a language model has no reason to consider similar to
+  anything: error codes, product names, identifiers.
+- **Semantic** — pgvector cosine similarity over the embeddings. Finds the
+  right passage when the question uses none of the document's words.
+
+The two produce scores on unrelated scales, so they are fused on rank position
+rather than raw score. A passage both branches find outranks one only a single
+branch found, and every result says which branch matched it. If the embedding
+provider is down, search degrades to keyword-only and says so rather than
+quietly returning half the answer.
 
 ---
 
@@ -166,9 +238,17 @@ providers. Docker must be running.
   the 404 behaviour the code depends on. Uses a throwaway blob container per
   run.
 - **Services** — the whole stack minus HTTP: real services over real
-  repositories over real blob storage. Mocking those seams would only prove the
-  mocks behave; the bugs worth catching live between the layers, such as a
-  deleted folder failing to free its documents' files.
+  repositories over real blob storage, including the ingestion pipeline and
+  hybrid search. Mocking those seams would only prove the mocks behave; the
+  bugs worth catching live between the layers, such as a deleted folder failing
+  to free its documents' files, or the two search branches colliding on a
+  shared DbContext.
+
+  The embedding model is the one thing faked here, using the deterministic
+  `hashing` provider — tests must not depend on a model being pulled, and what
+  is under test is the pipeline's wiring rather than the quality of the
+  vectors. Chunking and extraction need no infrastructure at all and run as
+  plain unit tests.
 
 None of them touch your development data. Override the targets with the
 `DOCHUB_TEST_DB` and `DOCHUB_TEST_BLOBS` environment variables if you need to.
@@ -185,16 +265,16 @@ Knowledge-Hub/
 ├── client/                       # Angular 22 SPA
 │   ├── src/app/core/             # models, gateway, state, theme
 │   ├── src/app/layout/           # shell, nav rail, folder tree, command palette
-│   ├── src/app/features/         # dashboard, browse, document detail, settings
+│   ├── src/app/features/         # dashboard, browse, document detail, search, settings
 │   ├── src/app/shared/           # reusable components, pipes, directives
 │   └── tools/gen-icons.mjs       # regenerates the Lucide icon CSS
 ├── server/
 │   ├── src/DocHub.Api/           # controllers, DI composition, health checks
-│   ├── src/DocHub.Services/      # business logic (in progress)
+│   ├── src/DocHub.Services/      # business logic: documents, ingestion, search
 │   ├── src/DocHub.DataAccess/    # EF Core, entities, repositories, migrations
-│   ├── src/DocHub.Integrations/  # external systems: blob storage, LLM, MCP
+│   ├── src/DocHub.Integrations/  # external systems: blob storage, embeddings, LLM, MCP
 │   └── tests/                    # integration tests
-├── docker-compose.yml            # Postgres + pgvector, Azurite
+├── docker-compose.yml            # Postgres + pgvector, Azurite, Ollama
 ├── CLAUDE.md                     # architecture rules and conventions — read this
 └── architecture-blueprint.md     # the full technical design
 ```
@@ -217,10 +297,31 @@ Key settings, one strongly-typed Options class per external dependency:
 
 | Key | Purpose |
 |---|---|
-| `Database:ConnectionString` | Postgres connection |
+| `Database:ConnectionString` | Postgres connection — also backs the Hangfire job store |
 | `FileStorage:ConnectionString` | `UseDevelopmentStorage=true` locally; a real Azure connection string in production |
-| `FileStorage:ContainerName` | Blob container for document files (default `documents`, created at startup) |
+| `FileStorage:ContainerName` | Blob container for document files (default `documents`) |
+| `Embeddings:Provider` | `ollama` (default) or `hashing` — see below |
+| `Embeddings:BaseUrl` | Ollama endpoint (default `http://localhost:11434`) |
+| `Embeddings:Model` | Embedding model (default `nomic-embed-text`) |
+| `Embeddings:Dimensions` | Vector width — **must match the migrated column**, see below |
+| `Ingestion:TargetTokens` | Chunk size target (default 800) |
+| `Ingestion:OverlapTokens` | Tokens repeated between chunks (default 120) |
 | `Cors:AllowedOrigins` | Origins allowed to call the API in development |
+
+**Running without a model.** Setting `Embeddings:Provider` to `hashing` uses
+deterministic in-process vectors instead — no download, no network. The
+pipeline and search both work, but similarity becomes pure lexical overlap: it
+matches "invoice" to "invoice" and has no idea that relates to "billing". It
+exists so tests are hermetic, not as a substitute for a real model.
+
+**Changing embedding provider or model.** The chunk table is migrated for a
+fixed vector width (768, matching `nomic-embed-text`). A model of a different
+width needs a new migration *and* a full re-index — vectors from two models are
+not comparable, so mixing them silently corrupts ranking. The API validates the
+configured width at startup rather than failing partway through an ingestion
+run. Swapping to a hosted provider (Voyage, OpenAI) means implementing
+`IEmbeddingProvider` and changing one registration; nothing in ingestion or
+search changes.
 
 All are validated at startup, so a missing or empty value fails the boot rather
 than the first request. Note that validation is all the app does at startup —
@@ -255,6 +356,18 @@ dotnet ef database update --project server/src/DocHub.DataAccess --startup-proje
 ```bash
 dotnet run --project server/src/DocHub.Api -- init-storage
 ```
+```bash
+docker compose exec ollama ollama pull nomic-embed-text
+```
+
+**Re-index a document** after it fails, or after changing the chunking
+settings:
+
+```bash
+curl -X POST http://localhost:5080/api/documents/THE-DOCUMENT-ID/reindex
+```
+
+The library screen offers the same action on a failed document.
 
 **Roll a migration back** to a known one (use `0` to undo everything):
 
@@ -289,21 +402,24 @@ docker compose down
 
 | Area | Status |
 |---|---|
-| Angular client (all phase 1 screens) | Done — runs on mock data |
 | Local infrastructure + solution skeleton | Done |
 | Data access: entities, migrations, repositories | Done |
 | Blob storage (`IFileStorage`) | Done |
 | Services + API endpoints | Done |
-| Client wired to the real API | Done |
+| Angular client wired to the real API | Done |
+| Text extraction (Markdown, text, PDF, Office) | Done |
+| Chunking + embeddings (`IEmbeddingProvider`) | Done |
+| Background ingestion on Hangfire | Done |
+| Hybrid keyword + semantic search, with a search screen | Done |
 
-**Phase 1 is complete.** Everything the browser shows comes from Postgres and
-Azurite — uploads, folders, metadata edits and version history all survive a
-page reload.
+**Phases 1 and 2 are complete.** Upload a Markdown, PDF or Word file and it is
+extracted, chunked, embedded and searchable within seconds — by exact term or
+by a question in your own words.
 
-Not yet built, by design (later phases): text extraction, chunking and
-embeddings; search; the AI assistant; MCP repository sources; authentication.
-Documents therefore sit at status **Queued** forever for now — nothing ingests
-them yet, which is phase 2.
+Not yet built, by design (later phases): the AI chat assistant with citations;
+MCP repository sources; authentication and roles; the deployment pipeline. OCR
+for scanned documents is also deferred, so image-only PDFs are reported as
+failed rather than silently indexed as empty.
 
 The client talks to the API through one seam, `KnowledgeGateway`. Two
 implementations exist:
@@ -334,6 +450,9 @@ requests are same-origin and CORS never applies.
 | `DELETE` | `/api/documents/{id}` | Delete a document and all its files |
 | `GET` | `/api/documents/stats` | Library counts for the dashboard |
 | `GET` | `/api/documents/tags` | Every tag in use |
+| `GET` | `/api/documents/supported-types` | File extensions ingestion can index |
+| `POST` | `/api/documents/{id}/reindex` | Requeue a document for ingestion |
+| `GET` | `/api/search?query=…` | Hybrid keyword + semantic search over indexed chunks |
 
 Errors come back as RFC 7807 problem details — 400 for a rejected business
 rule (with a message meant for the user), 404 for a missing entity.
@@ -342,6 +461,12 @@ Try it once the API is running:
 
 ```bash
 curl -X POST http://localhost:5080/api/folders -H 'Content-Type: application/json' -d '{"parentId":null,"name":"Engineering"}'
+```
+
+Search, once something is indexed:
+
+```bash
+curl -G http://localhost:5080/api/search --data-urlencode 'query=how do I connect remotely'
 ```
 
 Roadmap phases (search, AI assistant, MCP, auth, deployment) are listed in
@@ -364,6 +489,25 @@ says which one:
 
 - `no migrations have been applied` → run step 4
 - `container does not exist` → run step 5
+- `the 'nomic-embed-text' model is not installed` → run step 6
+
+**Documents never leave Pending** — the background worker is not processing
+them. Check the [jobs dashboard](http://localhost:5080/jobs) for failed jobs
+and the API log for the reason.
+
+**Documents go straight to Failed** — open the document; the failure reason is
+shown on it. The usual causes are a scanned PDF with no text layer, an
+unsupported file type, or the embedding model not being pulled (step 6). Fix
+the cause and re-index from the library or via
+`POST /api/documents/{id}/reindex`.
+
+**Search returns "Semantic matching is unavailable"** — Ollama is not reachable
+or the model is missing. Results shown are keyword-only. Run `docker compose up
+-d` and step 6, then search again. Nothing needs re-indexing.
+
+**Search finds nothing** — only documents that reached `Indexed` are
+searchable, by design: a half-processed document must not be citable. Check the
+library for anything still pending or failed.
 
 **A request fails with "container does not exist"** — same cause. The app
 deliberately does not create storage at runtime, so run step 5.
