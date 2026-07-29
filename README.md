@@ -4,15 +4,16 @@ An internal Documentation & Knowledge Hub: upload, organise and search team
 documentation, with an AI assistant that answers questions grounded strictly
 in indexed content and always cites its sources.
 
-> **Status:** phases 1–5 are **complete**. Documents upload, index and become
+> **Status:** phases 1–6 are **complete**. Documents upload, index and become
 > searchable by hybrid keyword + semantic search, and an AI assistant answers
 > questions from them — citing the exact passage behind every claim, and
 > saying "I don't know" when the answer isn't there. The assistant now retrieves
 > through an `IKnowledgeSource` abstraction, so a repository source over MCP
 > joins document search without the assistant changing; the repository source
-> ships as an inactive stub until phase 7. Everything now sits behind a sign-in
-> with Admin / Editor / Viewer roles, and Google sign-in can be switched on for
-> company addresses. Phase 6 (the deployment pipeline) is next.
+> ships as an inactive stub until phase 7. Everything sits behind a sign-in with
+> Admin / Editor / Viewer roles, and Google sign-in can be switched on for
+> company addresses. It ships as container images or as a single-site IIS
+> artefact, both from one CI pipeline. Phase 7 (the real MCP client) is next.
 > See [Current state](#current-state).
 
 ---
@@ -501,6 +502,98 @@ docker compose down
 
 ---
 
+## Deployment
+
+Three things exist here: container images, a CI workflow, and an IIS artefact.
+They share one binary — nothing branches on how it was deployed.
+
+### Continuous integration
+
+`.github/workflows/ci.yml` runs on every push and pull request to `main`:
+
+- **Server** — builds and tests against the repository's *own* `docker-compose.yml`
+  Postgres and Azurite. The tests deliberately use real infrastructure, and
+  reusing the compose file means CI cannot drift from a developer's machine.
+- **Client** — typechecks, builds, and asserts the generated `icons.css` is
+  current, so an edited icon map that was never regenerated fails here rather
+  than as a missing glyph later.
+- **Images** — builds both Dockerfiles once the code is known good. They are
+  *built, not pushed*: which registry to publish to needs credentials this
+  repository does not have yet.
+
+`DOCHUB_TEST_DB` is deliberately left unset in CI. Both test projects read that
+one variable but default to different databases, and each drops and recreates
+its own — pointing them at a single database would have them delete the schema
+out from under each other.
+
+### Running the built stack locally
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.app.yml up -d --build
+```
+
+The client is then on http://localhost:4300 and the API on http://localhost:8080.
+Provisioning is still explicit — after the first start:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.app.yml run --rm api dotnet DocHub.Api.dll init-storage
+```
+```bash
+docker compose -f docker-compose.yml -f docker-compose.app.yml run --rm api dotnet DocHub.Api.dll seed-admin
+```
+
+Migrations still come from the repository with `dotnet ef database update`.
+
+In this arrangement nginx serves the client and proxies `/api` to the API, so
+the two are same-origin and the session cookie needs no CORS or `SameSite=None`.
+
+### IIS on the org Windows box
+
+The API serves the built Angular app from `wwwroot` when it is published
+alongside, so IIS hosts **one site** — no Application Request Routing to install
+and keep configured, and no cross-origin cookie to get right. In the container
+image `wwwroot` is empty and nginx does that job instead; the same binary covers
+both.
+
+Build the artefact with the **Publish (IIS artefact)** workflow (manual, or on a
+`v*` tag). It publishes the API for `win-x64`, copies the client into `wwwroot`,
+and asserts no developer settings came along.
+
+On the Windows box:
+
+1. Install the **ASP.NET Core Hosting Bundle** — it registers `AspNetCoreModuleV2`,
+   without which the committed `web.config` does nothing.
+2. Create a site pointing at the published folder, with its application pool set
+   to **No Managed Code**. The runtime is in the app, not in IIS.
+3. Give the pool identity read access to the folder, and write access only to
+   `logs\` if stdout logging is turned on.
+4. Provision explicitly, exactly as locally: apply migrations, then
+   `DocHub.Api.exe init-storage` and `DocHub.Api.exe seed-admin`.
+
+Two settings in `web.config` are not defaults and the app is wrong without them:
+`responseBufferLimit="0"`, or the assistant's server-sent events are buffered
+and the answer arrives in one lump instead of streaming; and
+`maxAllowedContentLength`, matched to the 25 MB the service enforces so IIS does
+not reject a file with a bare 404.13 before the API can explain.
+
+### Secrets
+
+Nothing secret is committed, and the pipeline does not carry any yet.
+
+| Where | How configuration arrives |
+|---|---|
+| Local development | `appsettings.Development.json` (no real values) and `dotnet user-secrets` |
+| Containers | Environment variables — `Database__ConnectionString`, `Authentication__Google__ClientSecret`, and so on |
+| IIS | Environment variables on the site or app pool, or `web.config` `environmentVariables` for non-secret values |
+| Azure, later | Key Vault |
+
+`appsettings.Development.json` is excluded from both the publish output and the
+Docker build context. It is safe in the repository because it only points at
+containers on one machine, but it also carries the local `seed-admin` password,
+and no deployable artefact should contain a credential.
+
+---
+
 ## Current state
 
 | Area | Status |
@@ -519,8 +612,9 @@ docker compose down
 | Assistant screen: streaming answers, sources, session history | Done |
 | `IKnowledgeSource` abstraction + composite retrieval, `/sources` screen | Done |
 | Sign-in, roles, admin account management, Google sign-in, rate limiting | Done |
+| Container images, GitHub Actions CI, IIS artefact and single-site hosting | Done |
 
-**Phases 1–5 are complete.** Upload a Markdown, PDF or Word file and it is
+**Phases 1–6 are complete.** Upload a Markdown, PDF or Word file and it is
 extracted, chunked, embedded and searchable within seconds. Ask a question and
 the assistant answers from those documents, links every claim to the exact
 passage behind it, and declines when the answer isn't there.
@@ -539,7 +633,8 @@ on, the allowed-domain check runs on the server against the address Google
 verified, and an empty allow-list admits nobody.
 
 Not yet built, by design (later phases): the real MCP client; Entra ID single
-sign-on; the deployment pipeline. OCR for scanned documents is also deferred, so
+sign-on; pushing images to a registry, and any automated deploy step — CI builds
+the images and the IIS artefact, but a human still puts them somewhere. OCR for scanned documents is also deferred, so
 image-only PDFs are reported as failed rather than silently indexed as empty.
 
 The client talks to the API through one seam, `KnowledgeGateway`. Two

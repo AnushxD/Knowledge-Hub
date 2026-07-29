@@ -16,7 +16,7 @@ Internal **Documentation & Knowledge Hub** (DocHub): upload/organise/search team
 
 # Current Objective
 
-Phases 1–5 are **complete and pushed**. Next objective is **Phase 6: the deployment pipeline** — Dockerfile, GitHub Actions, IIS deploy on the org Windows box.
+Phases 1–6 are **complete and pushed**. Next objective is **Phase 7: the real MCP client** implementing `IKnowledgeSource`, plus a look at vector-store scale.
 
 ---
 
@@ -31,6 +31,9 @@ Phases 1–5 are **complete and pushed**. Next objective is **Phase 6: the deplo
 - **Phase 5** — Identity cookie auth, Admin/Editor/Viewer roles, admin account management,
   optional Google sign-in with server-side domain allow-listing, chat rate limiting,
   `/jobs` and `/swagger` behind the Admin role, client sign-in flow.
+- **Phase 6** — API and client container images, `docker-compose.app.yml` for the built
+  stack, GitHub Actions CI (server + client + images) and a publish workflow producing a
+  single-site IIS artefact.
 - Swagger UI at `/swagger` (dev only, Admin only).
 - 128 tests green: 8 Integrations, 17 Api, 14 DataAccess, 89 Services.
 
@@ -38,9 +41,9 @@ Phases 1–5 are **complete and pushed**. Next objective is **Phase 6: the deplo
 - Nothing. Working tree clean, all work pushed.
 
 ## Remaining (roadmap)
-6. Deployment pipeline (Docker, GitHub Actions, IIS) — **next**
-7. Real MCP integration + revisit vector-store scale
-Also outstanding: Entra ID single sign-on (the Identity seam is in place).
+7. Real MCP integration + revisit vector-store scale — **next**
+Also outstanding: Entra ID single sign-on (the Identity seam is in place); pushing images to
+a registry and an actual automated deploy step (CI builds, a human still deploys).
 
 ---
 
@@ -82,6 +85,14 @@ Also outstanding: Entra ID single sign-on (the Identity seam is in place).
 - **Accounts are disabled, never deleted** — they own documents, folders and conversations.
 - **Security stamp revalidated every 5 minutes** — otherwise a revoked role lingered until the cookie expired, up to `SessionHours`.
 - **Chat rate limit partitions by user id, not IP** — an office NAT is one address, and a shared limit punishes the wrong people.
+- **One binary serves two deployment shapes.** Containers: nginx serves the client and proxies `/api`. IIS: the API serves the client from `wwwroot`, one site. Chosen at startup by looking for `wwwroot/index.html`, so nothing branches on an environment name.
+- **IIS is a single site rather than two plus ARR** — Application Request Routing is another component to install and keep configured on the org box, and a second origin means a cross-origin session cookie for no benefit.
+- **The SPA fallback is `AllowAnonymous`** — it is the login screen, and the fallback policy would otherwise 401 the page whose purpose is to obtain a session.
+- **Response buffering must be off in front of the assistant** — `proxy_buffering off` (nginx) and `responseBufferLimit="0"` (web.config). Neither fails loudly; SSE just stops streaming.
+- **CI reuses the repo's own compose file** for Postgres and Azurite, so test infrastructure cannot drift from local dev. Azurite needs `--skipApiVersionCheck`, which a GitHub service container cannot express — it has no way to override the image command.
+- **`DOCHUB_TEST_DB` is never set in CI** — both suites read that one variable, default to different databases, and each drops and recreates its own.
+- **`appsettings.Development.json` excluded from publish output and the Docker context** — it carries the local seed-admin password, and no artefact should contain a credential. The publish workflow asserts it.
+- **Images are built, not pushed** — the registry is a deployment decision needing credentials the repo does not have.
 
 ---
 
@@ -100,6 +111,10 @@ server/
   src/DocHub.DataAccess/{Entities,Dtos,Repositories,Migrations}
   src/DocHub.Integrations/{Storage,Embeddings,Llm,Knowledge,HealthChecks}
   src/DocHub.Api/Infrastructure/Auth/    # Identity wiring, policies, seeder, admin gates
+  src/DocHub.Api/web.config              # IIS: no response buffering, 25 MB limit
+  server/Dockerfile · client/Dockerfile · client/nginx.conf.template
+.github/workflows/{ci,publish}.yml
+docker-compose.app.yml                 # the built stack on the dev infrastructure
   tests/{DocHub.Api.Tests,DocHub.Services.Tests,DocHub.DataAccess.Tests,DocHub.Integrations.Tests}
 docker-compose.yml                   # postgres+pgvector, azurite, ollama
 CLAUDE.md · SESSION.md · README.md · architecture-blueprint.md
@@ -169,6 +184,9 @@ CLAUDE.md · SESSION.md · README.md · architecture-blueprint.md
 - **Local generation is slow** — ~5–15 tok/s on CPU-only Docker.
 - **Anthropic/Claude `ILlmProvider` not implemented.** User declined adding the Anthropic C# SDK dependency this session. The interface is the seam; adding it = one class + one branch in `AddIntegrations`. `LlmOptions.Provider` currently validates `ollama` only.
 - **`activity()` returns `[]`** — the audit log was *not* built in phase 5 and has no phase assigned. Authentication landed; recording who did what did not.
+- **CI has never actually run.** The workflows are committed but this repository's Actions have not executed them — every step was reproduced locally instead (Release build, `dotnet test`, the icon check, both image builds, the full compose stack). Expect the usual first-run friction.
+- **Images are built but pushed nowhere**, and no step deploys anything. CI produces artefacts; a human still installs them.
+- **IIS itself is untested** — dev is a Mac. The single-site arrangement was verified by publishing and running the same output under Kestrel, which exercises the static-file serving and the anonymous SPA fallback but not `AspNetCoreModuleV2` or `web.config`.
 - **No Entra ID yet.** Phase 5 shipped local Identity plus optional Google. The OIDC provider is the same registration shape — one more branch in `AddDocHubAuthentication`.
 - **Google sign-in is untested against real Google.** The domain allow-list is unit-tested and the provider is registered correctly, but no end-to-end run has happened without credentials. Configure `Authentication:Google:*` and try it before relying on it.
 - **CSRF rests on SameSite=Lax plus a JSON content type.** Antiforgery tokens were not added; worth revisiting if a form-encoded endpoint ever appears.
@@ -183,10 +201,15 @@ CLAUDE.md · SESSION.md · README.md · architecture-blueprint.md
 
 No files are mid-edit; the tree is clean and pushed.
 
-**Starting point for phase 6** — deployment. Nothing is containerised yet beyond the
-docker-compose dependencies. Note that migrations, `init-storage` and `seed-admin` are all
-operator-run steps, so the pipeline has to invoke them deliberately rather than expect the
-app to self-provision.
+**Starting point for phase 7** — the real MCP client. The seam is already in place:
+`IKnowledgeSource` in Integrations, with `NullRepositoryKnowledgeSource` as the stub to
+replace and `KnowledgeSourceOptions.RepositoryProvider` currently validating `none` only.
+The composite, its failure isolation and the `/sources` screen all work against more than
+one source already.
+
+The one contract question phase 7 has to answer: `KnowledgeResult` is document-shaped
+because a persisted `Citation` carries a document id and deep-links to `/docs/:id?chunk=n`.
+A file at a commit needs a citation target that is not a document id.
 
 **Edge cases already handled — don't re-solve:** empty retrieval refusal; fabricated citation markers; vector-branch outage degrading to keyword-only; DbContext concurrency; SSE validation-before-headers; unresolved markers rendered as plain text; a knowledge source failing mid-question; duplicate passages returned by two sources; an empty query reaching the composite; account enumeration via the login form; open redirect on `returnUrl`; a cookie whose user was deleted mid-session; an admin demoting themselves to nobody; the SSE `fetch` path missing the session cookie.
 
@@ -265,14 +288,14 @@ inactive source renders as its own state, not as a failure.
 
 # Next Immediate Steps
 
-1. Dockerfile for the API (multi-stage) and one for the built Angular client.
-2. GitHub Actions: build, test against a Postgres service container, publish artefacts.
-3. IIS deployment onto the org Windows box — `web.config`, the hosting bundle, and the fact that migrations and `seed-admin` are operator-run there too.
-4. Decide how secrets reach IIS and Azure (env vars vs Key Vault) — `Authentication:Google:ClientSecret` is the first real one.
+1. Decide the citation target for a non-document source — the one part of the phase 4 contract expected to change.
+2. Implement the MCP client in Integrations against `IKnowledgeSource`, replacing `NullRepositoryKnowledgeSource`, and allow `RepositoryProvider: "mcp"` in the options validation.
+3. Point it at a real MCP server; verify the composite's failure isolation against a source that can genuinely be down.
+4. Revisit vector-store scale — HNSW parameters and whether pgvector still fits at the corpus size by then.
 5. Update README + `CLAUDE.md` roadmap markers; commit and push each chunk.
 
 ---
 
 # Context Recovery Prompt
 
-> Read `SESSION.md` and `CLAUDE.md` at the repo root before doing anything else. This is DocHub — an ASP.NET Core + Angular documentation hub with local-Ollama RAG. Phases 1–5 (doc management, ingestion + hybrid search, grounded AI assistant with verified citations, the `IKnowledgeSource` abstraction with composite retrieval, and Identity cookie auth with roles and optional Google sign-in) are **complete, tested and pushed to `main`** — do not re-analyse or rebuild them. All 128 tests pass. Start on **Phase 6: the deployment pipeline**, following the "Next Immediate Steps" checklist in `SESSION.md`. Respect the grounding rules, security rules and layering constraints in `CLAUDE.md`. Build and test before each commit, and commit + push each finished chunk to `main` without asking.
+> Read `SESSION.md` and `CLAUDE.md` at the repo root before doing anything else. This is DocHub — an ASP.NET Core + Angular documentation hub with local-Ollama RAG. Phases 1–6 (doc management, ingestion + hybrid search, grounded AI assistant with verified citations, the `IKnowledgeSource` abstraction with composite retrieval, Identity cookie auth with roles and optional Google sign-in, and the Docker/CI/IIS deployment pipeline) are **complete, tested and pushed to `main`** — do not re-analyse or rebuild them. All 128 tests pass. Start on **Phase 7: the real MCP client**, following the "Next Immediate Steps" checklist in `SESSION.md`. Respect the grounding rules, security rules, deployment rules and layering constraints in `CLAUDE.md`. Build and test before each commit, and commit + push each finished chunk to `main` without asking.

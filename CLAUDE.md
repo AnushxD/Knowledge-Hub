@@ -96,8 +96,8 @@ doc-knowledge-hub/
 3. ✅ AI chat assistant with citations, RAG over uploaded docs only
 4. ✅ MCP `IKnowledgeSource` abstraction + stub implementation
 5. ✅ Real auth + roles + security hardening
-6. Deployment pipeline (Docker, GitHub Actions, IIS deploy)  ← NEXT
-7. Real MCP integration + revisit scale (vector store, search)
+6. ✅ Deployment pipeline (Docker, GitHub Actions, IIS deploy)
+7. Real MCP integration + revisit scale (vector store, search)  ← NEXT
 
 ## Grounding rules (phases 2–4, non-negotiable)
 - Only `Indexed` documents are retrievable. A half-processed or failed document must never
@@ -137,6 +137,24 @@ doc-knowledge-hub/
 - Accounts are disabled, never deleted — they own documents, folders and conversations.
 - Client-side guards and hidden buttons are courtesy. The API is what enforces access, and
   every rule must hold with the client bypassed entirely.
+
+## Deployment rules (phase 6)
+- **One binary, two shapes.** Containers: nginx serves the client and proxies `/api`. IIS:
+  the API serves the client from `wwwroot` and it is a single site. The API decides at
+  startup by looking for `wwwroot/index.html` — nothing branches on an environment name.
+- **The SPA fallback is `AllowAnonymous`.** It *is* the login screen; the fallback
+  authorisation policy would otherwise 401 the page whose purpose is to obtain a session.
+- **Response buffering must be off in front of the assistant** — `proxy_buffering off` in
+  nginx, `responseBufferLimit="0"` in `web.config`. Neither fails loudly: the answer simply
+  stops streaming and arrives in one lump.
+- **CI reuses the repo's own `docker-compose.yml`** for Postgres and Azurite, so the
+  infrastructure tests run against cannot drift from local dev.
+- **Never set `DOCHUB_TEST_DB` globally in CI.** Both test projects read that one variable
+  but default to different databases and each recreates its own.
+- **No credential ever reaches an artefact.** `appsettings.Development.json` is excluded
+  from publish output *and* from the Docker build context; the publish workflow asserts it.
+- Provisioning stays operator-run in every environment — the pipeline never migrates a
+  database or creates a container as a side effect of deploying.
 
 ## Provisioning is explicit
 The API never creates databases, containers or schema at startup. Setup is operator-run:
