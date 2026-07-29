@@ -566,10 +566,10 @@ CSS. Nothing is built on the server.
 | Needed | Not needed |
 |---|---|
 | .NET 10 **Hosting Bundle** (runtime + the IIS module) | .NET **SDK** — only if you choose to run migrations here, and step 4 gives an alternative that avoids it |
-| Access to a **Docker host**, for Postgres and Azurite — via Portainer, Docker Engine or Docker Desktop | **Node.js / npm** — the Angular app arrives pre-built |
+| **Docker Engine**, managed through Portainer, for Postgres and Azurite | **Node.js / npm** — the Angular app arrives pre-built |
 | Ollama, for the two local models | **Angular CLI** — same reason |
-| | **Git** — you copy one file to the Docker host, not the repository |
-| | **A `docker` CLI on this machine** — Portainer deploys the stack for you |
+| | **Git** — you paste one file into Portainer, you do not clone the repository |
+| | **A `docker` CLI** — Portainer deploys and manages the stack for you |
 
 **What runs where.** Only the application goes in IIS. The infrastructure runs
 as containers, from the same `docker-compose.yml` a developer uses:
@@ -577,16 +577,16 @@ as containers, from the same `docker-compose.yml` a developer uses:
 | Piece | Where | Why |
 |---|---|---|
 | API + client | **IIS**, one site | The API serves the client from `wwwroot`, so they are same-origin and the session cookie needs no CORS |
-| PostgreSQL + pgvector | **Docker host**, as a Portainer stack | pgvector has no supported Windows installer; the `pgvector/pgvector:pg17` image is the reliable route |
-| Blob storage | **Docker host** (Azurite), or real Azure | Azurite is an emulator — see step 2 |
-| Ollama | **Native Windows install**, or the Docker host | Native gets the GPU if this box has one; containerised is fine on CPU and keeps everything in one place |
+| PostgreSQL + pgvector | **Portainer stack**, on this machine | pgvector has no supported Windows installer; the `pgvector/pgvector:pg17` image is the reliable route |
+| Blob storage | **Portainer stack** (Azurite), or real Azure | Azurite is an emulator — see step 2 |
+| Ollama | **Native Windows install**, or the same stack | Native gets the GPU if this box has one; containerised is fine on CPU and keeps everything in one place |
 
-> **Is the Docker host this same machine?** Portainer usually manages a Docker
-> Engine running somewhere else. That one fact decides every connection string
-> in step 3: containers on **this** box are reachable at `localhost`, containers
-> on **another** host are reachable at that host's address. Settle it before you
-> start — a wrong host here is the most likely reason the app comes up
-> `Degraded`.
+These instructions assume Docker runs on **this same machine**, so the
+containers publish their ports to `localhost` and every connection string below
+says so. If you ever move the containers to another host, the only change is
+swapping `localhost` for that host's address in step 3 — and Azurite needs its
+long-form connection string, because `UseDevelopmentStorage=true` resolves to
+`127.0.0.1` and cannot express a remote host.
 
 #### 1. Install the prerequisites
 
@@ -603,7 +603,7 @@ Then install, in this order:
 1. The **.NET 10 Hosting Bundle** — not the SDK, not the plain runtime — from
    <https://dotnet.microsoft.com/download/dotnet/10.0>.
 2. **Ollama for Windows** from <https://ollama.com/download/windows> — unless
-   you run it on the Docker host instead, see step 2.
+   you would rather run it as part of the stack, see step 2.
 
 Nothing else installs here. The containers are deployed through Portainer, so
 this machine needs no Docker CLI and no Docker Desktop licence. If the org
@@ -630,16 +630,17 @@ stack**.
 
 Two adjustments before deploying:
 
-- **Remove the `ollama` service** if you are running Ollama natively on the
-  Windows box (the default in step 1). Leave it in if you would rather it ran on
-  the Docker host — that is the better choice when the Docker host has a GPU and
-  the Windows box does not.
+- **Remove the `ollama` service** if you installed Ollama natively in step 1,
+  which is the recommended route: a native install picks up an NVIDIA GPU if the
+  machine has one, whereas reaching a GPU from a container on Windows needs the
+  WSL 2 backend and the NVIDIA container toolkit. Keep the service instead if
+  this box is CPU-only and you would rather manage everything in one stack.
 - **Change the Postgres password** from the compose default, and use the same
   value in step 3.
 
-The stack publishes Postgres on `5432` and Azurite on `10000` **on the Docker
-host**. If that host is not this Windows machine, those ports must be reachable
-from here — check any firewall between the two.
+The stack publishes Postgres on `5432` and Azurite on `10000`, reachable from
+this machine as `localhost`. Nothing needs opening in the firewall — the API and
+the containers are on the same host.
 
 Wait for the containers to report *healthy* in Portainer before continuing; the
 compose file defines health checks, so Portainer shows the real state rather
@@ -686,35 +687,18 @@ function Set-PoolEnv($name, $value) {
     "/+[name='DocHub'].environmentVariables.[name='$name',value='$value']" /commit:apphost
 }
 
-Set `$dockerHost` to where the stack from step 2 runs — `localhost` only if that
-is this same machine:
-
 ```powershell
-$dockerHost = "localhost"   # or e.g. "10.20.30.40" / "docker-host.internal"
-$ollamaHost = "localhost"   # "localhost" if Ollama is installed here; $dockerHost if it runs in the stack
-
-Set-PoolEnv "ASPNETCORE_ENVIRONMENT"      "Production"
-Set-PoolEnv "Database__ConnectionString"  "Host=$dockerHost;Port=5432;Database=dochub;Username=dochub;Password=<the password you set in step 2>"
-Set-PoolEnv "FileStorage__ContainerName"  "documents"
-Set-PoolEnv "Embeddings__BaseUrl"         "http://${ollamaHost}:11434"
-Set-PoolEnv "Llm__BaseUrl"                "http://${ollamaHost}:11434"
-```
-
-Azurite's connection string depends on the same answer.
-`UseDevelopmentStorage=true` is a shorthand the Azure SDK expands to
-`127.0.0.1`, so it works **only** when Azurite runs on this machine:
-
-```powershell
-# Azurite on this machine:
+Set-PoolEnv "ASPNETCORE_ENVIRONMENT"        "Production"
+Set-PoolEnv "Database__ConnectionString"    "Host=localhost;Port=5432;Database=dochub;Username=dochub;Password=<the password you set in step 2>"
 Set-PoolEnv "FileStorage__ConnectionString" "UseDevelopmentStorage=true"
-
-# Azurite on another host — the shorthand cannot express that, so spell it out:
-Set-PoolEnv "FileStorage__ConnectionString" "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://$dockerHost:10000/devstoreaccount1;"
+Set-PoolEnv "FileStorage__ContainerName"    "documents"
+Set-PoolEnv "Embeddings__BaseUrl"           "http://localhost:11434"
+Set-PoolEnv "Llm__BaseUrl"                  "http://localhost:11434"
 ```
 
-That account name and key are Azurite's fixed, publicly documented development
-credentials — not a secret, and identical on every Azurite instance. A real
-Azure Storage Account uses its own connection string instead.
+`UseDevelopmentStorage=true` is the Azure SDK's shorthand for Azurite on
+`127.0.0.1` — correct here, and the reason moving the containers elsewhere later
+would need the long-form connection string instead.
 
 Optional settings worth knowing:
 
@@ -758,21 +742,17 @@ dotnet ef migrations script --idempotent --project server/src/DocHub.DataAccess 
 ```
 
 The script is safe to re-run and applies only the migrations that are missing.
-There is no `docker compose exec` here, so apply it one of these ways:
+Portainer gives you no `docker compose exec`, so apply it one of these ways:
 
-- **Through Portainer** — open the `postgres` container, **Console → Connect**
-  (`/bin/sh`), then `psql -U dochub -d dochub`. Paste the script contents in.
-  Simplest for a one-off; awkward for a long script.
-- **With `psql` from any machine that can reach the Docker host** — the cleanest
-  route if you have the client to hand:
+- **With `psql` on this machine**, against the published port — the cleanest
+  route if you have the client installed:
 
-  ```bash
-  psql -h <docker-host> -p 5432 -U dochub -d dochub -f dochub-schema.sql
+  ```powershell
+  psql -h localhost -p 5432 -U dochub -d dochub -f dochub-schema.sql
   ```
-- **Copy the file into the container first**, if you would rather not paste:
-  upload it via Portainer, or `docker cp` from wherever the Docker CLI lives,
-  then run `psql -U dochub -d dochub -f /path/to/dochub-schema.sql` in the
-  container console.
+- **Through Portainer**, with no client to install — open the `postgres`
+  container, **Console → Connect** (`/bin/sh`), run `psql -U dochub -d dochub`,
+  and paste the script in. Fine once; awkward for a long script.
 
 #### 5. Deploy the site
 
@@ -824,11 +804,10 @@ in the shell first:
 
 ```powershell
 cd C:\inetpub\dochub
+# Pool variables do not reach a command prompt, so repeat the two these need.
 $env:ASPNETCORE_ENVIRONMENT = "Production"
-# The same two values you set on the application pool in step 3 — pool
-# variables do not reach a command prompt.
-$env:Database__ConnectionString = "Host=<docker-host>;Port=5432;Database=dochub;Username=dochub;Password=<yours>"
-$env:FileStorage__ConnectionString = "<as set in step 3>"
+$env:Database__ConnectionString = "Host=localhost;Port=5432;Database=dochub;Username=dochub;Password=<the password you set in step 2>"
+$env:FileStorage__ConnectionString = "UseDevelopmentStorage=true"
 
 .\DocHub.Api.exe init-storage
 ```
@@ -881,7 +860,7 @@ configuration change either way.
 | **Everyone signed out** after a recycle or deploy | Data Protection keys not persisted — see the `loadUserProfile` step. The permanent fix is one line in `Program.cs`: `builder.Services.AddDataProtection().PersistKeysToFileSystem(new DirectoryInfo(@"C:\inetpub\dochub-keys"));` |
 | Answer **arrives in one lump** instead of streaming | Response buffering. `web.config` sets `responseBufferLimit` to `0`; check it survived the deploy, and that nothing in front of IIS buffers too |
 | File of 25–28 MB rejected with a bare **404.13** | IIS checked its own limit first. `web.config` sets `maxAllowedContentLength` to match the app's 25 MB |
-| `/healthz` reports **postgres** or **blob-storage** degraded | Nearly always the host in the connection string. `localhost` is right only when the containers run on this machine; otherwise use the Docker host's address and check the firewall between them allows 5432 and 10000 |
+| `/healthz` reports **postgres** or **blob-storage** degraded | Check the stack is running and healthy in Portainer, and that the password in `Database__ConnectionString` matches the one the stack was deployed with |
 | Health check says the **assistant model** is missing | Ollama runs in the signed-in user's session by default. Confirm `http://localhost:11434` answers from the server itself, or set it to run as a service |
 | **Ingestion stalls** when nobody uses the app | Hangfire runs in-process. Set the pool's *Idle Time-out* to `0` and *Start Mode* to `AlwaysRunning` |
 
