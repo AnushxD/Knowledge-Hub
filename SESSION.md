@@ -191,7 +191,7 @@ CLAUDE.md · SESSION.md · README.md · architecture-blueprint.md
 - **No Entra ID yet.** Phase 5 shipped local Identity plus optional Google. The OIDC provider is the same registration shape — one more branch in `AddDocHubAuthentication`.
 - **Google sign-in is untested against real Google.** The domain allow-list is unit-tested and the provider is registered correctly, but no end-to-end run has happened without credentials. Configure `Authentication:Google:*` and try it before relying on it.
 - **No per-source timeout in `CompositeKnowledgeSource`.** Latent today because the only real source is the local database and the other returns instantly; it becomes reachable the moment a network source is added. Fix it first in phase 7.
-- **Data Protection keys are not persisted.** On IIS this means an app pool recycle signs everyone out unless the pool loads the user profile (see `docs/iis-setup.md`). One line in `Program.cs` fixes it permanently.
+- **Data Protection keys are not persisted.** On IIS this means an app pool recycle signs everyone out unless the pool loads the user profile (see the IIS hosting section in the README). One line in `Program.cs` fixes it permanently.
 - **CSRF rests on SameSite=Lax plus a JSON content type.** Antiforgery tokens were not added; worth revisiting if a form-encoded endpoint ever appears.
 - **`Cited in answers` counter on document detail is always 0** — never wired to chat citations.
 - Test suites share one Postgres per collection; assertions that could match other tests' documents must scope by `FolderId`.

@@ -39,6 +39,12 @@ prefer a full IDE.
 
 ## First-time setup
 
+> This section sets up a **development machine** — the Mac or PC you write code
+> on, running the API and client from the command line. To set up the **org
+> Windows machine the app is hosted on**, go to
+> [Hosting on the org Windows machine (IIS)](#hosting-on-the-org-windows-machine-iis)
+> instead; it is self-contained and does not need any of the steps below.
+
 ### 1. Clone and install the EF Core CLI
 
 ```bash
@@ -547,38 +553,271 @@ Migrations still come from the repository with `dotnet ef database update`.
 In this arrangement nginx serves the client and proxies `/api` to the API, so
 the two are same-origin and the session cookie needs no CORS or `SameSite=None`.
 
-### IIS on the org Windows box
+### Hosting on the org Windows machine (IIS)
 
-> **Full step-by-step runbook: [docs/iis-setup.md](docs/iis-setup.md)** — prerequisites,
-> app pool settings, environment variables, provisioning commands and the traps.
-> The summary below is the shape; that document is what you follow.
+The complete first-time setup for the machine the app will actually run on.
+Follow it top to bottom; every step is configuration, not a code change.
 
-The API serves the built Angular app from `wwwroot` when it is published
-alongside, so IIS hosts **one site** — no Application Request Routing to install
-and keep configured, and no cross-origin cookie to get right. In the container
-image `wwwroot` is empty and nginx does that job instead; the same binary covers
-both.
+**What runs where.** Only the application goes in IIS. The infrastructure runs in
+Docker Desktop beside it, using the same `docker-compose.yml` a developer uses:
 
-Build the artefact with the **Publish (IIS artefact)** workflow (manual, or on a
-`v*` tag). It publishes the API for `win-x64`, copies the client into `wwwroot`,
-and asserts no developer settings came along.
+| Piece | Where | Why |
+|---|---|---|
+| API + client | **IIS**, one site | The API serves the client from `wwwroot`, so they are same-origin and the session cookie needs no CORS |
+| PostgreSQL + pgvector | **Docker Desktop** | pgvector has no supported Windows installer; the `pgvector/pgvector:pg17` image is the reliable route |
+| Blob storage | **Docker Desktop** (Azurite), or real Azure | Azurite is an emulator — see step 2 |
+| Ollama | **Native Windows install** | Gets the GPU if the box has one; Docker on Windows generally will not |
 
-On the Windows box:
+#### 1. Install the prerequisites
 
-1. Install the **ASP.NET Core Hosting Bundle** — it registers `AspNetCoreModuleV2`,
-   without which the committed `web.config` does nothing.
-2. Create a site pointing at the published folder, with its application pool set
-   to **No Managed Code**. The runtime is in the app, not in IIS.
-3. Give the pool identity read access to the folder, and write access only to
-   `logs\` if stdout logging is turned on.
-4. Provision explicitly, exactly as locally: apply migrations, then
-   `DocHub.Api.exe init-storage` and `DocHub.Api.exe seed-admin`.
+In PowerShell **as Administrator**:
+
+```powershell
+Enable-WindowsOptionalFeature -Online -FeatureName IIS-WebServerRole, IIS-WebServer, IIS-CommonHttpFeatures, IIS-StaticContent, IIS-DefaultDocument, IIS-HttpErrors, IIS-HttpLogging, IIS-RequestFiltering, IIS-Security -All
+```
+
+On Windows Server, use Server Manager → *Add Roles and Features* → **Web Server (IIS)**.
+
+Then install, in this order:
+
+1. The **.NET 10 Hosting Bundle** — not the SDK, not the plain runtime — from
+   <https://dotnet.microsoft.com/download/dotnet/10.0>.
+2. **Docker Desktop**, set to start on login.
+3. **Ollama for Windows** from <https://ollama.com/download/windows>.
+
+> **Order matters.** The Hosting Bundle registers `AspNetCoreModuleV2` with IIS.
+> Installed *before* IIS, that registration is missing and every request returns
+> **500.19** — re-run the installer with `/repair` if that happens.
+
+```powershell
+iisreset
+C:\Windows\System32\inetsrv\appcmd.exe list modules
+```
+
+The second command should list `AspNetCoreModuleV2`.
+
+#### 2. Start the infrastructure
+
+Copy `docker-compose.yml` onto the machine, and from that folder:
+
+```powershell
+docker compose up -d --wait postgres azurite
+```
+
+Pull the two models once (a few GB):
+
+```powershell
+ollama pull nomic-embed-text
+```
+```powershell
+ollama pull llama3.2:3b
+```
+
+> **Azurite is an emulator.** Fine for a pilot, and its data survives restarts in
+> a Docker volume, but it is not a supported production store. If the org has
+> Azure, create a Storage Account and use its connection string in step 3
+> instead — `IFileStorage` already speaks the real Blob API, so nothing else
+> changes.
+
+#### 3. Create the application pool and its configuration
+
+Configuration reaches the app as **environment variables**, where a `:` in a
+config key becomes `__`. Scoping them to the pool is tighter than machine-wide,
+where any process on the box could read them.
+
+```powershell
+$appcmd = "C:\Windows\System32\inetsrv\appcmd.exe"
+& $appcmd add apppool /name:DocHub /managedRuntimeVersion:""
+```
+
+`managedRuntimeVersion:""` means **No Managed Code** — the .NET runtime lives in
+the published app, not in IIS.
+
+```powershell
+function Set-PoolEnv($name, $value) {
+  & $appcmd set config -section:system.applicationHost/applicationPools `
+    "/+[name='DocHub'].environmentVariables.[name='$name',value='$value']" /commit:apphost
+}
+
+Set-PoolEnv "ASPNETCORE_ENVIRONMENT"      "Production"
+Set-PoolEnv "Database__ConnectionString"  "Host=localhost;Port=5432;Database=dochub;Username=dochub;Password=dochub_local_dev"
+Set-PoolEnv "FileStorage__ConnectionString" "UseDevelopmentStorage=true"
+Set-PoolEnv "FileStorage__ContainerName"  "documents"
+Set-PoolEnv "Embeddings__BaseUrl"         "http://localhost:11434"
+Set-PoolEnv "Llm__BaseUrl"                "http://localhost:11434"
+```
+
+Change the Postgres password from the compose default before anyone real uses
+this, in both places.
+
+Optional settings worth knowing:
+
+| Variable | Notes |
+|---|---|
+| `Authentication__SessionHours` | Session lifetime, default 8 |
+| `RateLimits__ChatRequests` | Questions per user per window, default 10 |
+| `Llm__Model` | `llama3.1:8b` follows the citation format better than the 3B default, at the cost of speed |
+| `KnowledgeSources__RepositoryProvider` | Leave at `none` until phase 7 lands |
+
+For Google sign-in:
+
+```powershell
+Set-PoolEnv "Authentication__Google__Enabled"          "true"
+Set-PoolEnv "Authentication__Google__ClientId"         "….apps.googleusercontent.com"
+Set-PoolEnv "Authentication__Google__ClientSecret"     "…"
+Set-PoolEnv "Authentication__Google__AllowedDomains__0" "your-company.com"
+```
+
+The redirect URI registered in the Google Cloud console must be
+`https://<your-host>/signin-google` exactly. An **empty** allow-list admits
+nobody by design — the app refuses to start rather than letting every Google
+account in the world sign in.
+
+#### 4. Create the database schema
+
+Provisioning is never automatic; the app will not migrate a database on startup.
+
+With the .NET SDK on the machine:
+
+```powershell
+dotnet ef database update --project server\src\DocHub.DataAccess --startup-project server\src\DocHub.Api
+```
+
+Without it — preferable on a server — generate an idempotent script on a
+development machine:
+
+```bash
+dotnet ef migrations script --idempotent --project server/src/DocHub.DataAccess --startup-project server/src/DocHub.Api --output dochub-schema.sql
+```
+
+Copy it over and apply it. It is safe to re-run and applies only what is missing:
+
+```powershell
+docker compose exec -T postgres psql -U dochub -d dochub -f - < dochub-schema.sql
+```
+
+#### 5. Deploy the site
+
+Get the artefact from the **Publish (IIS artefact)** workflow in GitHub Actions
+and download `dochub-iis-*`. It is the published API with the built Angular app
+already inside `wwwroot`. To build it by hand instead:
+
+```bash
+cd client && npm ci && npm run build && cd ..
+dotnet publish server/src/DocHub.Api/DocHub.Api.csproj -c Release -r win-x64 --self-contained false -o publish
+mkdir -p publish/wwwroot && cp -r client/dist/client/browser/. publish/wwwroot/
+```
+
+Extract to `C:\inetpub\dochub`, then:
+
+```powershell
+& $appcmd add site /name:DocHub /physicalPath:"C:\inetpub\dochub" /bindings:"http/*:8080:"
+& $appcmd set app "DocHub/" /applicationPool:DocHub
+```
+
+**Load the user profile — do not skip this:**
+
+```powershell
+& $appcmd set config -section:system.applicationHost/applicationPools `
+  "/[name='DocHub'].processModel.loadUserProfile:true" /commit:apphost
+```
+
+ASP.NET Core encrypts the session cookie with Data Protection keys. With no user
+profile loaded those keys are not persisted, so **every application pool recycle
+signs everybody out** — and it presents as an intermittent bug rather than a
+configuration problem.
+
+Permissions — read and execute on the folder, write only to `logs\`:
+
+```powershell
+icacls "C:\inetpub\dochub" /grant "IIS AppPool\DocHub:(OI)(CI)RX"
+icacls "C:\inetpub\dochub\logs" /grant "IIS AppPool\DocHub:(OI)(CI)M"
+```
+
+#### 6. Provision storage and the administrator
+
+These are one-shot commands against the same binary IIS runs. The pool's
+environment variables do **not** reach a command prompt, so set what they need
+in the shell first:
+
+```powershell
+cd C:\inetpub\dochub
+$env:ASPNETCORE_ENVIRONMENT = "Production"
+$env:Database__ConnectionString = "Host=localhost;Port=5432;Database=dochub;Username=dochub;Password=dochub_local_dev"
+$env:FileStorage__ConnectionString = "UseDevelopmentStorage=true"
+
+.\DocHub.Api.exe init-storage
+```
+
+Then set the administrator password — type it in rather than storing it:
+
+```powershell
+$env:Authentication__SeedAdminPassword = "<a real password, 12+ characters>"
+.\DocHub.Api.exe seed-admin
+```
+
+It prints `Password set for dev@dochub.local (Admin).` That account is the only
+way in; re-running the command resets the password if it is ever forgotten.
+Close the shell afterwards.
+
+#### 7. Start and verify
+
+```powershell
+& $appcmd start site /site.name:DocHub
+```
+
+In order:
+
+1. `http://localhost:8080/healthz` → `"status": "Healthy"`, with `postgres`,
+   `blob-storage`, `embeddings` and `assistant-model` all healthy. Anything
+   `Degraded` names the command that fixes it.
+2. `http://localhost:8080/` → the sign-in screen.
+3. Sign in as `dev@dochub.local`.
+4. Upload a Markdown file and watch it reach **Indexed**.
+5. Ask the assistant about it — the answer should stream in word by word. All at
+   once means response buffering; see below.
+
+Open it to the network:
+
+```powershell
+New-NetFirewallRule -DisplayName "DocHub" -Direction Inbound -LocalPort 8080 -Protocol TCP -Action Allow
+```
+
+For HTTPS, add a binding with the org certificate. The session cookie is
+`SecurePolicy = SameAsRequest`, so it works over plain HTTP inside the network
+and becomes `Secure` automatically once the site is served over HTTPS — no
+configuration change either way.
+
+#### When something goes wrong
+
+| Symptom | Cause |
+|---|---|
+| **500.19** on every request | Hosting Bundle installed before IIS. Re-run its installer with `/repair`, then `iisreset` |
+| **500.30** on startup | The app threw while starting, nearly always configuration. Set `stdoutLogEnabled="true"` in `web.config`, reproduce, read `logs\stdout_*.log`, then turn it back off |
+| **Everyone signed out** after a recycle or deploy | Data Protection keys not persisted — see the `loadUserProfile` step. The permanent fix is one line in `Program.cs`: `builder.Services.AddDataProtection().PersistKeysToFileSystem(new DirectoryInfo(@"C:\inetpub\dochub-keys"));` |
+| Answer **arrives in one lump** instead of streaming | Response buffering. `web.config` sets `responseBufferLimit` to `0`; check it survived the deploy, and that nothing in front of IIS buffers too |
+| File of 25–28 MB rejected with a bare **404.13** | IIS checked its own limit first. `web.config` sets `maxAllowedContentLength` to match the app's 25 MB |
+| Health check says the **assistant model** is missing | Ollama runs in the signed-in user's session by default. Confirm `http://localhost:11434` answers from the server itself, or set it to run as a service |
+| **Ingestion stalls** when nobody uses the app | Hangfire runs in-process. Set the pool's *Idle Time-out* to `0` and *Start Mode* to `AlwaysRunning` |
+
+#### Upgrading later
+
+1. Download the new artefact.
+2. Apply new migrations (step 4) — **before** swapping files, not after.
+3. Stop the site, replace the folder contents, start the site.
+4. `init-storage` only if storage configuration changed. `seed-admin` is not
+   needed again.
+
+#### Why one site rather than two
+
+The API serves the built client from `wwwroot`, so there is no Application
+Request Routing to install and keep configured, and no cross-origin session
+cookie to get right. In the container image `wwwroot` is empty and nginx does
+that job instead — the same binary covers both.
 
 Two settings in `web.config` are not defaults and the app is wrong without them:
-`responseBufferLimit="0"`, or the assistant's server-sent events are buffered
-and the answer arrives in one lump instead of streaming; and
-`maxAllowedContentLength`, matched to the 25 MB the service enforces so IIS does
-not reject a file with a bare 404.13 before the API can explain.
+`responseBufferLimit="0"`, or the assistant's server-sent events are buffered;
+and `maxAllowedContentLength`, matched to the 25 MB the service enforces.
 
 ### Secrets
 
