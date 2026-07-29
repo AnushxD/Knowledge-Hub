@@ -1,6 +1,7 @@
 using Azure.Storage.Blobs;
 using DocHub.Integrations.Embeddings;
 using DocHub.Integrations.HealthChecks;
+using DocHub.Integrations.Knowledge;
 using DocHub.Integrations.Llm;
 using DocHub.Integrations.Storage;
 using Microsoft.Extensions.Configuration;
@@ -11,7 +12,8 @@ namespace DocHub.Integrations;
 
 /// <summary>
 /// Single registration entry point for the Integrations layer — external
-/// systems only (blob storage now; LLM, embeddings and MCP in later phases).
+/// systems only (blob storage, LLM, embeddings, and the knowledge sources that
+/// come from outside the hub).
 /// </summary>
 public static class IntegrationsServiceCollectionExtensions
 {
@@ -96,6 +98,23 @@ public static class IntegrationsServiceCollectionExtensions
                 client.BaseAddress = new Uri(llmOptions.BaseUrl);
                 client.Timeout = TimeSpan.FromSeconds(llmOptions.TimeoutSeconds);
             });
+
+        services
+            .AddOptions<KnowledgeSourceOptions>()
+            .Bind(configuration.GetSection(KnowledgeSourceOptions.SectionName))
+            .Validate(
+                options => options.RepositoryProvider == KnowledgeSourceOptions.NoneProvider,
+                $"KnowledgeSources:RepositoryProvider must be "
+                + $"'{KnowledgeSourceOptions.NoneProvider}'. The "
+                + $"'{KnowledgeSourceOptions.McpProvider}' provider arrives with the real MCP "
+                + "client in phase 7 — failing at startup is better than a source that silently "
+                + "contributes nothing while claiming to be connected.")
+            .ValidateOnStart();
+
+        // Registered as a source among others rather than special-cased: the
+        // composite must see more than one source locally, or the fan-out is
+        // only ever exercised in production.
+        services.AddSingleton<IKnowledgeSource, NullRepositoryKnowledgeSource>();
 
         services.AddHealthChecks()
             .AddCheck<BlobStorageHealthCheck>("blob-storage", tags: ["ready", "storage"])

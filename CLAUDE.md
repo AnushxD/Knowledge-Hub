@@ -48,6 +48,24 @@ Integrations  → sibling to Data Access (not inside it) — external systems on
 ```
 Do not fold Integrations into Data Access — external API calls (LLM, blob, MCP) have different failure/testing needs than DB calls, but the same "always behind an interface" relationship to Services.
 
+### Where knowledge sources live (phase 4)
+`IKnowledgeSource` and its data types (`KnowledgeQuery`, `KnowledgeResult`,
+`KnowledgeSearchResult`, `KnowledgeSourceStatus`) live in **Integrations**. The project
+reference direction decides it: Services references Integrations and never the reverse, so
+a contract an MCP client must implement cannot be defined in Services.
+
+Implementations live wherever their work belongs, not all in one project:
+- `NullRepositoryKnowledgeSource` (and the real MCP client later) → **Integrations**, an
+  external system.
+- `DocumentKnowledgeSource` → **Services**, because it wraps `ISearchService`. Nothing
+  external is called; it is an adapter onto our own search.
+- `CompositeKnowledgeSource` → **Services**. Fanning out, isolating failures and merging
+  by rank are policy decisions, which is the definition of business logic here.
+
+`ChatService` depends on `IKnowledgeRetriever` (Services), implemented by the composite. It
+returns the existing `RetrievedPassage`, so citation verification and the grounding rules
+below are untouched by the addition of a source.
+
 ## Config
 - `appsettings.json` — shape/defaults only, safe to commit, no real values
 - `appsettings.Development.json` — local Postgres conn string + `UseDevelopmentStorage=true` for Azurite — safe to commit, no real secrets
