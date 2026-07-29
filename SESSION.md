@@ -171,10 +171,11 @@ CLAUDE.md · SESSION.md · README.md · architecture-blueprint.md
 
 # Pending Features (priority order)
 
-1. **Phase 5 — auth**: Identity → Entra ID, roles, replace `SeededCurrentUser`, secure `/jobs` + `/swagger`, rate-limit chat.
-2. Phase 6 — Dockerfile, GitHub Actions, IIS deploy.
-3. Phase 7 — real MCP client implementing `IKnowledgeSource` (the seam is in place: one class in Integrations plus a branch in `AddIntegrations`), vector-store scale review.
-4. Deferred: OCR for scanned PDFs; audit log (`activity()` returns `[]`); client unit tests.
+1. **Phase 7 — real MCP client** implementing `IKnowledgeSource` (the seam is in place: one class in Integrations plus a branch in `AddIntegrations`), then a vector-store scale review.
+2. **Prove the pipeline** — let CI run for the first time, deploy the artefact to the Windows box, and pick a registry if images should be pushed.
+3. **Entra ID single sign-on** — one more branch in `AddDocHubAuthentication`; Google and local password already share that shape.
+4. **Verify Google sign-in end to end** against real credentials.
+5. Deferred, no phase assigned: audit log (`activity()` returns `[]`); OCR for scanned PDFs; client unit tests; the `Cited in answers` counter; CSRF tokens.
 
 ---
 
