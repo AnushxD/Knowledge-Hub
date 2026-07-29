@@ -40,7 +40,8 @@ internal sealed class OllamaLlmProvider(
                     message.Content)),
             ],
             Stream: true,
-            new OllamaChatOptions(options.Temperature, options.MaxOutputTokens));
+            new OllamaChatOptions(
+                options.Temperature, options.MaxOutputTokens, options.ContextTokens));
 
         using var content = JsonContent.Create(request, options: Json);
         using var message = new HttpRequestMessage(HttpMethod.Post, "/api/chat")
@@ -137,9 +138,19 @@ internal sealed class OllamaLlmProvider(
         [property: JsonPropertyName("role")] string Role,
         [property: JsonPropertyName("content")] string Content);
 
+    /// <param name="NumCtx">
+    /// The context window, in tokens.
+    ///
+    /// Sent explicitly because Ollama's own default is 2048, and it enforces it
+    /// by silently discarding the overflow rather than by failing. A grounded
+    /// prompt here is the rules, a worked example, and several passages of up
+    /// to 800 tokens each — comfortably past that — so leaving it unset means
+    /// the model is asked to cite sources it was never shown.
+    /// </param>
     private sealed record OllamaChatOptions(
         [property: JsonPropertyName("temperature")] double Temperature,
-        [property: JsonPropertyName("num_predict")] int NumPredict);
+        [property: JsonPropertyName("num_predict")] int NumPredict,
+        [property: JsonPropertyName("num_ctx")] int NumCtx);
 
     private sealed record OllamaChatResponse(
         [property: JsonPropertyName("message")] OllamaChatMessage? Message,

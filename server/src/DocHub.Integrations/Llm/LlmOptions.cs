@@ -32,6 +32,25 @@ public sealed class LlmOptions
     public double Temperature { get; set; } = 0.1;
 
     /// <summary>
+    /// Context window offered to the model, in tokens.
+    ///
+    /// Must hold the grounding rules, the worked example, every retrieved
+    /// passage, and the replayed conversation — with the default six passages
+    /// of up to 800 tokens each, that is already past 5,000.
+    ///
+    /// Sized here rather than left to Ollama, whose default is 2048 and which
+    /// enforces it by dropping the overflow without saying so. The visible
+    /// symptom of getting this wrong is not an error: it is an assistant that
+    /// answers without citations, because the passages it was told to cite were
+    /// cut before it saw them.
+    ///
+    /// Raising it costs memory. Lower it on a constrained machine, but lower
+    /// <c>Chat:PassageCount</c> to match rather than letting the prompt
+    /// overflow again.
+    /// </summary>
+    public int ContextTokens { get; set; } = 8192;
+
+    /// <summary>
     /// Generous by default: the first call after a container start pays for
     /// loading the model into memory, and a timeout there would fail a
     /// perfectly good question.

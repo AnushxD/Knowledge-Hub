@@ -83,6 +83,10 @@ public static class IntegrationsServiceCollectionExtensions
                 options => options.MaxOutputTokens > 0,
                 "Llm:MaxOutputTokens must be greater than zero.")
             .Validate(
+                options => options.ContextTokens >= 2048,
+                "Llm:ContextTokens must be at least 2048. Below that the grounded prompt is "
+                + "silently truncated and the assistant answers without seeing its sources.")
+            .Validate(
                 options => options.Provider == LlmOptions.OllamaProvider,
                 $"Llm:Provider must be '{LlmOptions.OllamaProvider}'. Adding a hosted provider "
                 + "means one more ILlmProvider implementation and one more branch here.")

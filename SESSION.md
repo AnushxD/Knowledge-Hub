@@ -181,7 +181,7 @@ CLAUDE.md · SESSION.md · README.md · architecture-blueprint.md
 
 # Known Issues
 
-- **Answer quality is model-limited.** `llama3.2:3b` sometimes emits no citations despite the worked example in the prompt. Mitigated by the UI warning on uncited answers. `llama3.1:8b`/`qwen2.5:7b` follow the format better.
+- **Uncited answers were mostly a truncation bug, not the model.** Ollama defaults `num_ctx` to 2048 and drops the overflow silently; the grounded prompt is 5,000+ tokens, so the model was being asked to cite passages it had never been shown. Measured on a 4,202-token prompt: at 2048 Ollama read 1,026 tokens, at 8192 it read all 4,202. `Llm:ContextTokens` now sets it explicitly. Whatever citation weakness remains after this is genuinely the model, and `llama3.1:8b`/`qwen2.5:7b` follow the format better than the 3B default.
 - **Local generation is slow** — ~5–15 tok/s on CPU-only Docker.
 - **Anthropic/Claude `ILlmProvider` not implemented.** User declined adding the Anthropic C# SDK dependency this session. The interface is the seam; adding it = one class + one branch in `AddIntegrations`. `LlmOptions.Provider` currently validates `ollama` only.
 - **`activity()` returns `[]`** — the audit log was *not* built in phase 5 and has no phase assigned. Authentication landed; recording who did what did not.
@@ -277,7 +277,7 @@ Ports: client 4200 · API 5080 (`/swagger`, `/jobs`, `/healthz`) · Postgres 543
 - When to add Entra ID, and whether Google sign-in stays alongside it or is replaced by it.
 - Whether the audit log (`activity()`) belongs in phase 6 or later — authentication now makes "who did what" recordable for the first time.
 - Whether to build the Anthropic `ILlmProvider` now or defer to when Claude becomes the default.
-- Whether to bump the default chat model to `llama3.1:8b` for citation reliability, trading speed/disk.
+- Whether to bump the default chat model to `llama3.1:8b` or `qwen2.5:7b`, now that the context truncation that was blamed on the model is fixed — worth re-judging answer quality on the 3B first.
 - Whether to wire the document-detail "Cited in answers" counter to real chat citations.
 - Whether a per-source toggle ("search without repositories for this question") belongs in phase 7 or earlier — the composite currently searches every registered source unconditionally.
 - What a repository citation resolves to. `KnowledgeResult` is document-shaped because a persisted `Citation` carries a document id and deep-links to `/docs/:id?chunk=n`; a file-at-a-commit needs a citation target that is not a document id. This is the one part of the phase 4 contract expected to change.

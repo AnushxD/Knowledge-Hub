@@ -393,6 +393,7 @@ Key settings, one strongly-typed Options class per external dependency:
 | `Llm:Provider` | `ollama` — the model that writes answers |
 | `Llm:Model` | Answer model (default `llama3.2:3b`) |
 | `Llm:Temperature` | Low by default (0.1); sampling variety is how a model starts inventing |
+| `Llm:ContextTokens` | Context window offered to the model (default 8192). Ollama's own default is 2048 and it discards the overflow silently — too low and the assistant answers without seeing the passages it was told to cite |
 | `Chat:PassageCount` | Passages retrieved per question (default 6) |
 | `Chat:HistoryTurns` | Prior turns replayed for follow-ups (default 4) |
 | `KnowledgeSources:RepositoryProvider` | `none` (default) registers the inactive stub; `mcp` arrives in phase 7 and is rejected at startup until then |
@@ -672,7 +673,8 @@ Optional settings worth knowing:
 |---|---|
 | `Authentication__SessionHours` | Session lifetime, default 8 |
 | `RateLimits__ChatRequests` | Questions per user per window, default 10 |
-| `Llm__Model` | `llama3.1:8b` follows the citation format better than the 3B default, at the cost of speed |
+| `Llm__Model` | `llama3.1:8b` or `qwen2.5:7b` follow the citation format better than the 3B default, at the cost of speed |
+| `Llm__ContextTokens` | Lower it on a constrained box — but lower `Chat__PassageCount` to match, rather than letting the prompt overflow |
 | `KnowledgeSources__RepositoryProvider` | Leave at `none` until phase 7 lands |
 
 For Google sign-in:
