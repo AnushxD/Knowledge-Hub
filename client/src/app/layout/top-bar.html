@@ -24,20 +24,6 @@
 </button>
 
 <div class="flex shrink-0 items-center gap-1">
-  <!-- Hidden from viewers as a courtesy; the endpoint refuses them either
-       way, which is what actually enforces it. -->
-  @if (auth.canContribute()) {
-    <a
-      routerLink="/browse"
-      [queryParams]="{ upload: 1 }"
-      class="hidden h-9 items-center gap-2 rounded-dh px-3.5 text-[13px] font-medium text-white transition hover:brightness-110 sm:flex"
-      style="background: linear-gradient(135deg, var(--dh-brand-600), var(--dh-brand-500))"
-    >
-      <i class="pi pi-upload text-[13px]"></i>
-      Upload
-    </a>
-  }
-
   <button
     type="button"
     class="dh-icon-btn relative"

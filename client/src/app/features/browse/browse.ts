@@ -51,7 +51,7 @@ export class Browse {
 
   protected readonly allStatuses: IngestionStatus[] = ['indexed', 'indexing', 'pending', 'failed'];
 
-  /** `?upload=1` opens the dialog — used by the top bar and command palette. */
+  /** `?upload=1` opens the dialog — used by the dashboard and command palette. */
   private readonly uploadParam = toSignal(
     this.route.queryParamMap.pipe(map((p) => p.get('upload'))),
     { initialValue: null },
