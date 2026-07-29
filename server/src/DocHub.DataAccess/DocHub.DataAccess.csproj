@@ -14,6 +14,9 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- The user table is an Identity user store: one table, one id, so every
+         existing owner foreign key keeps working after auth lands. -->
+    <PackageReference Include="Microsoft.AspNetCore.Identity.EntityFrameworkCore" Version="10.0.10" />
     <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks" Version="10.0.10" />
     <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="10.0.10" />
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />

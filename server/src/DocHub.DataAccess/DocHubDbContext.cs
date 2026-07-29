@@ -1,5 +1,7 @@
 using System.Text.Json;
 using DocHub.DataAccess.Entities;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
@@ -11,10 +13,14 @@ namespace DocHub.DataAccess;
 /// outside this layer touches EF Core, so Services can only reach data through
 /// the repository interfaces.
 /// </summary>
-public sealed class DocHubDbContext(DbContextOptions<DocHubDbContext> options) : DbContext(options)
+public sealed class DocHubDbContext(DbContextOptions<DocHubDbContext> options)
+    : IdentityUserContext<User, Guid>(options)
 {
     /// <summary>Deterministic id for the seeded local development user.</summary>
     public static readonly Guid SystemUserId = new("00000000-0000-0000-0000-0000000000a1");
+
+    /// <summary>The seeded administrator's sign-in address.</summary>
+    public const string SystemUserEmail = "dev@dochub.local";
 
     /// <summary>
     /// Width of the embedding column, fixed by the migration. Matches
@@ -48,8 +54,19 @@ public sealed class DocHubDbContext(DbContextOptions<DocHubDbContext> options) :
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
+        // Identity configures the user store's own keys, indexes and columns
+        // first; everything below either adds to that or renames it.
+        base.OnModelCreating(builder);
+
         // Enables the vector type used by document_chunks.embedding.
         builder.HasPostgresExtension("vector");
+
+        // Identity's tables default to PascalCase "AspNet…" names. Renamed to
+        // match every other table here — a database dump should not show which
+        // framework wrote which half of it.
+        builder.Entity<IdentityUserClaim<Guid>>().ToTable("user_claims");
+        builder.Entity<IdentityUserLogin<Guid>>().ToTable("user_logins");
+        builder.Entity<IdentityUserToken<Guid>>().ToTable("user_tokens");
 
         builder.Entity<User>(entity =>
         {
@@ -60,14 +77,29 @@ public sealed class DocHubDbContext(DbContextOptions<DocHubDbContext> options) :
             entity.Property(user => user.Role).HasMaxLength(32).IsRequired();
             entity.HasIndex(user => user.Email).IsUnique();
 
-            // Seeded so phase 1 has an owner for every folder and document.
-            // Phase 5 replaces this with real authenticated principals.
+            // The seeded administrator, so a fresh database has someone who can
+            // sign in and create everyone else.
+            //
+            // Every value here is a fixed constant, including the stamps: EF
+            // compares seed data to decide whether a migration is needed, so a
+            // generated stamp would make each scaffold produce a spurious
+            // update. The password hash is deliberately absent — a hash is
+            // salted per call and could not be a constant, and baking a
+            // credential into a migration would put one in source control.
+            // `dotnet run -- seed-admin` sets it, in keeping with this
+            // project's rule that provisioning is explicit.
             entity.HasData(new User
             {
                 Id = SystemUserId,
                 Name = "Local Developer",
-                Email = "dev@dochub.local",
-                Role = "Admin",
+                Email = SystemUserEmail,
+                NormalizedEmail = SystemUserEmail.ToUpperInvariant(),
+                UserName = SystemUserEmail,
+                NormalizedUserName = SystemUserEmail.ToUpperInvariant(),
+                EmailConfirmed = true,
+                SecurityStamp = "5f1b0d5a-6c1e-4f27-9f4e-6d2c9d0a71b3",
+                ConcurrencyStamp = "0f8c5b2d-1a44-4a1f-8c0e-3b6d7a9e2f45",
+                Role = Roles.Admin,
                 CreatedAt = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero),
             });
         });

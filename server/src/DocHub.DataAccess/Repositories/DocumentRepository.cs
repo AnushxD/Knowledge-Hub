@@ -117,7 +117,9 @@ internal sealed class DocumentRepository(DocHubDbContext db) : IDocumentReposito
                 new UserDto(
                     version.ChangedBy!.Id,
                     version.ChangedBy.Name,
-                    version.ChangedBy.Email,
+                    // Nullable on IdentityUser, required by our column — the
+                    // fallback satisfies the compiler and can never be hit.
+                    version.ChangedBy.Email ?? string.Empty,
                     version.ChangedBy.Role),
                 version.ChangedAt))
             .ToListAsync(ct);
@@ -331,7 +333,8 @@ internal sealed class DocumentRepository(DocHubDbContext db) : IDocumentReposito
             .Select(document => document.Owner!)
             .Distinct()
             .OrderBy(owner => owner.Name)
-            .Select(owner => new UserDto(owner.Id, owner.Name, owner.Email, owner.Role))
+            .Select(owner => new UserDto(
+                owner.Id, owner.Name, owner.Email ?? string.Empty, owner.Role))
             .ToListAsync(ct);
 
     private async Task<DocumentDto> RequireDtoAsync(Guid id, CancellationToken ct) =>
@@ -360,7 +363,7 @@ internal sealed class DocumentRepository(DocHubDbContext db) : IDocumentReposito
             new UserDto(
                 document.Owner!.Id,
                 document.Owner.Name,
-                document.Owner.Email,
+                document.Owner.Email ?? string.Empty,
                 document.Owner.Role),
             document.Status,
             document.FailureReason,
