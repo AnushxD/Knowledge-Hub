@@ -7,7 +7,7 @@ import {
   signal,
   viewChild,
 } from '@angular/core';
-import { RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { Subscription } from 'rxjs';
 import { KnowledgeGateway } from '../../core/data/knowledge-gateway';
 import { LibraryStore } from '../../core/state/library-store';
@@ -36,6 +36,8 @@ interface Turn {
 })
 export class ChatPage {
   private readonly gateway = inject(KnowledgeGateway);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
   protected readonly store = inject(LibraryStore);
 
   private readonly transcriptEl = viewChild<ElementRef<HTMLElement>>('transcript');
@@ -68,9 +70,7 @@ export class ChatPage {
   });
 
   protected readonly indexed = computed(() => this.store.stats()?.indexed ?? 0);
-  protected readonly canSend = computed(
-    () => this.draft().trim().length > 0 && !this.sending(),
-  );
+  protected readonly canSend = computed(() => this.draft().trim().length > 0 && !this.sending());
 
   protected readonly suggestions = [
     'How do I connect remotely?',
@@ -80,6 +80,21 @@ export class ChatPage {
 
   constructor() {
     this.loadSessions();
+
+    // A question handed over from the assistant dock, as ?q=. Asked once, then
+    // dropped from the URL: leaving it there would re-ask on every reload, and
+    // a shared link would silently start someone else's conversation.
+    const handedOver = this.route.snapshot.queryParamMap.get('q')?.trim();
+
+    if (handedOver) {
+      void this.router.navigate([], {
+        relativeTo: this.route,
+        queryParams: { q: null },
+        replaceUrl: true,
+      });
+
+      this.runSuggestion(handedOver);
+    }
   }
 
   protected onInput(event: Event): void {
@@ -125,39 +140,37 @@ export class ChatPage {
 
     this.scrollToEnd();
 
-    this.stream = this.gateway
-      .ask({ question, sessionId: this.sessionId() })
-      .subscribe({
-        next: (event) => {
-          switch (event.type) {
-            case 'session':
-              this.sessionId.set(event.sessionId);
-              break;
+    this.stream = this.gateway.ask({ question, sessionId: this.sessionId() }).subscribe({
+      next: (event) => {
+        switch (event.type) {
+          case 'session':
+            this.sessionId.set(event.sessionId);
+            break;
 
-            case 'sources':
-              this.pendingSources.set(event.sources);
-              break;
+          case 'sources':
+            this.pendingSources.set(event.sources);
+            break;
 
-            case 'token':
-              this.appendToPending(event.text);
-              break;
+          case 'token':
+            this.appendToPending(event.text);
+            break;
 
-            case 'done':
-              this.completePending(event.citations, event.isRefusal, event.messageId);
-              break;
+          case 'done':
+            this.completePending(event.citations, event.isRefusal, event.messageId);
+            break;
 
-            case 'error':
-              this.fail(event.reason);
-              break;
-          }
-        },
-        error: (error: unknown) =>
-          this.fail(error instanceof Error ? error.message : 'The assistant is unavailable.'),
-        complete: () => {
-          this.sending.set(false);
-          this.loadSessions();
-        },
-      });
+          case 'error':
+            this.fail(event.reason);
+            break;
+        }
+      },
+      error: (error: unknown) =>
+        this.fail(error instanceof Error ? error.message : 'The assistant is unavailable.'),
+      complete: () => {
+        this.sending.set(false);
+        this.loadSessions();
+      },
+    });
   }
 
   /** Abandons the in-flight answer; the fetch is aborted server-side too. */
@@ -216,9 +229,7 @@ export class ChatPage {
 
   private appendToPending(text: string): void {
     this.turns.update((turns) =>
-      turns.map((turn) =>
-        turn.streaming ? { ...turn, content: turn.content + text } : turn,
-      ),
+      turns.map((turn) => (turn.streaming ? { ...turn, content: turn.content + text } : turn)),
     );
     this.scrollToEnd();
   }
@@ -226,9 +237,7 @@ export class ChatPage {
   private completePending(citations: Citation[], isRefusal: boolean, messageId: string): void {
     this.turns.update((turns) =>
       turns.map((turn) =>
-        turn.streaming
-          ? { ...turn, id: messageId, citations, isRefusal, streaming: false }
-          : turn,
+        turn.streaming ? { ...turn, id: messageId, citations, isRefusal, streaming: false } : turn,
       ),
     );
     this.pendingSources.set([]);

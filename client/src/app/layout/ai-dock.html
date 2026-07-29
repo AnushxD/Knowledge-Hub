@@ -37,9 +37,10 @@
     <div class="flex-1 overflow-y-auto px-4 py-5">
       <div class="dh-ai-surface rounded-dh-lg p-4">
         <p class="text-[12.5px] leading-relaxed text-muted">
-          Retrieval-augmented answers arrive in
-          <span class="font-medium text-ink">phase 3</span>. The dock is here now so the layout —
-          and the grounding rules below — are settled before the RAG orchestrator exists.
+          Ask a question below and it opens in the
+          <a routerLink="/chat" class="font-medium text-ink underline underline-offset-2">
+            assistant</a
+          >, where the answer streams in with a citation on every claim.
         </p>
       </div>
 
@@ -50,13 +51,15 @@
           <span class="flex-1 text-[12.5px] text-ink">Indexed documents</span>
           <span class="text-[11px] text-subtle">{{ indexed() }} ready</span>
         </div>
-        <div
-          class="flex items-center gap-2.5 rounded-dh border border-dashed border-hairline px-3 py-2.5 opacity-60"
+        <a
+          routerLink="/sources"
+          class="flex items-center gap-2.5 rounded-dh border border-dashed border-hairline px-3 py-2.5 opacity-70 transition hover:opacity-100"
+          (click)="open.set(false)"
         >
           <i class="pi pi-share-alt text-[13px] text-subtle"></i>
           <span class="flex-1 text-[12.5px] text-muted">Source code repositories</span>
-          <span class="text-[11px] text-subtle">Phase 4 · MCP</span>
-        </div>
+          <span class="text-[11px] text-subtle">see sources</span>
+        </a>
       </div>
 
       <p class="dh-eyebrow mt-6 mb-2">Ground rules</p>
@@ -77,22 +80,35 @@
     </div>
 
     <footer class="border-t border-hairline p-3">
-      <div
-        class="flex items-center gap-2 rounded-dh border border-hairline bg-surface-2/60 px-3 py-2.5 opacity-70"
+      <form
+        class="flex items-center gap-2 rounded-dh border border-hairline bg-surface-2/60 px-3 py-2.5 focus-within:border-brand-500/50"
+        (ngSubmit)="ask()"
       >
         <input
           type="text"
-          class="flex-1 bg-transparent text-[13px] outline-none placeholder:text-subtle"
+          name="question"
+          class="flex-1 bg-transparent text-[13px] text-ink outline-none placeholder:text-subtle"
           placeholder="Ask a question…"
-          disabled
+          autocomplete="off"
+          [ngModel]="draft()"
+          (ngModelChange)="draft.set($event)"
         />
-        <span
-          class="grid size-7 place-items-center rounded-lg bg-surface-3 text-[12px] text-subtle"
+        <button
+          type="submit"
+          class="grid size-7 place-items-center rounded-lg text-[12px] text-white transition disabled:opacity-40"
+          style="background: linear-gradient(135deg, var(--dh-ai-from), var(--dh-ai-to))"
+          [disabled]="!draft().trim()"
+          aria-label="Ask"
         >
           <i class="pi pi-send"></i>
-        </span>
-      </div>
-      <p class="mt-2 px-1 text-[11px] text-subtle">Available once phase 3 lands.</p>
+        </button>
+      </form>
+
+      @if (!hasIndexedContent()) {
+        <p class="mt-2 px-1 text-[11px] text-subtle">
+          Nothing is indexed yet, so the assistant has nothing to answer from and will say so.
+        </p>
+      }
     </footer>
   </aside>
 }
