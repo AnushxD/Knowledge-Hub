@@ -16,7 +16,7 @@ Internal **Documentation & Knowledge Hub** (DocHub): upload/organise/search team
 
 # Current Objective
 
-Phases 1–4 are **complete and pushed**. Next objective is **Phase 5: real auth + roles + security hardening** — Identity locally → Entra ID, replacing `SeededCurrentUser`, securing `/jobs` and `/swagger`, rate-limiting chat.
+Phases 1–5 are **complete and pushed**. Next objective is **Phase 6: the deployment pipeline** — Dockerfile, GitHub Actions, IIS deploy on the org Windows box.
 
 ---
 
@@ -28,16 +28,19 @@ Phases 1–4 are **complete and pushed**. Next objective is **Phase 5: real auth
 - **Phase 3** — RAG assistant: streaming grounded answers, verified citations, refusals, session history.
 - **Phase 4** — `IKnowledgeSource` abstraction, composite retrieval with per-source failure
   isolation, null repository stub, `GET /api/sources`, real `/sources` screen.
-- Swagger UI at `/swagger` (dev only).
-- 108 tests green: 8 Integrations, 14 DataAccess, 86 Services.
+- **Phase 5** — Identity cookie auth, Admin/Editor/Viewer roles, admin account management,
+  optional Google sign-in with server-side domain allow-listing, chat rate limiting,
+  `/jobs` and `/swagger` behind the Admin role, client sign-in flow.
+- Swagger UI at `/swagger` (dev only, Admin only).
+- 128 tests green: 8 Integrations, 17 Api, 14 DataAccess, 89 Services.
 
 ## In Progress
 - Nothing. Working tree clean, all work pushed.
 
 ## Remaining (roadmap)
-5. Real auth + roles + security hardening — **next**
-6. Deployment pipeline (Docker, GitHub Actions, IIS)
+6. Deployment pipeline (Docker, GitHub Actions, IIS) — **next**
 7. Real MCP integration + revisit vector-store scale
+Also outstanding: Entra ID single sign-on (the Identity seam is in place).
 
 ---
 
@@ -68,6 +71,17 @@ Phases 1–4 are **complete and pushed**. Next objective is **Phase 5: real auth
 - **A failing source degrades one answer and is named in the reply**; only if every source fails does the normal refusal path take over.
 - **The null repository source is registered locally on purpose** — a fan-out exercised against one source until phase 7 is a fan-out first debugged in phase 7.
 - **`KnowledgeSourceState` has three values, not a boolean** — `inactive` (off by design) must not render like `unavailable` (should work, doesn't).
+- **The `users` table *is* the Identity store** (`User : IdentityUser<Guid>`) — one row per person, so every `owner_id` FK survived the change. A parallel identity table would have let credentials and owners drift apart.
+- **Role is a column, not Identity's role tables** — one role per person, projected into a claim by `DocHubClaimsPrincipalFactory`. Entra ID maps a directory group onto the same value later.
+- **Authorisation defaults to closed** via `FallbackPolicy`; only health checks and the sign-in endpoints opt out. A new endpoint is protected before anyone thinks about it.
+- **Identity used directly from the Api layer, not wrapped in a Service** — a Service over `SignInManager` would only forward. The boundary that matters is `ICurrentUser`, which stays framework-free.
+- **`ICurrentUser` gained `Role`/`IsAuthenticated`** — endpoint attributes cover "may this role call this"; a rule about a *particular row* is business logic and needs the role in Services.
+- **`/jobs` and `/swagger` gated on the Admin role, not the environment** — dev-only registration kept them off production but left every developer machine serving an open jobs dashboard.
+- **Password hash never in a migration** — it is salted per call, so it could not be a constant, and a constant credential would be one in source control. `dotnet run -- seed-admin` sets it.
+- **Google decides access on the verified email, server-side** — the `hd` hint is a request parameter the browser controls. Unverified addresses are refused; an empty allow-list admits nobody.
+- **Accounts are disabled, never deleted** — they own documents, folders and conversations.
+- **Security stamp revalidated every 5 minutes** — otherwise a revoked role lingered until the cookie expired, up to `SessionHours`.
+- **Chat rate limit partitions by user id, not IP** — an office NAT is one address, and a shared limit punishes the wrong people.
 
 ---
 
@@ -76,7 +90,7 @@ Phases 1–4 are **complete and pushed**. Next objective is **Phase 5: real auth
 ```
 client/
   src/app/core/{data,models,state,theme,utils}
-  src/app/features/{dashboard,browse,document-detail,search,chat,sources,settings,roadmap}
+  src/app/features/{dashboard,browse,document-detail,search,chat,sources,auth,users,settings,roadmap}
   src/app/layout/{shell,nav-rail,top-bar,folder-tree,ai-dock,command-palette}
   src/app/shared/{components,directives,pipes}
   src/styles.css                     # --dh-* design tokens (single source of truth)
@@ -85,7 +99,8 @@ server/
   src/DocHub.Services/{Documents,Folders,Ingestion,Search,Chat,Knowledge,ViewModels}
   src/DocHub.DataAccess/{Entities,Dtos,Repositories,Migrations}
   src/DocHub.Integrations/{Storage,Embeddings,Llm,Knowledge,HealthChecks}
-  tests/{DocHub.Services.Tests,DocHub.DataAccess.Tests,DocHub.Integrations.Tests}
+  src/DocHub.Api/Infrastructure/Auth/    # Identity wiring, policies, seeder, admin gates
+  tests/{DocHub.Api.Tests,DocHub.Services.Tests,DocHub.DataAccess.Tests,DocHub.Integrations.Tests}
 docker-compose.yml                   # postgres+pgvector, azurite, ollama
 CLAUDE.md · SESSION.md · README.md · architecture-blueprint.md
 ```
@@ -109,7 +124,11 @@ CLAUDE.md · SESSION.md · README.md · architecture-blueprint.md
 | `server/src/DocHub.Integrations/Embeddings/*` | Ollama + hashing providers | Done |
 | `server/src/DocHub.DataAccess/DocHubDbContext.cs` | Schema; `EmbeddingDimensions=768`, tsvector, HNSW, jsonb citations | Done |
 | `server/src/DocHub.DataAccess/Repositories/ChunkRepository.cs` | Both search branches; `WebSearchToTsQuery` must stay **inline** in the expression tree | Done |
-| `server/src/DocHub.Api/Program.cs` | DI composition, Hangfire, Swagger, health checks | Done |
+| `server/src/DocHub.Api/Program.cs` | DI composition, auth pipeline, Hangfire, Swagger, health checks | Done |
+| `server/src/DocHub.Api/Infrastructure/Auth/AuthenticationRegistration.cs` | Identity, cookie, policies, Google provider, claims factory | Done |
+| `server/src/DocHub.Api/Controllers/AuthController.cs` | login/logout/me/options + the Google callback where access is decided | Done |
+| `server/src/DocHub.Api/Controllers/UsersController.cs` | Admin account management | Done |
+| `client/src/app/core/state/auth-store.ts` | Signed-in principal; `canContribute`/`isAdmin` drive presentation only | Done |
 | `server/src/DocHub.Api/Controllers/ChatController.cs` | SSE endpoint + session CRUD | Done |
 | `client/src/app/features/chat/chat.ts` / `.html` | Assistant screen | Done |
 | `client/src/app/features/chat/citation-text.ts` | Renders `[n]` markers as passage links | Done |
@@ -149,11 +168,14 @@ CLAUDE.md · SESSION.md · README.md · architecture-blueprint.md
 - **Answer quality is model-limited.** `llama3.2:3b` sometimes emits no citations despite the worked example in the prompt. Mitigated by the UI warning on uncited answers. `llama3.1:8b`/`qwen2.5:7b` follow the format better.
 - **Local generation is slow** — ~5–15 tok/s on CPU-only Docker.
 - **Anthropic/Claude `ILlmProvider` not implemented.** User declined adding the Anthropic C# SDK dependency this session. The interface is the seam; adding it = one class + one branch in `AddIntegrations`. `LlmOptions.Provider` currently validates `ollama` only.
-- **`activity()` returns `[]`** — no audit log until phase 5.
-- **`/jobs` and `/swagger` are unauthenticated**, dev-only by registration.
+- **`activity()` returns `[]`** — the audit log was *not* built in phase 5 and has no phase assigned. Authentication landed; recording who did what did not.
+- **No Entra ID yet.** Phase 5 shipped local Identity plus optional Google. The OIDC provider is the same registration shape — one more branch in `AddDocHubAuthentication`.
+- **Google sign-in is untested against real Google.** The domain allow-list is unit-tested and the provider is registered correctly, but no end-to-end run has happened without credentials. Configure `Authentication:Google:*` and try it before relying on it.
+- **CSRF rests on SameSite=Lax plus a JSON content type.** Antiforgery tokens were not added; worth revisiting if a form-encoded endpoint ever appears.
 - **`Cited in answers` counter on document detail is always 0** — never wired to chat citations.
 - Test suites share one Postgres per collection; assertions that could match other tests' documents must scope by `FolderId`.
 - ~5 test documents the assistant/search were verified against remain in the user's dev DB (`vpn-guide.md`, `runbook.pdf`, `expense-policy.docx`, duplicates), alongside the user's own uploads.
+- A `vera@dochub.local` Viewer account (password `viewer-local-dev-pw`) was created in the dev DB while verifying role separation. Harmless, and useful for re-testing; disable or delete it if unwanted.
 
 ---
 
@@ -161,12 +183,12 @@ CLAUDE.md · SESSION.md · README.md · architecture-blueprint.md
 
 No files are mid-edit; the tree is clean and pushed.
 
-**Starting point for phase 5** — auth. `SeededCurrentUser` (registered in
-`ServicesServiceCollectionExtensions`) is the seam: `ICurrentUser.Id` is already what every
-service uses for ownership, so real auth replaces one registration. `/jobs` and `/swagger`
-are dev-only by registration and need real protection once they are not.
+**Starting point for phase 6** — deployment. Nothing is containerised yet beyond the
+docker-compose dependencies. Note that migrations, `init-storage` and `seed-admin` are all
+operator-run steps, so the pipeline has to invoke them deliberately rather than expect the
+app to self-provision.
 
-**Edge cases already handled — don't re-solve:** empty retrieval refusal; fabricated citation markers; vector-branch outage degrading to keyword-only; DbContext concurrency; SSE validation-before-headers; unresolved markers rendered as plain text; a knowledge source failing mid-question; duplicate passages returned by two sources; an empty query reaching the composite.
+**Edge cases already handled — don't re-solve:** empty retrieval refusal; fabricated citation markers; vector-branch outage degrading to keyword-only; DbContext concurrency; SSE validation-before-headers; unresolved markers rendered as plain text; a knowledge source failing mid-question; duplicate passages returned by two sources; an empty query reaching the composite; account enumeration via the login form; open redirect on `returnUrl`; a cookie whose user was deleted mid-session; an admin demoting themselves to nobody; the SSE `fetch` path missing the session cookie.
 
 ---
 
@@ -226,6 +248,8 @@ Ports: client 4200 · API 5080 (`/swagger`, `/jobs`, `/healthz`) · Postgres 543
 
 # Questions Still Open
 
+- When to add Entra ID, and whether Google sign-in stays alongside it or is replaced by it.
+- Whether the audit log (`activity()`) belongs in phase 6 or later — authentication now makes "who did what" recordable for the first time.
 - Whether to build the Anthropic `ILlmProvider` now or defer to when Claude becomes the default.
 - Whether to bump the default chat model to `llama3.1:8b` for citation reliability, trading speed/disk.
 - Whether to wire the document-detail "Cited in answers" counter to real chat citations.
@@ -241,15 +265,14 @@ inactive source renders as its own state, not as a failure.
 
 # Next Immediate Steps
 
-1. ASP.NET Core Identity in the API, with the local login flow and a real `ICurrentUser` replacing `SeededCurrentUser`.
-2. Roles (reader / contributor / admin) and authorisation on the document, folder and chat endpoints.
-3. Secure `/jobs` and `/swagger` behind an admin policy rather than relying on dev-only registration.
-4. Rate-limit `POST /api/chat` — generation is the expensive endpoint and is currently unbounded.
-5. Client: sign-in screen, auth interceptor on `HttpKnowledgeGateway`, and the settings screen's account section wired to the real principal.
-6. Update README + `CLAUDE.md` roadmap markers; commit and push each chunk.
+1. Dockerfile for the API (multi-stage) and one for the built Angular client.
+2. GitHub Actions: build, test against a Postgres service container, publish artefacts.
+3. IIS deployment onto the org Windows box — `web.config`, the hosting bundle, and the fact that migrations and `seed-admin` are operator-run there too.
+4. Decide how secrets reach IIS and Azure (env vars vs Key Vault) — `Authentication:Google:ClientSecret` is the first real one.
+5. Update README + `CLAUDE.md` roadmap markers; commit and push each chunk.
 
 ---
 
 # Context Recovery Prompt
 
-> Read `SESSION.md` and `CLAUDE.md` at the repo root before doing anything else. This is DocHub — an ASP.NET Core + Angular documentation hub with local-Ollama RAG. Phases 1–4 (doc management, ingestion + hybrid search, grounded AI assistant with verified citations, and the `IKnowledgeSource` abstraction with composite retrieval) are **complete, tested and pushed to `main`** — do not re-analyse or rebuild them. All 108 tests pass. Start on **Phase 5: real auth + roles + security hardening**, following the "Next Immediate Steps" checklist in `SESSION.md`. Respect the grounding rules and layering constraints in `CLAUDE.md`. Build and test before each commit, and commit + push each finished chunk to `main` without asking.
+> Read `SESSION.md` and `CLAUDE.md` at the repo root before doing anything else. This is DocHub — an ASP.NET Core + Angular documentation hub with local-Ollama RAG. Phases 1–5 (doc management, ingestion + hybrid search, grounded AI assistant with verified citations, the `IKnowledgeSource` abstraction with composite retrieval, and Identity cookie auth with roles and optional Google sign-in) are **complete, tested and pushed to `main`** — do not re-analyse or rebuild them. All 128 tests pass. Start on **Phase 6: the deployment pipeline**, following the "Next Immediate Steps" checklist in `SESSION.md`. Respect the grounding rules, security rules and layering constraints in `CLAUDE.md`. Build and test before each commit, and commit + push each finished chunk to `main` without asking.

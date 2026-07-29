@@ -4,13 +4,15 @@ An internal Documentation & Knowledge Hub: upload, organise and search team
 documentation, with an AI assistant that answers questions grounded strictly
 in indexed content and always cites its sources.
 
-> **Status:** phases 1–4 are **complete**. Documents upload, index and become
+> **Status:** phases 1–5 are **complete**. Documents upload, index and become
 > searchable by hybrid keyword + semantic search, and an AI assistant answers
 > questions from them — citing the exact passage behind every claim, and
 > saying "I don't know" when the answer isn't there. The assistant now retrieves
 > through an `IKnowledgeSource` abstraction, so a repository source over MCP
 > joins document search without the assistant changing; the repository source
-> ships as an inactive stub until phase 7. Phase 5 (auth and roles) is next.
+> ships as an inactive stub until phase 7. Everything now sits behind a sign-in
+> with Admin / Editor / Viewer roles, and Google sign-in can be switched on for
+> company addresses. Phase 6 (the deployment pipeline) is next.
 > See [Current state](#current-state).
 
 ---
@@ -126,11 +128,31 @@ second, so an answer streams in over several seconds. That is the cost of
 running locally for free; see [Configuration](#configuration) for what to
 change if you'd rather use a hosted model.
 
-### 7. Confirm setup is complete
+### 7. Set the administrator password
 
-Start the API (see below) and open http://localhost:5080/healthz. It should
-report `"status": "Healthy"`. If a step above was missed, the status is
-`Degraded` and the response names the exact command to run.
+The database arrives with one account, `dev@dochub.local`, and no password —
+a password hash is salted per call, so it cannot live in a migration, and a
+constant one would be a credential in source control. Set it explicitly:
+
+```bash
+dotnet run --project server/src/DocHub.Api -- seed-admin
+```
+
+That applies `Authentication:SeedAdminPassword` from
+`appsettings.Development.json` (`dochub-local-dev-admin` by default) and exits.
+Re-running it resets the password, which is also how to recover a forgotten
+local one. There is no self-registration — sign in as the administrator and
+create everyone else under **People**.
+
+### 8. Confirm setup is complete
+
+Start the API (see below) and open http://localhost:5080/healthz — it stays
+anonymous so an orchestrator can reach it. It should report
+`"status": "Healthy"`. If a step above was missed, the status is `Degraded` and
+the response names the exact command to run.
+
+Then open the client and sign in as `dev@dochub.local`. Every other endpoint,
+plus `/swagger` and `/jobs`, now requires a session.
 
 ---
 
@@ -368,6 +390,14 @@ Key settings, one strongly-typed Options class per external dependency:
 | `Chat:HistoryTurns` | Prior turns replayed for follow-ups (default 4) |
 | `KnowledgeSources:RepositoryProvider` | `none` (default) registers the inactive stub; `mcp` arrives in phase 7 and is rejected at startup until then |
 | `KnowledgeSources:RepositoryEndpoint` | The MCP server's address; unused while the provider is `none` |
+| `Authentication:SessionHours` | Session lifetime, sliding (default 8) |
+| `Authentication:SeedAdminPassword` | Applied by `seed-admin`; a real deployment puts this in user-secrets |
+| `Authentication:Google:Enabled` | Turns Google sign-in on. Off by default |
+| `Authentication:Google:ClientId` | From the Google Cloud console |
+| `Authentication:Google:ClientSecret` | **Secret** — `dotnet user-secrets`, never an appsettings file |
+| `Authentication:Google:AllowedDomains` | Email domains allowed in. **Empty admits nobody**, never everybody |
+| `Authentication:Google:AutoProvision` | Create a Viewer for a verified allowed-domain sign-in (default true) |
+| `RateLimits:ChatRequests` / `ChatWindowSeconds` | Questions per user per window (default 10 / 60) |
 | `Cors:AllowedOrigins` | Origins allowed to call the API in development |
 
 **Using a bigger or hosted model.** `Llm:Model` takes any model Ollama can
@@ -488,8 +518,9 @@ docker compose down
 | RAG orchestrator with citation verification | Done |
 | Assistant screen: streaming answers, sources, session history | Done |
 | `IKnowledgeSource` abstraction + composite retrieval, `/sources` screen | Done |
+| Sign-in, roles, admin account management, Google sign-in, rate limiting | Done |
 
-**Phases 1–4 are complete.** Upload a Markdown, PDF or Word file and it is
+**Phases 1–5 are complete.** Upload a Markdown, PDF or Word file and it is
 extracted, chunked, embedded and searchable within seconds. Ask a question and
 the assistant answers from those documents, links every claim to the exact
 passage behind it, and declines when the answer isn't there.
@@ -501,8 +532,14 @@ shows which are contributing. A repository source is registered locally as an
 inactive stub — the real MCP client is phase 7, and having a second source
 present from the start means the fan-out is exercised before then.
 
-Not yet built, by design (later phases): the real MCP client; authentication and
-roles; the deployment pipeline. OCR for scanned documents is also deferred, so
+Access is a session cookie issued by ASP.NET Core Identity. Every endpoint
+requires one unless it opts out, content changes need Editor or Admin, and
+`/swagger` and `/jobs` need Admin. Google sign-in is off until configured; when
+on, the allowed-domain check runs on the server against the address Google
+verified, and an empty allow-list admits nobody.
+
+Not yet built, by design (later phases): the real MCP client; Entra ID single
+sign-on; the deployment pipeline. OCR for scanned documents is also deferred, so
 image-only PDFs are reported as failed rather than silently indexed as empty.
 
 The client talks to the API through one seam, `KnowledgeGateway`. Two
@@ -542,6 +579,12 @@ requests are same-origin and CORS never applies.
 | `GET` | `/api/chat/sessions/{id}` | One conversation with citations |
 | `DELETE` | `/api/chat/sessions/{id}` | Delete a conversation |
 | `GET` | `/api/sources` | Knowledge sources the assistant may ground answers in, and each one's state |
+| `POST` | `/api/auth/login` | Sign in with an email and password; sets the session cookie |
+| `POST` | `/api/auth/logout` | End the session |
+| `GET` | `/api/auth/me` | The signed-in user, or 401 |
+| `GET` | `/api/auth/google/start` | Begin Google sign-in (only when it is enabled) |
+| `GET` | `/api/users` | Accounts (Admin only) |
+| `POST` | `/api/users` | Create an account (Admin only) |
 
 Errors come back as RFC 7807 problem details — 400 for a rejected business
 rule (with a message meant for the user), 404 for a missing entity.

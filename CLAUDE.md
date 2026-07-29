@@ -23,12 +23,13 @@ This is a real org requirement being built as a personal learning project (also 
 - Backend: ASP.NET Core Web API
 - DB: PostgreSQL + pgvector extension (one DB for relational data AND embeddings)
 - File storage: Azure Blob Storage — Azurite emulator locally (`UseDevelopmentStorage=true`), real Azure in prod
-- Background jobs: Hangfire (Postgres-backed, in-process; dashboard at /jobs in dev only)
+- Background jobs: Hangfire (Postgres-backed, in-process; dashboard at /jobs, Admin only)
 - AI models: local Ollama in Docker — `nomic-embed-text` (768-dim embeddings) and
   `llama3.2:3b` (answers). Free, key-less, nothing leaves the machine. Both sit behind
   Integrations interfaces so a hosted provider is a registration change.
-- API docs: Swagger UI at /swagger (dev only) over the built-in OpenAPI document
-- Auth: ASP.NET Core Identity locally → Azure AD/Entra ID (OIDC) in prod
+- API docs: Swagger UI at /swagger (dev only, and Admin only) over the built-in OpenAPI document
+- Auth: ASP.NET Core Identity with a session cookie → Azure AD/Entra ID (OIDC) in prod.
+  Optional Google sign-in for company addresses, off unless configured.
 - CI/CD: GitHub Actions
 - Local dev: dotnet run + ng serve + Docker Compose (Postgres, Azurite, Ollama) — NOT IIS day-to-day
 - Deploy path: IIS on an org Windows machine first (dev is on a Mac — IIS itself doesn't run on Mac, so IIS testing happens on the Windows box), then Azure App Service later
@@ -94,8 +95,8 @@ doc-knowledge-hub/
 2. ✅ Ingestion pipeline (extract → chunk → embed) + hybrid search (keyword + vector)
 3. ✅ AI chat assistant with citations, RAG over uploaded docs only
 4. ✅ MCP `IKnowledgeSource` abstraction + stub implementation
-5. Real auth + roles + security hardening  ← NEXT
-6. Deployment pipeline (Docker, GitHub Actions, IIS deploy)
+5. ✅ Real auth + roles + security hardening
+6. Deployment pipeline (Docker, GitHub Actions, IIS deploy)  ← NEXT
 7. Real MCP integration + revisit scale (vector store, search)
 
 ## Grounding rules (phases 2–4, non-negotiable)
@@ -118,9 +119,29 @@ doc-knowledge-hub/
   them together would be arbitrary — the same reason the keyword and vector branches fuse
   by rank.
 
+## Security rules (phase 5, non-negotiable)
+- The `users` table **is** the Identity user store — one row per person, so every
+  `owner_id` foreign key keeps pointing at the same key. Never add a parallel identity table.
+- Authorisation defaults to closed: a fallback policy requires a session, so a new endpoint
+  is protected before anyone remembers to think about it. Opting out is an explicit
+  `[AllowAnonymous]`, and only health checks and the sign-in endpoints have one.
+- Role lives in one column and is projected into a claim at sign-in. One role per person;
+  Entra ID maps a directory group onto the same value later.
+- Endpoint attributes handle "may this role call this at all". A rule about a *particular
+  row* is business logic and belongs in a Service, which is why `ICurrentUser` exposes Role.
+- Google sign-in decides access on the server, from the email Google verified — never from
+  the `hd` request hint, which the browser controls. An unverified address is refused, and
+  an empty allow-list admits **nobody**.
+- A password hash never appears in a migration or an appsettings file. `seed-admin` sets the
+  local one; everywhere else it is user-secrets or Key Vault.
+- Accounts are disabled, never deleted — they own documents, folders and conversations.
+- Client-side guards and hidden buttons are courtesy. The API is what enforces access, and
+  every rule must hold with the client bypassed entirely.
+
 ## Provisioning is explicit
 The API never creates databases, containers or schema at startup. Setup is operator-run:
-`dotnet ef database update`, `dotnet run -- init-storage`, `ollama pull`. The one exception
+`dotnet ef database update`, `dotnet run -- init-storage`, `dotnet run -- seed-admin`,
+`ollama pull`. The one exception
 is Hangfire's own `hangfire` schema, which the library versions with itself.
 
 ## Conventions / commands
@@ -136,3 +157,6 @@ is Hangfire's own `hangfire` schema, which the library versions with itself.
 - Never skip a roadmap phase (e.g. don't build the MCP integration before core doc management + basic RAG work)
 - Never add Co-Authored-By or "Generated with Claude Code" trailers to commits or PRs
 - Never let the assistant answer from anything but retrieved passages
+- Never trust a client-supplied domain, `hd` hint or `returnUrl` — verify domains against
+  the address the provider verified, and restrict redirects to local paths
+- Never add an authentication bypass for convenience, dev-only or otherwise
