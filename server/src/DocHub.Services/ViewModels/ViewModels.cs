@@ -213,6 +213,33 @@ public record KnowledgeSourceViewModel(
     string State,
     string Detail);
 
+/// <summary>The repository source's address, as an administrator manages it.</summary>
+/// <param name="IsFromConfiguration">
+/// True when no override is stored and the deployment's own configuration is in
+/// effect. The screen says so, because an administrator editing a field that
+/// configuration is supplying otherwise has no way to tell why nothing changed.
+/// </param>
+public record RepositorySourceViewModel(
+    string? Endpoint,
+    bool IsEnabled,
+    bool IsFromConfiguration,
+    DateTimeOffset? UpdatedAt);
+
+public record UpdateRepositorySourceRequest
+{
+    /// <summary>Absolute http/https address. Empty switches the source off without losing it.</summary>
+    public string? Endpoint { get; init; }
+
+    public bool IsEnabled { get; init; }
+}
+
+/// <summary>The outcome of probing an address before saving it.</summary>
+/// <param name="Detail">
+/// Says what was actually established. A reachable address is not the same as a
+/// working MCP server, and the wording must not imply otherwise.
+/// </param>
+public record RepositoryProbeViewModel(bool IsReachable, string Detail);
+
 // ---- chat -------------------------------------------------------------------
 
 /// <summary>A source backing an answer, resolvable to the exact passage.</summary>

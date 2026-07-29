@@ -47,6 +47,7 @@ public static class ServicesServiceCollectionExtensions
         // Contract in Integrations, implementation here — only this layer can see
         // both the stored override and the configured baseline.
         services.AddScoped<IRepositorySourceSettings, RepositorySourceSettings>();
+        services.AddScoped<IRepositorySourceAdmin, RepositorySourceAdmin>();
 
         services
             .AddOptions<ChatOptions>()

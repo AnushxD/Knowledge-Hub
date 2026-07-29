@@ -124,6 +124,15 @@ public static class IntegrationsServiceCollectionExtensions
         // rather than on the next application pool recycle.
         services.AddScoped<IKnowledgeSource, NullRepositoryKnowledgeSource>();
 
+        // Short timeout: this backs a "test this address" button, where a
+        // person is waiting and a quick "could not connect" beats a long wait
+        // for the same answer.
+        services
+            .AddHttpClient<IRepositoryEndpointProbe, HttpRepositoryEndpointProbe>(client =>
+            {
+                client.Timeout = TimeSpan.FromSeconds(5);
+            });
+
         services.AddHealthChecks()
             .AddCheck<BlobStorageHealthCheck>("blob-storage", tags: ["ready", "storage"])
             .AddCheck<EmbeddingProviderHealthCheck>("embeddings", tags: ["ready", "ai"])
