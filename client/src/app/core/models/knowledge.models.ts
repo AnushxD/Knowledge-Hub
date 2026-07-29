@@ -312,3 +312,18 @@ export interface NewAccount {
   /** Omitted for an account that will only ever sign in through Google. */
   password?: string;
 }
+
+/** The repository source's address, as an administrator manages it. */
+export interface RepositorySource {
+  endpoint: string | null;
+  isEnabled: boolean;
+  /** True when no override is stored and the deployment's configuration applies. */
+  isFromConfiguration: boolean;
+  updatedAt: string | null;
+}
+
+/** The outcome of testing an address before saving it. */
+export interface RepositoryProbe {
+  isReachable: boolean;
+  detail: string;
+}

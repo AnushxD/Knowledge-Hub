@@ -20,6 +20,8 @@ import {
   LibraryStats,
   MatchStrategy,
   Person,
+  RepositoryProbe,
+  RepositorySource,
   SearchQuery,
   SearchResponse,
   SignedInUser,
@@ -246,6 +248,25 @@ export class HttpKnowledgeGateway extends KnowledgeGateway {
     // actionable detail line, and a client that reinterpreted them would be a
     // second place for "what does inactive mean" to drift.
     return this.http.get<KnowledgeSource[]>(`${this.base}/sources`);
+  }
+
+  repositorySource(): Observable<RepositorySource> {
+    return this.http.get<RepositorySource>(`${this.base}/sources/repository`);
+  }
+
+  saveRepositorySource(endpoint: string | null, isEnabled: boolean): Observable<RepositorySource> {
+    return this.http.put<RepositorySource>(`${this.base}/sources/repository`, {
+      endpoint,
+      isEnabled,
+    });
+  }
+
+  resetRepositorySource(): Observable<RepositorySource> {
+    return this.http.delete<RepositorySource>(`${this.base}/sources/repository`);
+  }
+
+  testRepositorySource(endpoint: string | null): Observable<RepositoryProbe> {
+    return this.http.post<RepositoryProbe>(`${this.base}/sources/repository/test`, { endpoint });
   }
 
   search(query: SearchQuery): Observable<SearchResponse> {

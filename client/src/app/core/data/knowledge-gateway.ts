@@ -15,6 +15,8 @@ import {
   KnowledgeSource,
   LibraryStats,
   Person,
+  RepositoryProbe,
+  RepositorySource,
   SearchQuery,
   SearchResponse,
   SignedInUser,
@@ -83,6 +85,20 @@ export abstract class KnowledgeGateway {
    * must not have to ask a question to draw itself.
    */
   abstract knowledgeSources(): Observable<KnowledgeSource[]>;
+
+  // ---- repository source administration (Admin only; the API enforces it) ---
+
+  abstract repositorySource(): Observable<RepositorySource>;
+
+  abstract saveRepositorySource(
+    endpoint: string | null,
+    isEnabled: boolean,
+  ): Observable<RepositorySource>;
+
+  /** Drops the override so configuration applies again. */
+  abstract resetRepositorySource(): Observable<RepositorySource>;
+
+  abstract testRepositorySource(endpoint: string | null): Observable<RepositoryProbe>;
 
   abstract chatSessions(): Observable<ChatSession[]>;
   abstract chatTranscript(sessionId: string): Observable<ChatTranscript>;

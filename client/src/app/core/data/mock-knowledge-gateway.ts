@@ -21,6 +21,8 @@ import {
   KnowledgeSource,
   LibraryStats,
   Person,
+  RepositoryProbe,
+  RepositorySource,
   SearchQuery,
   SearchResponse,
   SearchResult,
@@ -1032,6 +1034,52 @@ export class MockKnowledgeGateway extends KnowledgeGateway {
     const account = this.mockAccounts.find((candidate) => candidate.id === id)!;
     account.isLockedOut = !enabled;
     return of(account).pipe(delay(120));
+  }
+
+  private mockRepositorySource: RepositorySource = {
+    endpoint: null,
+    isEnabled: false,
+    isFromConfiguration: true,
+    updatedAt: null,
+  };
+
+  repositorySource(): Observable<RepositorySource> {
+    return of({ ...this.mockRepositorySource }).pipe(delay(80));
+  }
+
+  saveRepositorySource(endpoint: string | null, isEnabled: boolean): Observable<RepositorySource> {
+    this.mockRepositorySource = {
+      endpoint,
+      isEnabled,
+      isFromConfiguration: false,
+      updatedAt: new Date().toISOString(),
+    };
+
+    return of({ ...this.mockRepositorySource }).pipe(delay(150));
+  }
+
+  resetRepositorySource(): Observable<RepositorySource> {
+    this.mockRepositorySource = {
+      endpoint: null,
+      isEnabled: false,
+      isFromConfiguration: true,
+      updatedAt: null,
+    };
+
+    return of({ ...this.mockRepositorySource }).pipe(delay(120));
+  }
+
+  testRepositorySource(endpoint: string | null): Observable<RepositoryProbe> {
+    // Reachable only for an address that looks like one, so the failure path is
+    // reachable in the mock too.
+    const ok = !!endpoint && /^https?:\/\//.test(endpoint);
+
+    return of({
+      isReachable: ok,
+      detail: ok
+        ? 'Reachable — answered 200 OK. This confirms the address and the network path, not that the server speaks MCP.'
+        : 'Could not connect (mock gateway).',
+    }).pipe(delay(400));
   }
 
   knowledgeSources(): Observable<KnowledgeSource[]> {
