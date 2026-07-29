@@ -23,6 +23,7 @@ builder.Services.AddServices(builder.Configuration);
 // Identity, the session cookie, and the binding of ICurrentUser to the
 // authenticated principal.
 builder.Services.AddDocHubAuthentication(builder.Configuration);
+builder.Services.AddDocHubRateLimiting(builder.Configuration);
 
 // Background ingestion. Hangfire shares the application's Postgres, so a queued
 // job survives a restart and there is no second store to operate.
@@ -130,6 +131,10 @@ app.UseExceptionHandler();
 // Order matters: who you are, then what you may do, then the endpoint.
 app.UseAuthentication();
 app.UseAuthorization();
+
+// After authentication, so the chat limiter can partition by user id
+// rather than lumping everyone into one anonymous bucket.
+app.UseRateLimiter();
 
 // Both dashboards are now gated on the Admin role rather than on the
 // environment. Dev-only registration was a stand-in for authorisation — it kept

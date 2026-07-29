@@ -1,7 +1,9 @@
 using System.Text.Json;
+using DocHub.Api.Infrastructure;
 using DocHub.Services.Chat;
 using DocHub.Services.ViewModels;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace DocHub.Api.Controllers;
 
@@ -20,6 +22,7 @@ public sealed class ChatController(IChatService chat) : ControllerBase
     /// <c>token</c>, <c>done</c>, <c>error</c> — so the client can render
     /// retrieved sources while the answer is still being written.
     /// </summary>
+    [EnableRateLimiting(RateLimiting.ChatPolicy)]
     [HttpPost]
     [Produces("text/event-stream")]
     [ProducesResponseType(StatusCodes.Status200OK)]
