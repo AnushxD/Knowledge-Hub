@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using DocHub.Api.Infrastructure;
+using DocHub.Api.Infrastructure.Auth;
 using DocHub.DataAccess;
 using DocHub.Integrations;
 using DocHub.Services;
@@ -18,6 +19,10 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddDataAccess(builder.Configuration);
 builder.Services.AddIntegrations(builder.Configuration);
 builder.Services.AddServices(builder.Configuration);
+
+// Identity, the session cookie, and the binding of ICurrentUser to the
+// authenticated principal.
+builder.Services.AddDocHubAuthentication(builder.Configuration);
 
 // Background ingestion. Hangfire shares the application's Postgres, so a queued
 // job survives a restart and there is no second store to operate.
@@ -90,7 +95,12 @@ const string DevCorsPolicy = "dochub-dev-client";
 builder.Services.AddCors(options => options.AddPolicy(DevCorsPolicy, policy => policy
     .WithOrigins(builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [])
     .AllowAnyHeader()
-    .AllowAnyMethod()));
+    .AllowAnyMethod()
+    // The session lives in a cookie, so a cross-origin caller has to be
+    // allowed to send it. Safe only because the origins are an explicit list —
+    // AllowCredentials with AllowAnyOrigin is rejected by the framework, and
+    // rightly.
+    .AllowCredentials()));
 
 var app = builder.Build();
 
@@ -103,6 +113,15 @@ var app = builder.Build();
 if (args.Contains("init-storage"))
 {
     await app.Services.InitializeIntegrationsAsync();
+    return;
+}
+
+// `dotnet run -- seed-admin` — sets the seeded administrator's password from
+// configuration. Separate from startup for the same reason: a credential is
+// provisioned deliberately, not as a side effect of the app booting.
+if (args.Contains("seed-admin"))
+{
+    Environment.ExitCode = await AdminSeeder.RunAsync(app.Services, app.Configuration);
     return;
 }
 
@@ -140,6 +159,10 @@ else
 {
     app.UseHttpsRedirection();
 }
+
+// Order matters: who you are, then what you may do, then the endpoint.
+app.UseAuthentication();
+app.UseAuthorization();
 
 app.MapControllers();
 

@@ -1,5 +1,6 @@
 using Azure.Storage.Blobs;
 using DocHub.DataAccess;
+using DocHub.DataAccess.Entities;
 using DocHub.DataAccess.Repositories;
 using DocHub.Integrations.Embeddings;
 using DocHub.Integrations.Knowledge;
@@ -140,7 +141,8 @@ public sealed class StackFixture : IAsyncLifetime
             chunkRepo,
             queue,
             llm,
-            knowledge);
+            knowledge,
+            user);
     }
 
     /// <summary>
@@ -203,14 +205,23 @@ public sealed class StackFixture : IAsyncLifetime
         IChunkRepository Chunks,
         RecordingIngestionQueue Queue,
         ScriptedLlmProvider Llm,
-        IKnowledgeRetriever Knowledge) : IAsyncDisposable
+        IKnowledgeRetriever Knowledge,
+        TestCurrentUser User) : IAsyncDisposable
     {
         public ValueTask DisposeAsync() => Db.DisposeAsync();
     }
 
-    private sealed class TestCurrentUser : ICurrentUser
+    /// <summary>
+    /// The principal a test runs as. Mutable so a test can change role
+    /// mid-scope and assert what that does, without a second fixture.
+    /// </summary>
+    public sealed class TestCurrentUser : ICurrentUser
     {
-        public Guid Id => DocHubDbContext.SystemUserId;
+        public Guid Id { get; set; } = DocHubDbContext.SystemUserId;
+
+        public string Role { get; set; } = Roles.Admin;
+
+        public bool IsAuthenticated { get; set; } = true;
     }
 
     /// <summary>

@@ -1,23 +1,27 @@
-using DocHub.DataAccess;
-
 namespace DocHub.Services;
 
 /// <summary>
 /// Who is making the current request. Services depend on this rather than on
-/// any authentication mechanism, so phase 5 can swap in a real principal
-/// without touching business logic.
+/// any authentication mechanism, so the host decides what a principal is —
+/// ASP.NET Core Identity now, Entra ID later — without business logic moving.
+///
+/// The implementation is supplied by the host, not by this layer: reading a
+/// principal is an HTTP concern, and a Service that knew about HttpContext
+/// could not be tested without a web stack.
 /// </summary>
 public interface ICurrentUser
 {
     Guid Id { get; }
-}
 
-/// <summary>
-/// Phase 1 stand-in: everything is attributed to the seeded local development
-/// user. Replaced in phase 5 by an implementation reading the authenticated
-/// principal (ASP.NET Core Identity, then Entra ID).
-/// </summary>
-internal sealed class SeededCurrentUser : ICurrentUser
-{
-    public Guid Id => DocHubDbContext.SystemUserId;
+    /// <summary>
+    /// Admin / Editor / Viewer.
+    ///
+    /// Exposed here because some rules cannot be expressed on an endpoint:
+    /// "delete anyone's document, but only if you are an admin" is a decision
+    /// about a particular row, which is business logic and belongs in a
+    /// Service. Endpoint-level role checks stay in the controllers.
+    /// </summary>
+    string Role { get; }
+
+    bool IsAuthenticated { get; }
 }

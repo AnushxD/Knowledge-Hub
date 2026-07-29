@@ -60,9 +60,10 @@ public static class ServicesServiceCollectionExtensions
         services.AddSingleton<ITextExtractorRegistry, TextExtractorRegistry>();
         services.AddSingleton<ITextChunker, TextChunker>();
 
-        // Replaced in phase 5 by an implementation reading the authenticated
-        // principal from the request.
-        services.AddScoped<ICurrentUser, SeededCurrentUser>();
+        // ICurrentUser is deliberately not registered here. Reading a principal
+        // is the host's job — the API binds it to the authenticated request,
+        // and a background job or a test binds it to whoever the work is being
+        // done for.
 
         return services;
     }

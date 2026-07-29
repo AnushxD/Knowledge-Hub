@@ -137,6 +137,34 @@ public record SearchRequest
     public int Take { get; init; } = 20;
 }
 
+// ---- authentication ---------------------------------------------------------
+
+/// <summary>The signed-in user, as every screen needs them.</summary>
+/// <param name="Role">Admin / Editor / Viewer — the client uses it to hide what cannot be done.</param>
+public record SignedInUserViewModel(
+    Guid Id,
+    string Name,
+    string Email,
+    string Initials,
+    string Role);
+
+/// <summary>
+/// What the login screen needs to draw itself before anyone has signed in.
+/// </summary>
+/// <param name="GoogleEnabled">
+/// Whether to offer the Google button. Sent by the server because only the
+/// server knows whether the provider is configured — a button that 404s is
+/// worse than no button.
+/// </param>
+public record AuthOptionsViewModel(bool GoogleEnabled);
+
+public record LoginRequest
+{
+    public string Email { get; init; } = string.Empty;
+
+    public string Password { get; init; } = string.Empty;
+}
+
 // ---- knowledge sources ------------------------------------------------------
 
 /// <summary>One body of knowledge the assistant can ground an answer in.</summary>
