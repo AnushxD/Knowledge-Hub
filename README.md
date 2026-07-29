@@ -549,6 +549,10 @@ the two are same-origin and the session cookie needs no CORS or `SameSite=None`.
 
 ### IIS on the org Windows box
 
+> **Full step-by-step runbook: [docs/iis-setup.md](docs/iis-setup.md)** — prerequisites,
+> app pool settings, environment variables, provisioning commands and the traps.
+> The summary below is the shape; that document is what you follow.
+
 The API serves the built Angular app from `wwwroot` when it is published
 alongside, so IIS hosts **one site** — no Application Request Routing to install
 and keep configured, and no cross-origin cookie to get right. In the container
