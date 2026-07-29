@@ -108,7 +108,20 @@ internal sealed class CompositeKnowledgeSource(
                 status.Detail);
         }));
 
-        return described;
+        // Working sources first, then anything needing attention, rather than
+        // whatever order dependency injection happened to hand over. The screen
+        // is read top-down to answer "what is grounding my answers right now".
+        return
+        [
+            .. described
+                .OrderBy(source => source.State switch
+                {
+                    "active" => 0,
+                    "inactive" => 1,
+                    _ => 2,
+                })
+                .ThenBy(source => source.DisplayName, StringComparer.OrdinalIgnoreCase)
+        ];
     }
 
     /// <summary>
