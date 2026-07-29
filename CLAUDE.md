@@ -97,7 +97,11 @@ doc-knowledge-hub/
 4. ✅ MCP `IKnowledgeSource` abstraction + stub implementation
 5. ✅ Real auth + roles + security hardening
 6. ✅ Deployment pipeline (Docker, GitHub Actions, IIS deploy)
-7. Real MCP integration + revisit scale (vector store, search)  ← NEXT
+7. Real MCP integration + revisit scale (vector store, search) — blocked on an MCP server
+
+**v1 shipped** with phases 1–6 complete. Phase 7 is the only roadmap item left, and
+its seam already exists: `IKnowledgeSource`, the composite fan-out with per-source
+deadlines, and an inactive repository stub whose address is UI-editable.
 
 ## Grounding rules (phases 2–4, non-negotiable)
 - Only `Indexed` documents are retrievable. A half-processed or failed document must never

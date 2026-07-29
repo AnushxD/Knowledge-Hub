@@ -4,7 +4,7 @@ An internal Documentation & Knowledge Hub: upload, organise and search team
 documentation, with an AI assistant that answers questions grounded strictly
 in indexed content and always cites its sources.
 
-> **Status:** phases 1–6 are **complete**. Documents upload, index and become
+> **Status:** **v1 — complete.** Phases 1–6 are done. Documents upload, index and become
 > searchable by hybrid keyword + semantic search, and an AI assistant answers
 > questions from them — citing the exact passage behind every claim, and
 > saying "I don't know" when the answer isn't there. The assistant now retrieves
@@ -13,8 +13,10 @@ in indexed content and always cites its sources.
 > ships as an inactive stub until phase 7. Everything sits behind a sign-in with
 > Admin / Editor / Viewer roles, and Google sign-in can be switched on for
 > company addresses. It ships as container images or as a single-site IIS
-> artefact, both from one CI pipeline. Phase 7 (the real MCP client) is next.
-> See [Current state](#current-state).
+> artefact, both from one CI pipeline, with an activity trail recording who did
+> what. The only roadmap item left is phase 7, the real MCP client, which is
+> blocked on an MCP server to point at — the abstraction and its stub are
+> already in place. See [Current state](#current-state).
 
 ---
 
@@ -935,8 +937,9 @@ and no deployable artefact should contain a credential.
 | `IKnowledgeSource` abstraction + composite retrieval, `/sources` screen | Done |
 | Sign-in, roles, admin account management, Google sign-in, rate limiting | Done |
 | Container images, GitHub Actions CI, IIS artefact and single-site hosting | Done |
+| Activity trail behind the dashboard feed | Done |
 
-**Phases 1–6 are complete.** Upload a Markdown, PDF or Word file and it is
+**v1 is complete.** Upload a Markdown, PDF or Word file and it is
 extracted, chunked, embedded and searchable within seconds. Ask a question and
 the assistant answers from those documents, links every claim to the exact
 passage behind it, and declines when the answer isn't there.
@@ -954,9 +957,11 @@ requires one unless it opts out, content changes need Editor or Admin, and
 on, the allowed-domain check runs on the server against the address Google
 verified, and an empty allow-list admits nobody.
 
-Not yet built, by design (later phases): the real MCP client; Entra ID single
-sign-on; pushing images to a registry, and any automated deploy step — CI builds
-the images and the IIS artefact, but a human still puts them somewhere. OCR for scanned documents is also deferred, so
+Not yet built, by design: the real MCP client (phase 7 — the `IKnowledgeSource`
+seam and its inactive stub are in place, waiting on a server to point at); Entra
+ID single sign-on; pushing images to a registry, and any automated deploy step —
+CI builds the images and the IIS artefact, but a human still puts them
+somewhere. OCR for scanned PDFs and client-side unit tests are also deferred. OCR for scanned documents is also deferred, so
 image-only PDFs are reported as failed rather than silently indexed as empty.
 
 The client talks to the API through one seam, `KnowledgeGateway`. Two

@@ -16,7 +16,14 @@ Internal **Documentation & Knowledge Hub** (DocHub): upload/organise/search team
 
 # Current Objective
 
-Phases 1–6 are **complete and pushed**. Next objective is **Phase 7: the real MCP client** implementing `IKnowledgeSource`, plus a look at vector-store scale.
+**v1 is complete and pushed.** Phases 1–6 are done, and the activity trail closed the last
+gap that was visible in the UI.
+
+Phase 7 — the real MCP client — is the only roadmap item left, and it is blocked on having
+an MCP server to point at rather than on anything in this repository. Everything it needs
+is in place: `IKnowledgeSource` in Integrations, a composite that fans out under per-source
+deadlines and isolates failures, and an inactive stub whose address an admin can already set
+from `/sources`.
 
 ---
 
@@ -39,8 +46,11 @@ Phases 1–6 are **complete and pushed**. Next objective is **Phase 7: the real 
   this doc" now reach the real assistant instead of being disabled placeholders; Upload and
   Notifications removed from the top bar; the IIS runbook targets Portainer with Docker on
   the same machine.
+- **Activity trail** — recorded on upload, edit, move, delete, folder changes and ingestion
+  outcomes; `GET /api/activity` behind the dashboard feed that had always read
+  "no activity recorded".
 - Swagger UI at `/swagger` (dev only, Admin only).
-- 128 tests green: 8 Integrations, 17 Api, 14 DataAccess, 89 Services.
+- 143 tests green: 8 Integrations, 17 Api, 14 DataAccess, 104 Services.
 
 ## In Progress
 - Nothing. Working tree clean, all work pushed.
@@ -180,11 +190,13 @@ CLAUDE.md · SESSION.md · README.md · architecture-blueprint.md
 
 # Pending Features (priority order)
 
-1. **Phase 7 — real MCP client** implementing `IKnowledgeSource` (the seam is in place: one class in Integrations plus a branch in `AddIntegrations`), then a vector-store scale review.
-2. **Prove the rest of the pipeline** — CI is green; still to do is deploying the artefact to the Windows box and picking a registry if images should be pushed.
-3. **Entra ID single sign-on** — one more branch in `AddDocHubAuthentication`; Google and local password already share that shape.
+Nothing blocks v1. What follows it:
+
+1. **Deploy to the org Windows box** — the one part of phase 6 never exercised for real. `web.config` and `AspNetCoreModuleV2` have not run.
+2. **Phase 7 — real MCP client**, when there is a server to point at. One class in Integrations plus a branch in `AddIntegrations`, and the citation-target decision.
+3. **Entra ID single sign-on** — one more branch in `AddDocHubAuthentication`.
 4. **Verify Google sign-in end to end** against real credentials.
-5. Deferred, no phase assigned: audit log (`activity()` returns `[]`); OCR for scanned PDFs; client unit tests; the `Cited in answers` counter; CSRF tokens.
+5. Deferred: OCR for scanned PDFs; client unit tests; the `Cited in answers` counter; CSRF tokens; pushing images to a registry.
 
 ---
 
@@ -193,7 +205,7 @@ CLAUDE.md · SESSION.md · README.md · architecture-blueprint.md
 - **Uncited answers were mostly a truncation bug, not the model.** Ollama defaults `num_ctx` to 2048 and drops the overflow silently; the grounded prompt is 5,000+ tokens, so the model was being asked to cite passages it had never been shown. Measured on a 4,202-token prompt: at 2048 Ollama read 1,026 tokens, at 8192 it read all 4,202. `Llm:ContextTokens` now sets it explicitly. Whatever citation weakness remains after this is genuinely the model, and `llama3.1:8b`/`qwen2.5:7b` follow the format better than the 3B default.
 - **Local generation is slow** — ~5–15 tok/s on CPU-only Docker.
 - **Anthropic/Claude `ILlmProvider` not implemented.** User declined adding the Anthropic C# SDK dependency this session. The interface is the seam; adding it = one class + one branch in `AddIntegrations`. `LlmOptions.Provider` currently validates `ollama` only.
-- **`activity()` returns `[]`** — the audit log was *not* built in phase 5 and has no phase assigned. Authentication landed; recording who did what did not.
+- ~~`activity()` returns `[]`~~ **Fixed.** An activity trail now records who did what, and the dashboard feed reads from it. Deletions keep the name of what was deleted, since the row they described is gone.
 - **CI runs green on every push to `main`** — server, client and image jobs all pass. (An earlier note here claimed it had never run; that was wrong, it had been triggering on each push all along.) The runner warns that `actions/checkout@v4` and friends target the deprecated Node 20 and are being forced onto Node 24 — informational, and fixed by bumping those actions when newer majors land.
 - **Images are built but pushed nowhere**, and no step deploys anything. CI produces artefacts; a human still installs them.
 - **IIS itself is untested** — dev is a Mac. The single-site arrangement was verified by publishing and running the same output under Kestrel, which exercises the static-file serving and the anonymous SPA fallback but not `AspNetCoreModuleV2` or `web.config`.
