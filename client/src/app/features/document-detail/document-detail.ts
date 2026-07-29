@@ -49,6 +49,19 @@ export class DocumentDetailPage {
   /** Bound from the route via `withComponentInputBinding()`. */
   readonly id = input<string>('');
 
+  /**
+   * Opens the assistant with this document named in the question.
+   *
+   * Seeds the box rather than sending it: "ask about this document" is not
+   * itself a question, and firing off a half-formed one would spend a slow
+   * generation on something nobody asked.
+   */
+  protected askAbout(document: { title: string }): void {
+    void this.router.navigate(['/chat'], {
+      queryParams: { draft: `About "${document.title}": ` },
+    });
+  }
+
   protected readonly tab = signal<Tab>('preview');
   protected readonly tabs: { id: Tab; label: string }[] = [
     { id: 'preview', label: 'Preview' },
@@ -67,7 +80,7 @@ export class DocumentDetailPage {
   protected readonly doc = computed(() => this.result());
   protected readonly loading = computed(() => this.result() === undefined);
 
-  /** `?chunk=N` — the citation deep-link contract, live from phase 1. */
+  /** `?chunk=N` — the deep link a citation points at. */
   protected readonly highlightChunk = toSignal(
     this.route.queryParamMap.pipe(map((p) => (p.get('chunk') ? Number(p.get('chunk')) : null))),
     { initialValue: null },

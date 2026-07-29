@@ -161,7 +161,7 @@ export class CommandPalette {
     ];
   });
 
-  /** Phase 3 hook: the same box will hand the query to the assistant. */
+  /** The same box that finds a document also hands the query to the assistant. */
   private readonly askItem = computed<PaletteItem[]>(() => {
     const term = this.term().trim();
     if (term.length < 4) return [];
@@ -171,7 +171,7 @@ export class CommandPalette {
         kind: 'ask',
         icon: 'pi-sparkles',
         label: `Ask the assistant: “${term}”`,
-        hint: 'Grounded answers with citations — phase 3',
+        hint: 'Grounded answers, with a citation on every claim',
         run: () => this.go(['/chat'], { q: term }),
       },
     ];

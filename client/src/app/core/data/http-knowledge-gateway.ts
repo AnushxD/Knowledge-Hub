@@ -184,9 +184,9 @@ export class HttpKnowledgeGateway extends KnowledgeGateway {
   }
 
   /**
-   * No audit trail exists server-side yet — the blueprint's AuditLog table is
-   * phase 5 work. Returning an empty list keeps the dashboard honest: it shows
-   * its "no activity yet" state rather than inventing events.
+   * No audit trail exists server-side yet. Returning an empty list keeps the
+   * dashboard honest: it shows its "no activity yet" state rather than
+   * inventing events.
    */
   activity(): Observable<ActivityEvent[]> {
     return of([]);

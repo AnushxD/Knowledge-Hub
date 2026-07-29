@@ -84,17 +84,22 @@ export class ChatPage {
     // A question handed over from the assistant dock, as ?q=. Asked once, then
     // dropped from the URL: leaving it there would re-ask on every reload, and
     // a shared link would silently start someone else's conversation.
-    const handedOver = this.route.snapshot.queryParamMap.get('q')?.trim();
+    const params = this.route.snapshot.queryParamMap;
+    const handedOver = params.get('q')?.trim();
+    const prefill = params.get('draft');
 
-    if (handedOver) {
+    if (handedOver || prefill) {
       void this.router.navigate([], {
         relativeTo: this.route,
-        queryParams: { q: null },
+        queryParams: { q: null, draft: null },
         replaceUrl: true,
       });
-
-      this.runSuggestion(handedOver);
     }
+
+    // `q` is a finished question and is asked; `draft` only fills the box,
+    // because "ask about this document" is a starting point, not a question.
+    if (handedOver) this.runSuggestion(handedOver);
+    else if (prefill) this.draft.set(prefill);
   }
 
   protected onInput(event: Event): void {

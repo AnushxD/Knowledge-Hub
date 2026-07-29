@@ -38,13 +38,14 @@
         </div>
 
         <div class="flex items-center gap-2">
-          <!-- Reserved for phase 3: scopes the assistant to this document. -->
+          <!-- Hands the question to the assistant rather than answering here:
+               streaming, citation checking and refusals live in one place. -->
           <button
             type="button"
-            class="dh-btn-ghost gap-2 opacity-55"
-            disabled
-            dhTooltip="Grounded Q&A over this document arrives in phase 3"
+            class="dh-btn-ghost gap-2"
+            dhTooltip="Opens the assistant with this document in the question"
             tooltipPosition="bottom"
+            (click)="askAbout(document)"
           >
             <i class="pi pi-sparkles text-[12px] text-brand-400"></i>
             Ask about this doc
@@ -321,20 +322,21 @@
         </div>
       </div>
 
-      <!-- Citation demo: proves the deep-link contract before RAG exists. -->
+      <!-- The same deep link a citation uses, reachable without asking first. -->
       @if (document.status === 'indexed' && document.sections.length) {
         <div class="dh-ai-surface mt-3 rounded-dh-lg p-4">
           <p class="dh-eyebrow mb-2">Citation target</p>
           <p class="text-[12px] leading-relaxed text-muted">
-            From phase 3, an answer citing this document links straight to a section. Try the
-            contract now:
+            An answer citing this document links straight to the section it used. Jump to one:
           </p>
           <button
             type="button"
             class="mt-2.5 text-[12px] font-medium text-brand-400 hover:underline"
-            (click)="jumpToChunk(document.sections[1].chunkId)"
+            (click)="jumpToChunk(document.sections[0].chunkId)"
           >
-            Open “{{ document.sections[1].heading }}” →
+            <!-- Index 0, not 1: the guard above only promises one section, so a
+                 single-chunk document was reading past the end and throwing. -->
+            Open “{{ document.sections[0].heading }}” →
           </button>
         </div>
       }

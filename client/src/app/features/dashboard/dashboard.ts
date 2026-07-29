@@ -1,6 +1,7 @@
 import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { LibraryStore } from '../../core/state/library-store';
+import { AuthStore } from '../../core/state/auth-store';
 import { FileIcon } from '../../shared/components/file-icon';
 import { StatusPill } from '../../shared/components/status-pill';
 import { Avatar } from '../../shared/components/avatar';
@@ -17,6 +18,12 @@ import { ActivityEvent } from '../../core/models/knowledge.models';
 })
 export class Dashboard {
   protected readonly store = inject(LibraryStore);
+  private readonly auth = inject(AuthStore);
+
+  /** Greets by first name; falls back to something neutral before /auth/me answers. */
+  protected readonly firstName = computed(
+    () => this.auth.currentUser()?.name.trim().split(' ')[0] || 'there',
+  );
   protected readonly stats = this.store.stats;
   protected readonly activity = this.store.activity;
 

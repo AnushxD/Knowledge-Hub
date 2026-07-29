@@ -14,18 +14,12 @@
       [routerLink]="item.route"
       routerLinkActive="dh-rail-active"
       [routerLinkActiveOptions]="{ exact: !!item.exact }"
-      [dhTooltip]="item.phase ? item.label + ' · Phase ' + item.phase : item.label"
+      [dhTooltip]="item.label"
       tooltipPosition="right"
       class="dh-rail-item"
       [attr.aria-label]="item.label"
     >
       <i class="pi text-[17px]" [class]="item.icon"></i>
-      @if (item.phase) {
-        <span
-          class="absolute top-1.5 right-1.5 size-1.5 rounded-full bg-brand-400/70"
-          aria-hidden="true"
-        ></span>
-      }
     </a>
   }
 </nav>

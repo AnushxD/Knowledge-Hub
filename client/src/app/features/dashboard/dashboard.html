@@ -5,11 +5,11 @@
       <div class="min-w-0">
         <p class="dh-eyebrow mb-2">{{ today }}</p>
         <h1 class="text-[26px] leading-tight font-semibold text-ink">
-          {{ greeting() }}, <span class="dh-gradient-text">Ana</span>
+          {{ greeting() }}, <span class="dh-gradient-text">{{ firstName() }}</span>
         </h1>
         <p class="mt-2 max-w-xl text-[13.5px] leading-relaxed text-muted">
-          Your team's documentation, in one place. Upload it, organise it, and — from phase 3 — ask
-          questions that are answered only from what's actually indexed.
+          Your team's documentation, in one place. Upload it, organise it, and ask questions that
+          are answered only from what's actually indexed.
         </p>
 
         <div class="mt-5 flex flex-wrap items-center gap-2">
@@ -174,12 +174,14 @@
       <div class="px-4 py-3">
         @if (activity(); as events) {
           @if (!events.length) {
-            <!-- There is no audit trail server-side yet (phase 5), so this is
-                 the honest state rather than invented events. -->
+            <!-- Nothing records activity server-side yet, so this is the
+                 honest state rather than invented events. -->
             <div class="py-6 text-center">
               <i class="pi pi-inbox mb-2 block text-[18px] text-subtle"></i>
               <p class="text-[12.5px] text-muted">No activity recorded yet.</p>
-              <p class="mt-1 text-[11.5px] text-subtle">An audit trail arrives with phase 5.</p>
+              <p class="mt-1 text-[11.5px] text-subtle">
+                Actions are not recorded yet, so there is nothing to show here.
+              </p>
             </div>
           }
           <ol class="relative space-y-3.5">

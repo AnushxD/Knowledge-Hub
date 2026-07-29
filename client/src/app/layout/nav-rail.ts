@@ -7,8 +7,6 @@ interface RailItem {
   route: string;
   icon: string;
   label: string;
-  /** Roadmap phase that lights this section up. Undefined = available now. */
-  phase?: number;
   exact?: boolean;
 }
 
@@ -31,7 +29,7 @@ export class NavRail {
     { route: '/browse', icon: 'pi-folder', label: 'Library' },
     { route: '/search', icon: 'pi-search', label: 'Search' },
     { route: '/chat', icon: 'pi-comments', label: 'Assistant' },
-    { route: '/sources', icon: 'pi-share-alt', label: 'Knowledge sources', phase: 4 },
+    { route: '/sources', icon: 'pi-share-alt', label: 'Knowledge sources' },
     { route: '/settings', icon: 'pi-cog', label: 'Settings' },
   ];
 }
