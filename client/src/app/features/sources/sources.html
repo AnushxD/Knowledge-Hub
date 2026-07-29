@@ -1,0 +1,82 @@
+<div class="mx-auto max-w-3xl px-6 py-8 lg:px-10">
+  <h1 class="text-[21px] font-semibold text-ink">Knowledge sources</h1>
+  <p class="mt-1.5 text-[13px] text-muted">
+    Everything the assistant is allowed to ground an answer in. Every question is put to every
+    active source at once, and the results are merged into one ranked list before the model sees
+    them.
+  </p>
+
+  @if (failed(); as error) {
+    <div
+      class="mt-6 flex items-start gap-3 rounded-dh border p-4"
+      [style.borderColor]="'color-mix(in oklab, var(--dh-status-failed) 32%, transparent)'"
+      [style.background]="'color-mix(in oklab, var(--dh-status-failed) 10%, transparent)'"
+    >
+      <i
+        class="pi pi-exclamation-triangle mt-[2px] text-[14px]"
+        [style.color]="'var(--dh-status-failed)'"
+      ></i>
+      <div class="min-w-0">
+        <p class="text-[13px] font-medium text-ink">Sources could not be loaded</p>
+        <p class="mt-1 text-[12.5px] text-muted">{{ error }}</p>
+      </div>
+    </div>
+  } @else if (loading()) {
+    <div class="mt-6 space-y-3">
+      @for (placeholder of [1, 2]; track placeholder) {
+        <div class="dh-card h-[104px] animate-pulse p-5"></div>
+      }
+    </div>
+  } @else {
+    <div class="mt-6 space-y-3">
+      @for (source of rows(); track source.name) {
+        <section class="dh-card p-5">
+          <div class="flex items-start gap-3">
+            <span
+              class="grid size-9 shrink-0 place-items-center rounded-[11px] border border-hairline bg-surface-2"
+            >
+              <i class="pi text-[14px] text-muted" [class]="source.icon"></i>
+            </span>
+
+            <div class="min-w-0 flex-1">
+              <div class="flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
+                <h2 class="text-[14px] font-semibold text-ink">{{ source.displayName }}</h2>
+                <span
+                  class="inline-flex items-center gap-1.5 rounded-full border px-2 py-[3px] text-[11px] font-medium whitespace-nowrap"
+                  [style.color]="source.presentation.color"
+                  [style.borderColor]="
+                    'color-mix(in oklab, ' + source.presentation.color + ' 32%, transparent)'
+                  "
+                  [style.background]="
+                    'color-mix(in oklab, ' + source.presentation.color + ' 12%, transparent)'
+                  "
+                >
+                  <i class="pi text-[10px]" [class]="source.presentation.icon"></i>
+                  <span>{{ source.presentation.label }}</span>
+                </span>
+                <code class="text-[11px] text-subtle">{{ source.name }}</code>
+              </div>
+
+              <p class="mt-1.5 text-[12.5px] text-muted">{{ source.description }}</p>
+
+              <!-- The state on its own is not actionable; this line is what
+                   tells someone whether anything needs doing. -->
+              <p
+                class="mt-2.5 rounded-dh border border-hairline bg-surface-2 p-3 text-[12px] text-subtle"
+              >
+                {{ source.detail }}
+              </p>
+            </div>
+          </div>
+        </section>
+      }
+    </div>
+
+    <p class="mt-5 text-[12px] text-subtle">
+      {{ activeCount() }} of {{ rows().length }}
+      {{ rows().length === 1 ? 'source is' : 'sources are' }} contributing to answers. A source that
+      fails mid-question is left out of that answer and named in the reply, rather than failing the
+      whole question.
+    </p>
+  }
+</div>

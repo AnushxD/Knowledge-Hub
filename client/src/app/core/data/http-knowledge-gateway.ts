@@ -13,6 +13,7 @@ import {
   FileKind,
   Folder,
   IngestionStatus,
+  KnowledgeSource,
   LibraryStats,
   MatchStrategy,
   Person,
@@ -194,6 +195,13 @@ export class HttpKnowledgeGateway extends KnowledgeGateway {
     return this.http.get<string[]>(`${this.base}/documents/tags`);
   }
 
+  knowledgeSources(): Observable<KnowledgeSource[]> {
+    // Passed through as-is: the API already returns the three states and an
+    // actionable detail line, and a client that reinterpreted them would be a
+    // second place for "what does inactive mean" to drift.
+    return this.http.get<KnowledgeSource[]>(`${this.base}/sources`);
+  }
+
   search(query: SearchQuery): Observable<SearchResponse> {
     let params = new HttpParams().set('query', query.text.trim());
 
@@ -286,7 +294,9 @@ export class HttpKnowledgeGateway extends KnowledgeGateway {
           if (!response.ok || !response.body) {
             // Errors before the stream starts come back as problem details.
             const problem = await response.json().catch(() => null);
-            throw new Error(problem?.detail ?? problem?.title ?? `Request failed (${response.status})`);
+            throw new Error(
+              problem?.detail ?? problem?.title ?? `Request failed (${response.status})`,
+            );
           }
 
           const reader = response.body.getReader();

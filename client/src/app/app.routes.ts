@@ -35,8 +35,7 @@ export const routes: Routes = [
       {
         path: 'sources',
         title: 'Knowledge sources · DocHub',
-        loadComponent: () =>
-          import('./features/roadmap/sources-placeholder').then((m) => m.SourcesPlaceholder),
+        loadComponent: () => import('./features/sources/sources').then((m) => m.SourcesPage),
       },
       {
         path: 'settings',

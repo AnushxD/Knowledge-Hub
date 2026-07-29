@@ -9,6 +9,7 @@ import {
   DocumentQuery,
   DocumentSummary,
   Folder,
+  KnowledgeSource,
   LibraryStats,
   Person,
   SearchQuery,
@@ -46,6 +47,13 @@ export abstract class KnowledgeGateway {
    * the first word of the answer exists.
    */
   abstract ask(request: AskRequest): Observable<ChatEvent>;
+
+  /**
+   * The bodies of knowledge the assistant may ground an answer in, and whether
+   * each is contributing right now. Reported rather than searched — the screen
+   * must not have to ask a question to draw itself.
+   */
+  abstract knowledgeSources(): Observable<KnowledgeSource[]>;
 
   abstract chatSessions(): Observable<ChatSession[]>;
   abstract chatTranscript(sessionId: string): Observable<ChatTranscript>;

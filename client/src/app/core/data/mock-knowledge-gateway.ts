@@ -15,6 +15,7 @@ import {
   DocumentVersion,
   Folder,
   IngestionStatus,
+  KnowledgeSource,
   LibraryStats,
   Person,
   SearchQuery,
@@ -545,9 +546,7 @@ function snippetAround(body: string, terms: string[]): string {
   const start = Math.max(0, at - 90);
   const end = Math.min(body.length, start + 300);
 
-  return (
-    (start > 0 ? '…' : '') + body.slice(start, end).trim() + (end < body.length ? '…' : '')
-  );
+  return (start > 0 ? '…' : '') + body.slice(start, end).trim() + (end < body.length ? '…' : '');
 }
 
 function sectionsFor(seed: Seed): DocumentSection[] {
@@ -958,6 +957,30 @@ export class MockKnowledgeGateway extends KnowledgeGateway {
 
     // Paced so the streaming UI is exercised rather than filled in one frame.
     return from(events).pipe(concatMap((event) => of(event).pipe(delay(28))));
+  }
+
+  knowledgeSources(): Observable<KnowledgeSource[]> {
+    // Mirrors what a default local deployment really reports, including the
+    // inactive repository source. A mock that showed everything green would
+    // make the screen look finished while hiding the state it exists to show.
+    return of<KnowledgeSource[]>([
+      {
+        name: 'documents',
+        displayName: 'Documents',
+        description: 'Everything uploaded to the hub, searched by keyword and by meaning together.',
+        state: 'active',
+        detail:
+          'Searched on every question. Only documents that finished ingestion are retrievable — anything still processing or failed is neither searchable nor citable.',
+      },
+      {
+        name: 'repositories',
+        displayName: 'Repositories',
+        description: "Source code and READMEs from the team's repositories, reached over MCP.",
+        state: 'inactive',
+        detail:
+          "No MCP server is configured, so answers are grounded in documents only. Set KnowledgeSources:RepositoryProvider to 'mcp' once one is available.",
+      },
+    ]).pipe(delay(120));
   }
 
   chatSessions(): Observable<ChatSession[]> {

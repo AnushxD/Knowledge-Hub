@@ -249,3 +249,23 @@ export interface UploadTask {
   phase: 'uploading' | 'queued' | 'extracting' | 'embedding' | 'done' | 'error';
   error?: string;
 }
+
+/**
+ * Whether a knowledge source is contributing to answers — and if not, why.
+ *
+ * Three states rather than a boolean because they mean genuinely different
+ * things: `inactive` is a source switched off by design, `unavailable` is one
+ * that should be working and is not. Rendering them alike would train people
+ * to ignore the second.
+ */
+export type KnowledgeSourceState = 'active' | 'inactive' | 'unavailable';
+
+/** One body of knowledge the assistant may ground an answer in. */
+export interface KnowledgeSource {
+  name: string;
+  displayName: string;
+  description: string;
+  state: KnowledgeSourceState;
+  /** Why it is in that state, in one actionable sentence. */
+  detail: string;
+}
