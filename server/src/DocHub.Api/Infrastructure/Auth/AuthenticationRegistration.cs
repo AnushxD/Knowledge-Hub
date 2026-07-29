@@ -1,9 +1,12 @@
 using System.Security.Claims;
+using System.Text.Json;
 using DocHub.DataAccess;
 using DocHub.DataAccess.Entities;
 using DocHub.Services;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Authentication.OAuth.Claims;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.Options;
 
 namespace DocHub.Api.Infrastructure.Auth;
@@ -127,6 +130,68 @@ internal static class AuthenticationRegistration
             options.ExpireTimeSpan = TimeSpan.FromMinutes(10);
         });
 
+        // Google is registered only when configured. The alternative — always
+        // registering it and failing at sign-in — puts a button on the login
+        // screen that breaks when pressed.
+        if (auth.Google.Enabled)
+        {
+            authentication.AddGoogle(options =>
+            {
+                options.ClientId = auth.Google.ClientId;
+                options.ClientSecret = auth.Google.ClientSecret;
+
+                // Where Google returns to. Must match the redirect URI
+                // registered in the Google Cloud console exactly.
+                options.CallbackPath = "/signin-google";
+
+                // The external cookie holds the identity only until our own
+                // callback has checked the domain and issued a real session.
+                options.SignInScheme = IdentityConstants.ExternalScheme;
+
+                // Google's default claim mapping drops both of these, and the
+                // callback cannot decide anything without the first: an
+                // unverified address is one the account merely typed, so
+                // trusting it would hand over the domain check itself.
+                options.Events.OnCreatingTicket = context =>
+                {
+                    if (context.Identity is null) return Task.CompletedTask;
+
+                    if (context.User.TryGetProperty("email_verified", out var verified))
+                    {
+                        context.Identity.AddClaim(new Claim(
+                            GoogleClaims.EmailVerified,
+                            (verified.ValueKind == JsonValueKind.True).ToString()));
+                    }
+
+                    // The hosted domain Google itself asserts, kept for logs —
+                    // the access decision uses the verified address, since a
+                    // personal account simply has no hd at all.
+                    if (context.User.TryGetProperty("hd", out var hostedDomain))
+                    {
+                        context.Identity.AddClaim(new Claim(
+                            GoogleClaims.HostedDomain, hostedDomain.ToString()));
+                    }
+
+                    return Task.CompletedTask;
+                };
+
+                options.Events.OnRedirectToAuthorizationEndpoint = context =>
+                {
+                    // Pre-selects the workspace in Google's account chooser
+                    // when exactly one domain is allowed. Purely a convenience
+                    // — it is a request parameter, so anyone can change it, and
+                    // the real check happens on the way back.
+                    var uri = auth.Google.AllowedDomains.Length == 1
+                        ? QueryHelpers.AddQueryString(
+                            context.RedirectUri, "hd", auth.Google.AllowedDomains[0])
+                        : context.RedirectUri;
+
+                    context.Response.Redirect(uri);
+                    return Task.CompletedTask;
+                };
+            });
+        }
+
         services.AddAuthorization(options =>
         {
             options.AddPolicy(Policies.Admin, policy => policy.RequireRole(Roles.Admin));
@@ -146,6 +211,16 @@ internal static class AuthenticationRegistration
 
         return services;
     }
+}
+
+/// <summary>Claims copied out of Google's userinfo response.</summary>
+internal static class GoogleClaims
+{
+    /// <summary>"True" only when Google has confirmed the account owns the address.</summary>
+    public const string EmailVerified = "urn:google:email_verified";
+
+    /// <summary>The Workspace domain Google asserts, absent for personal accounts.</summary>
+    public const string HostedDomain = "urn:google:hd";
 }
 
 /// <summary>Named policies, so a string typo cannot quietly weaken an endpoint.</summary>

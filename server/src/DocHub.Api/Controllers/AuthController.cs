@@ -1,6 +1,8 @@
+using System.Security.Claims;
 using DocHub.Api.Infrastructure.Auth;
 using DocHub.DataAccess.Entities;
 using DocHub.Services.ViewModels;
+using Microsoft.AspNetCore.Authentication.Google;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -80,6 +82,106 @@ public sealed class AuthController(
             statusCode: StatusCodes.Status401Unauthorized);
     }
 
+    /// <summary>
+    /// Starts Google sign-in. The browser is handed to Google and comes back at
+    /// <see cref="GoogleCallback"/>.
+    /// </summary>
+    [HttpGet("google/start")]
+    [AllowAnonymous]
+    public IActionResult GoogleStart([FromQuery] string? returnUrl)
+    {
+        if (!options.Google.Enabled) return NotFound();
+
+        var properties = signIn.ConfigureExternalAuthenticationProperties(
+            GoogleDefaults.AuthenticationScheme,
+            Url.Action(nameof(GoogleCallback), new { returnUrl = SafeReturnUrl(returnUrl) }));
+
+        return Challenge(properties, GoogleDefaults.AuthenticationScheme);
+    }
+
+    /// <summary>
+    /// Where Google sends the user back, and where access is actually decided.
+    ///
+    /// Every check here runs against the identity Google returned from the
+    /// token exchange, never against anything the browser supplied: the `hd`
+    /// hint on the way out is a convenience for the account chooser and can be
+    /// edited by whoever controls the URL bar. Treating it as the gate would
+    /// let any Google account in the world sign in.
+    /// </summary>
+    [HttpGet("google/callback")]
+    [AllowAnonymous]
+    public async Task<IActionResult> GoogleCallback([FromQuery] string? returnUrl)
+    {
+        if (!options.Google.Enabled) return NotFound();
+
+        var target = SafeReturnUrl(returnUrl);
+        var info = await signIn.GetExternalLoginInfoAsync();
+
+        if (info is null)
+        {
+            logger.LogWarning("Google callback reached with no external login information");
+            return Redirect($"/login?error=external");
+        }
+
+        var email = info.Principal.FindFirstValue(ClaimTypes.Email);
+
+        // Google will happily assert an address the account has not proved it
+        // owns. An unverified address is attacker-choosable, so treating one as
+        // a company address would hand over the domain check itself.
+        var emailVerified = string.Equals(
+            info.Principal.FindFirstValue(GoogleClaims.EmailVerified),
+            "true",
+            StringComparison.OrdinalIgnoreCase);
+
+        if (string.IsNullOrWhiteSpace(email) || !emailVerified)
+        {
+            logger.LogWarning(
+                "Google sign-in refused: address missing or unverified for {LoginProvider} key",
+                info.LoginProvider);
+
+            return Redirect("/login?error=unverified");
+        }
+
+        if (!options.Google.IsDomainAllowed(email))
+        {
+            // Logged as a refusal rather than an error: someone signing in with
+            // a personal account is the expected case this exists to stop.
+            logger.LogWarning("Google sign-in refused for {Email}: domain not allowed", email);
+            return Redirect("/login?error=domain");
+        }
+
+        var user = await users.FindByEmailAsync(email);
+
+        if (user is null)
+        {
+            if (!options.Google.AutoProvision)
+            {
+                logger.LogWarning(
+                    "Google sign-in refused for {Email}: no account, and auto-provisioning is off",
+                    email);
+
+                return Redirect("/login?error=noaccount");
+            }
+
+            user = await ProvisionAsync(email, info);
+
+            if (user is null) return Redirect("/login?error=provision");
+        }
+
+        // Records the Google identity against the account, so a later email
+        // change on our side does not orphan the external login.
+        if (await users.FindByLoginAsync(info.LoginProvider, info.ProviderKey) is null)
+        {
+            await users.AddLoginAsync(user, info);
+        }
+
+        await signIn.SignInAsync(user, isPersistent: true);
+
+        logger.LogInformation("User {UserId} signed in with Google", user.Id);
+
+        return Redirect(target);
+    }
+
     [HttpPost("logout")]
     [Authorize]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
@@ -112,6 +214,58 @@ public sealed class AuthController(
 
         return Describe(user);
     }
+
+    /// <summary>
+    /// Creates a local account for a verified, allowed-domain Google identity.
+    ///
+    /// Always a Viewer. The domain proves who someone works for, not what they
+    /// should be able to change — an admin promotes them afterwards, so a new
+    /// colleague's first sign-in can never hand out write access on its own.
+    /// </summary>
+    private async Task<User?> ProvisionAsync(string email, ExternalLoginInfo info)
+    {
+        var user = new User
+        {
+            Id = Guid.CreateVersion7(),
+            UserName = email,
+            Email = email,
+            EmailConfirmed = true,
+            Name = info.Principal.FindFirstValue(ClaimTypes.Name)?.Trim() is { Length: > 0 } name
+                ? name
+                : email,
+            Role = Roles.Viewer,
+            CreatedAt = DateTimeOffset.UtcNow,
+        };
+
+        // No password: this account signs in through Google, and a local
+        // credential nobody set is one more thing that could be guessed.
+        var created = await users.CreateAsync(user);
+
+        if (created.Succeeded)
+        {
+            logger.LogInformation(
+                "Provisioned {UserId} as {Role} from a verified Google sign-in",
+                user.Id, user.Role);
+
+            return user;
+        }
+
+        logger.LogError(
+            "Could not provision an account for a Google sign-in: {Errors}",
+            string.Join("; ", created.Errors.Select(error => error.Description)));
+
+        return null;
+    }
+
+    /// <summary>
+    /// Keeps the post-sign-in redirect inside this application.
+    ///
+    /// Without this the endpoint is an open redirect: a link to
+    /// <c>…/google/start?returnUrl=https://evil.example</c> would send a user
+    /// who genuinely just authenticated onward to somebody else's site.
+    /// </summary>
+    private string SafeReturnUrl(string? returnUrl) =>
+        !string.IsNullOrWhiteSpace(returnUrl) && Url.IsLocalUrl(returnUrl) ? returnUrl : "/";
 
     private static SignedInUserViewModel Describe(User user) =>
         new(

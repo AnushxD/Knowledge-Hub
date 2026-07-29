@@ -6,6 +6,7 @@
     <Project Path="src/DocHub.Services/DocHub.Services.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/DocHub.Api.Tests/DocHub.Api.Tests.csproj" />
     <Project Path="tests/DocHub.DataAccess.Tests/DocHub.DataAccess.Tests.csproj" />
     <Project Path="tests/DocHub.Integrations.Tests/DocHub.Integrations.Tests.csproj" />
     <Project Path="tests/DocHub.Services.Tests/DocHub.Services.Tests.csproj" />
