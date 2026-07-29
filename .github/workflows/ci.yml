@@ -1,0 +1,160 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# A second push to the same branch makes the first run irrelevant. Cancelling it
+# keeps the queue honest rather than paying for a result nobody will read.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_VERSION: '10.0.x'
+  NODE_VERSION: '22'
+  # Nothing here needs the first-run telemetry notice or a usage ping.
+  DOTNET_NOLOGO: 'true'
+  DOTNET_CLI_TELEMETRY_OPTOUT: 'true'
+
+jobs:
+  server:
+    name: Server — build and test
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('server/**/*.csproj') }}
+          restore-keys: nuget-${{ runner.os }}-
+
+      # The repository's own compose file, rather than GitHub service
+      # containers. The tests run against real Postgres and real Azurite by
+      # design, and reusing this definition means CI cannot drift from what a
+      # developer runs — including the --skipApiVersionCheck flag Azurite needs,
+      # which a service container cannot express because it has no way to
+      # override the image's command.
+      #
+      # Ollama is deliberately left out: the tests fake the models (hashing
+      # embeddings, a scripted LLM), so pulling gigabytes of weights would buy
+      # nothing but minutes.
+      - name: Start Postgres and Azurite
+        run: docker compose up -d --wait postgres azurite
+
+      - name: Restore
+        run: dotnet restore server/DocHub.slnx
+
+      - name: Build
+        run: dotnet build server/DocHub.slnx --configuration Release --no-restore
+
+      # DOCHUB_TEST_DB is deliberately not set. Both test projects read that one
+      # variable but default to *different* databases — dochub_test and
+      # dochub_services_test — and each drops and recreates its own on startup.
+      # Setting it here would point them at a single database and have them
+      # delete the schema out from under each other.
+      - name: Test
+        run: dotnet test server/DocHub.slnx --configuration Release --no-build --logger "trx;LogFileName=results.trx" --results-directory TestResults
+
+      - name: Upload test results
+        # Results matter most when the step above failed.
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: TestResults/*.trx
+          if-no-files-found: warn
+
+      - name: Show infrastructure logs on failure
+        if: failure()
+        run: docker compose logs --tail 100 postgres azurite
+
+  client:
+    name: Client — typecheck and build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+
+      - name: Install
+        working-directory: client
+        # `ci` not `install`: it installs the lockfile exactly and fails if the
+        # two have drifted, so a build here matches a build anywhere.
+        run: npm ci
+
+      # The production build does not typecheck templates as strictly as this
+      # does, and a type error that only shows up in an editor is one that
+      # reaches main.
+      - name: Typecheck
+        working-directory: client
+        run: npx tsc --noEmit -p tsconfig.app.json
+
+      - name: Build
+        working-directory: client
+        run: npm run build
+
+      - name: Verify the generated icon sheet is current
+        working-directory: client
+        # icons.css is generated and committed. If someone edits the map and
+        # forgets to re-run the generator, the committed sheet is a lie —
+        # cheaper to catch here than to debug a missing glyph later.
+        run: |
+          node tools/gen-icons.mjs
+          git diff --exit-code -- src/styles/icons.css
+
+      - name: Upload client bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: client-dist
+          path: client/dist/client/browser
+          if-no-files-found: error
+
+  images:
+    name: Container images build
+    runs-on: ubuntu-latest
+    # Only worth the minutes once the code itself is known good.
+    needs: [server, client]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      # Built, not pushed. Which registry this goes to is a deployment decision
+      # that needs credentials this repository does not have yet; until then the
+      # value here is knowing the Dockerfiles still work.
+      - name: Build the API image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: server/Dockerfile
+          push: false
+          tags: dochub-api:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build the client image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: client/Dockerfile
+          push: false
+          tags: dochub-client:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
