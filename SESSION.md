@@ -199,8 +199,15 @@ CLAUDE.md · SESSION.md · README.md · architecture-blueprint.md
 - **IIS itself is untested** — dev is a Mac. The single-site arrangement was verified by publishing and running the same output under Kestrel, which exercises the static-file serving and the anonymous SPA fallback but not `AspNetCoreModuleV2` or `web.config`.
 - **No Entra ID yet.** Phase 5 shipped local Identity plus optional Google. The OIDC provider is the same registration shape — one more branch in `AddDocHubAuthentication`.
 - **Google sign-in is untested against real Google.** The domain allow-list is unit-tested and the provider is registered correctly, but no end-to-end run has happened without credentials. Configure `Authentication:Google:*` and try it before relying on it.
-- **No per-source timeout in `CompositeKnowledgeSource`.** Latent today because the only real source is the local database and the other returns instantly; it becomes reachable the moment a network source is added. Fix it first in phase 7.
-- **Data Protection keys are not persisted.** On IIS this means an app pool recycle signs everyone out unless the pool loads the user profile (see the IIS hosting section in the README). One line in `Program.cs` fixes it permanently.
+- ~~No per-source timeout~~ **Fixed.** Each source now runs under its own deadline
+  (`Knowledge:SourceTimeoutSeconds`, default 10), linked to the caller's token so a client
+  that goes away still cancels everything. A source that times out is left out and named,
+  exactly like one that throws. Regression-tested, including that caller cancellation is
+  still told apart from the deadline.
+- ~~Data Protection keys are not persisted~~ **Fixed.** `Authentication:KeyPath` persists
+  them; unset keeps the framework default, which is right for containers. Verified by
+  restarting the API twice: with the path set the same cookie still authenticates, without
+  it the same cookie is rejected.
 - **CSRF rests on SameSite=Lax plus a JSON content type.** Antiforgery tokens were not added; worth revisiting if a form-encoded endpoint ever appears.
 - **`Cited in answers` counter on document detail is always 0** — never wired to chat citations.
 - Test suites share one Postgres per collection; assertions that could match other tests' documents must scope by `FolderId`.
@@ -308,11 +315,8 @@ The org's MCP server is reachable **only from inside the org network**. That is 
 phase 4 stub was built for: the Mac dev machine keeps `RepositoryProvider: "none"` and the null
 source, the IIS box sets `"mcp"`, and nothing branches on an environment name — config decides.
 
-1. **Add a per-source timeout to `CompositeKnowledgeSource`.** Do this first. `SearchAllAsync`
-   awaits `Task.WhenAll` with only the request's token, so failure isolation catches an
-   exception but *not* slowness — a hanging MCP server would stall every question, including
-   ones the documents alone could answer. Needs a linked CTS per source (5–10s) and the timeout
-   reported as a degradation, exactly like a thrown failure.
+1. ~~Add a per-source timeout~~ — **done**, ahead of phase 7. The fan-out is now safe to point
+   at a server that may not answer.
 2. **Decide the citation target for a non-document source.** `KnowledgeResult` is
    document-shaped because a persisted `Citation` deep-links to `/docs/:id?chunk=n`; a file at a
    commit has no document id. Plan: add optional `SourceName` + `Url` through

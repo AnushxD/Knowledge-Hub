@@ -115,6 +115,10 @@ doc-knowledge-hub/
 - A knowledge source that fails is left out of that one answer and named in the reply — never
   silently dropped, and never allowed to fail the whole question. If every source fails there
   is nothing to ground on, and the normal refusal path handles it.
+- Every source answers under its own deadline, linked to the caller's token. Failure
+  isolation covers a source that throws; a source that never replies would otherwise stall
+  the fan-out, because it waits for all of them. A timeout is reported like any other
+  degradation, and is distinguished from the caller cancelling.
 - Sources are merged by rank, never by score. Each source scores in its own units, so adding
   them together would be arbitrary — the same reason the keyword and vector branches fuse
   by rank.
@@ -137,6 +141,9 @@ doc-knowledge-hub/
 - Accounts are disabled, never deleted — they own documents, folders and conversations.
 - Client-side guards and hidden buttons are courtesy. The API is what enforces access, and
   every rule must hold with the client bypassed entirely.
+- Data Protection keys must outlive the process wherever sessions are expected to
+  (`Authentication:KeyPath`). Unset, they live in the app pool profile and every recycle
+  signs everyone out — a configuration problem that presents as an intermittent bug.
 
 ## Deployment rules (phase 6)
 - **One binary, two shapes.** Containers: nginx serves the client and proxies `/api`. IIS:

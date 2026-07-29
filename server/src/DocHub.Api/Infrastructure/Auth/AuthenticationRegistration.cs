@@ -5,6 +5,7 @@ using DocHub.DataAccess.Entities;
 using DocHub.Services;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Authentication.OAuth.Claims;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.WebUtilities;
@@ -80,6 +81,29 @@ internal static class AuthenticationRegistration
             .AddClaimsPrincipalFactory<DocHubClaimsPrincipalFactory>()
             .AddSignInManager()
             .AddDefaultTokenProviders();
+
+        // Data Protection encrypts the session cookie. Where its keys live
+        // decides whether a session survives a restart.
+        //
+        // The default is a per-user, per-machine location — which under IIS is
+        // inside the application pool's profile, and is discarded outright if
+        // that profile is not loaded. The symptom is not an error: everybody is
+        // simply signed out on the next recycle or deploy, and it reads as an
+        // intermittent bug rather than a configuration one.
+        //
+        // Setting Authentication:KeyPath puts the keys somewhere durable and
+        // ends that class of problem. Left unset, the framework default applies
+        // — right for a container, where the keys are meant to be as ephemeral
+        // as the container.
+        var protection = services.AddDataProtection()
+            // Fixed, so keys are not re-derived under a different discriminator
+            // when the app moves or is renamed.
+            .SetApplicationName("DocHub");
+
+        if (!string.IsNullOrWhiteSpace(auth.KeyPath))
+        {
+            protection.PersistKeysToFileSystem(new DirectoryInfo(auth.KeyPath));
+        }
 
         var authentication = services.AddAuthentication(IdentityConstants.ApplicationScheme);
 

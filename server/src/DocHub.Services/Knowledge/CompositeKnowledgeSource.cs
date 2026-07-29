@@ -3,6 +3,7 @@ using DocHub.Integrations.Knowledge;
 using DocHub.Services.Search;
 using DocHub.Services.ViewModels;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace DocHub.Services.Knowledge;
 
@@ -27,16 +28,23 @@ namespace DocHub.Services.Knowledge;
 /// reason the two search branches are fused this way.
 /// </item>
 /// <item>
-/// <b>Sources run concurrently.</b> Unlike the keyword and vector branches,
-/// which share a request-scoped DbContext and must not overlap, sources are
-/// separate subsystems — see the invariant on <see cref="SearchAllAsync"/>.
+/// <b>Sources run concurrently, each under its own deadline.</b> Unlike the
+/// keyword and vector branches, which share a request-scoped DbContext and must
+/// not overlap, sources are separate subsystems — see the invariant on
+/// <see cref="SearchAllAsync"/>. Concurrency alone is not enough: the fan-out
+/// waits for every source, so one that never replies would hold up an answer
+/// the others were ready to give. The deadline is what makes "a failing source
+/// degrades the answer" true of a hung source and not just a throwing one.
 /// </item>
 /// </list>
 /// </summary>
 internal sealed class CompositeKnowledgeSource(
     IEnumerable<IKnowledgeSource> sources,
+    IOptions<KnowledgeOptions> options,
     ILogger<CompositeKnowledgeSource> logger) : IKnowledgeRetriever
 {
+    private readonly KnowledgeOptions options = options.Value;
+
     /// <summary>
     /// Reciprocal rank fusion constant, matching <see cref="SearchService"/>.
     /// Same constant for the same reason: rank should dominate without the top
@@ -84,9 +92,21 @@ internal sealed class CompositeKnowledgeSource(
         {
             KnowledgeSourceStatus status;
 
+            // The same deadline applies here: without it, one unreachable
+            // server would hang the screen whose entire job is to tell you that
+            // a source is unreachable.
+            using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            deadline.CancelAfter(TimeSpan.FromSeconds(options.SourceTimeoutSeconds));
+
             try
             {
-                status = await source.CheckStatusAsync(ct);
+                status = await source.CheckStatusAsync(deadline.Token);
+            }
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+            {
+                status = new KnowledgeSourceStatus(
+                    KnowledgeSourceState.Unavailable,
+                    $"This source did not respond within {options.SourceTimeoutSeconds} seconds.");
             }
             catch (Exception exception) when (exception is not OperationCanceledException)
             {
@@ -143,9 +163,14 @@ internal sealed class CompositeKnowledgeSource(
         {
             var stopwatch = Stopwatch.StartNew();
 
+            // One deadline per source, linked to the caller's token so a client
+            // that goes away still cancels everything immediately.
+            using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            deadline.CancelAfter(TimeSpan.FromSeconds(options.SourceTimeoutSeconds));
+
             try
             {
-                var result = await source.SearchAsync(query, ct);
+                var result = await source.SearchAsync(query, deadline.Token);
 
                 logger.LogInformation(
                     "Knowledge source {Source} returned {Count} passages in {ElapsedMs}ms",
@@ -159,6 +184,21 @@ internal sealed class CompositeKnowledgeSource(
             catch (ValidationException)
             {
                 throw;
+            }
+            // Our deadline, not the caller's cancellation — the guard is what
+            // tells them apart. A caller who gave up wants the whole request
+            // abandoned; a source that ran out of time is just left out.
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+            {
+                logger.LogWarning(
+                    "Knowledge source {Source} exceeded {Timeout}s; answering without it",
+                    source.Name, options.SourceTimeoutSeconds);
+
+                return new SourceOutcome(
+                    source.Name,
+                    [],
+                    $"{source.DisplayName} did not respond within "
+                    + $"{options.SourceTimeoutSeconds} seconds, so nothing from it was used.");
             }
             catch (Exception exception) when (exception is not OperationCanceledException)
             {

@@ -1,5 +1,6 @@
 using DocHub.Integrations.Knowledge;
 using DocHub.Services.Chat;
+using DocHub.Services.Knowledge;
 using DocHub.Services.ViewModels;
 
 namespace DocHub.Services.Tests;
@@ -240,6 +241,73 @@ public sealed class KnowledgeSourceTests(StackFixture fixture)
         Assert.Equal(0, wiki.SearchCount);
     }
 
+    [Fact]
+    public async Task A_source_that_never_replies_is_left_out_rather_than_stalling_the_answer()
+    {
+        // Longer than any patience, so only the deadline can end it.
+        var hung = new FakeKnowledgeSource("wiki", [], hangFor: TimeSpan.FromMinutes(5));
+
+        await using var scope = fixture.NewScope(
+            new KnowledgeOptions { SourceTimeoutSeconds = 1 }, hung);
+
+        var folderId = await IndexAsync(scope, "hung");
+
+        var started = System.Diagnostics.Stopwatch.StartNew();
+        var retrieval = await scope.Knowledge.RetrieveAsync(Ask(folderId));
+        started.Stop();
+
+        // The whole point: failure isolation already covered a source that
+        // throws. A source that simply never answers used to hold up the
+        // fan-out, because Task.WhenAll waits for every one of them.
+        Assert.True(
+            started.Elapsed < TimeSpan.FromSeconds(20),
+            $"the fan-out waited {started.Elapsed.TotalSeconds:F1}s on a hung source");
+
+        Assert.NotEmpty(retrieval.Passages);
+
+        var degradation = Assert.Single(retrieval.Degradations);
+        Assert.Contains("did not respond", degradation);
+    }
+
+    [Fact]
+    public async Task A_hung_source_shows_as_unavailable_rather_than_hanging_the_screen()
+    {
+        var hung = new FakeKnowledgeSource("wiki", [], hangFor: TimeSpan.FromMinutes(5));
+
+        await using var scope = fixture.NewScope(
+            new KnowledgeOptions { SourceTimeoutSeconds = 1 }, hung);
+
+        var sources = await scope.Knowledge.DescribeSourcesAsync();
+        var wiki = Assert.Single(sources, source => source.Name == "wiki");
+
+        // A screen whose job is to report that a source is unreachable must not
+        // itself hang on that source.
+        Assert.Equal("unavailable", wiki.State);
+        Assert.Contains("did not respond", wiki.Detail);
+
+        Assert.Equal("active", Assert.Single(sources, s => s.Name == "documents").State);
+    }
+
+    [Fact]
+    public async Task A_caller_who_gives_up_cancels_the_whole_request()
+    {
+        var hung = new FakeKnowledgeSource("wiki", [], hangFor: TimeSpan.FromMinutes(5));
+
+        await using var scope = fixture.NewScope(
+            new KnowledgeOptions { SourceTimeoutSeconds = 60 }, hung);
+
+        var folderId = await IndexAsync(scope, "cancelled");
+
+        using var caller = new CancellationTokenSource(TimeSpan.FromMilliseconds(300));
+
+        // The deadline and the caller's token are different things, and the
+        // composite has to tell them apart: a source that ran out of time is
+        // left out, but a client that went away wants the request abandoned —
+        // not an answer assembled for nobody.
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => scope.Knowledge.RetrieveAsync(Ask(folderId), caller.Token));
+    }
+
     /// <summary>
     /// A source that returns, or fails, exactly as the test tells it to.
     ///
@@ -251,7 +319,8 @@ public sealed class KnowledgeSourceTests(StackFixture fixture)
         string name,
         IReadOnlyList<KnowledgeResult> results,
         Exception? searchFailure = null,
-        Exception? statusFailure = null) : IKnowledgeSource
+        Exception? statusFailure = null,
+        TimeSpan? hangFor = null) : IKnowledgeSource
     {
         public int SearchCount { get; private set; }
 
@@ -261,21 +330,29 @@ public sealed class KnowledgeSourceTests(StackFixture fixture)
 
         public string Description => "A source that exists only inside this test.";
 
-        public Task<KnowledgeSourceStatus> CheckStatusAsync(CancellationToken ct = default) =>
-            statusFailure is not null
-                ? Task.FromException<KnowledgeSourceStatus>(statusFailure)
-                : Task.FromResult(new KnowledgeSourceStatus(
-                    KnowledgeSourceState.Active, "Scripted."));
+        public async Task<KnowledgeSourceStatus> CheckStatusAsync(CancellationToken ct = default)
+        {
+            if (statusFailure is not null) throw statusFailure;
 
-        public Task<KnowledgeSearchResult> SearchAsync(
+            // Honours the token, as a real HTTP client would — a source that
+            // ignored cancellation entirely could not be rescued by any
+            // deadline the caller sets.
+            if (hangFor is { } wait) await Task.Delay(wait, ct);
+
+            return new KnowledgeSourceStatus(KnowledgeSourceState.Active, "Scripted.");
+        }
+
+        public async Task<KnowledgeSearchResult> SearchAsync(
             KnowledgeQuery query,
             CancellationToken ct = default)
         {
             SearchCount++;
 
-            return searchFailure is not null
-                ? Task.FromException<KnowledgeSearchResult>(searchFailure)
-                : Task.FromResult(new KnowledgeSearchResult(results));
+            if (searchFailure is not null) throw searchFailure;
+
+            if (hangFor is { } wait) await Task.Delay(wait, ct);
+
+            return new KnowledgeSearchResult(results);
         }
     }
 }

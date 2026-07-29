@@ -44,6 +44,15 @@ public static class ServicesServiceCollectionExtensions
         services.AddScoped<IKnowledgeSource, DocumentKnowledgeSource>();
         services.AddScoped<IKnowledgeRetriever, CompositeKnowledgeSource>();
 
+        services
+            .AddOptions<KnowledgeOptions>()
+            .Bind(configuration.GetSection(KnowledgeOptions.SectionName))
+            .Validate(
+                options => options.SourceTimeoutSeconds > 0,
+                "Knowledge:SourceTimeoutSeconds must be greater than zero. Without a deadline "
+                + "a hung source stalls every question.")
+            .ValidateOnStart();
+
         // Contract in Integrations, implementation here — only this layer can see
         // both the stored override and the configured baseline.
         services.AddScoped<IRepositorySourceSettings, RepositorySourceSettings>();

@@ -84,7 +84,16 @@ public sealed class StackFixture : IAsyncLifetime
     /// source that fails, or that returns passages nothing else knows about,
     /// without a second fixture.
     /// </param>
-    public Scope NewScope(params IKnowledgeSource[] extraSources)
+    public Scope NewScope(params IKnowledgeSource[] extraSources) =>
+        NewScope(new KnowledgeOptions(), extraSources);
+
+    /// <param name="knowledgeOptions">
+    /// Lets a test shorten the per-source deadline so a hung source can be
+    /// proven to degrade without the test itself waiting ten seconds.
+    /// </param>
+    public Scope NewScope(
+        KnowledgeOptions knowledgeOptions,
+        params IKnowledgeSource[] extraSources)
     {
         var db = CreateContext();
         var folderRepo = new FolderRepository(db);
@@ -128,6 +137,7 @@ public sealed class StackFixture : IAsyncLifetime
                 new NullRepositoryKnowledgeSource(sourceSettings),
                 .. extraSources,
             ],
+            Options.Create(knowledgeOptions),
             NullLogger<CompositeKnowledgeSource>.Instance);
 
         return new Scope(

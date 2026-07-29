@@ -17,6 +17,19 @@ public sealed class AuthOptions
     /// </summary>
     public int SessionHours { get; set; } = 8;
 
+    /// <summary>
+    /// Directory for the Data Protection keys that encrypt the session cookie.
+    ///
+    /// Set it wherever sessions must survive a restart — notably IIS, where the
+    /// default location lives in the application pool's user profile and is
+    /// thrown away if that profile is not loaded. Everyone being signed out
+    /// after a recycle is what "unset" looks like.
+    ///
+    /// Left empty the framework default applies, which is the right choice for
+    /// a container: the keys are as disposable as the container is.
+    /// </summary>
+    public string? KeyPath { get; set; }
+
     public GoogleOptions Google { get; set; } = new();
 }
 

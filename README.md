@@ -399,6 +399,8 @@ Key settings, one strongly-typed Options class per external dependency:
 | `KnowledgeSources:RepositoryProvider` | `none` (default) registers the inactive stub; `mcp` arrives in phase 7 and is rejected at startup until then |
 | `KnowledgeSources:RepositoryEndpoint` | The MCP server's address; unused while the provider is `none` |
 | `Authentication:SessionHours` | Session lifetime, sliding (default 8) |
+| `Authentication:KeyPath` | Directory for the Data Protection keys that encrypt the session cookie. **Set it on IIS**, or every application pool recycle signs everyone out. Leave unset in containers |
+| `Knowledge:SourceTimeoutSeconds` | How long one knowledge source may take before the answer goes ahead without it (default 10) |
 | `Authentication:SeedAdminPassword` | Applied by `seed-admin`; a real deployment puts this in user-secrets |
 | `Authentication:Google:Enabled` | Turns Google sign-in on. Off by default |
 | `Authentication:Google:ClientId` | From the Google Cloud console |
@@ -694,7 +696,13 @@ Set-PoolEnv "FileStorage__ConnectionString" "UseDevelopmentStorage=true"
 Set-PoolEnv "FileStorage__ContainerName"    "documents"
 Set-PoolEnv "Embeddings__BaseUrl"           "http://localhost:11434"
 Set-PoolEnv "Llm__BaseUrl"                  "http://localhost:11434"
+Set-PoolEnv "Authentication__KeyPath"       "C:\inetpub\dochub-keys"
 ```
+
+`Authentication__KeyPath` is where the keys that encrypt the session cookie are
+kept. Without it they live in the application pool's user profile, and **every
+recycle or deploy signs everybody out** — which looks like an intermittent bug
+rather than a setting. Create the folder now; step 5 grants access to it.
 
 `UseDevelopmentStorage=true` is the Azure SDK's shorthand for Azurite on
 `127.0.0.1` — correct here, and the reason moving the containers elsewhere later
@@ -794,7 +802,14 @@ Permissions — read and execute on the folder, write only to `logs\`:
 ```powershell
 icacls "C:\inetpub\dochub" /grant "IIS AppPool\DocHub:(OI)(CI)RX"
 icacls "C:\inetpub\dochub\logs" /grant "IIS AppPool\DocHub:(OI)(CI)M"
+
+# The Data Protection keys from step 3 — the pool has to be able to write here.
+New-Item -ItemType Directory -Force -Path "C:\inetpub\dochub-keys" | Out-Null
+icacls "C:\inetpub\dochub-keys" /grant "IIS AppPool\DocHub:(OI)(CI)M"
 ```
+
+The key folder sits **outside** the site directory on purpose: replacing the
+published folder on the next deploy must not take the keys with it.
 
 #### 6. Provision storage and the administrator
 
@@ -857,7 +872,7 @@ configuration change either way.
 |---|---|
 | **500.19** on every request | Hosting Bundle installed before IIS. Re-run its installer with `/repair`, then `iisreset` |
 | **500.30** on startup | The app threw while starting, nearly always configuration. Set `stdoutLogEnabled="true"` in `web.config`, reproduce, read `logs\stdout_*.log`, then turn it back off |
-| **Everyone signed out** after a recycle or deploy | Data Protection keys not persisted — see the `loadUserProfile` step. The permanent fix is one line in `Program.cs`: `builder.Services.AddDataProtection().PersistKeysToFileSystem(new DirectoryInfo(@"C:\inetpub\dochub-keys"));` |
+| **Everyone signed out** after a recycle or deploy | `Authentication__KeyPath` is unset, or the pool cannot write to it. Check step 3 and the `icacls` grant in step 5 |
 | Answer **arrives in one lump** instead of streaming | Response buffering. `web.config` sets `responseBufferLimit` to `0`; check it survived the deploy, and that nothing in front of IIS buffers too |
 | File of 25–28 MB rejected with a bare **404.13** | IIS checked its own limit first. `web.config` sets `maxAllowedContentLength` to match the app's 25 MB |
 | `/healthz` reports **postgres** or **blob-storage** degraded | Check the stack is running and healthy in Portainer, and that the password in `Database__ConnectionString` matches the one the stack was deployed with |
