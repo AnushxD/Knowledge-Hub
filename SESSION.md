@@ -72,6 +72,10 @@ a registry and an actual automated deploy step (CI builds, a human still deploys
 - **Sources fan out concurrently; at most one may touch the DbContext.** The document source is that one. A second DB-backed source must run sequentially with it, exactly as the keyword and vector branches do.
 - **Sources merge by rank (RRF, k=60), never by score** — each source scores in its own units.
 - **A failing source degrades one answer and is named in the reply**; only if every source fails does the normal refusal path take over.
+- **The repository address is editable in the UI, with configuration as the baseline.** An override row wins if present; otherwise `KnowledgeSources:*` applies. Adding a server is an admin action, not an app-pool variable and a recycle — but a deployment that must always have a source can still declare one. Clearing the override differs from saving an empty address: the first restores configuration, the second switches the source off.
+- **`IRepositorySourceSettings` follows the phase 4 pattern** — contract in Integrations (where the MCP client that consumes it will live), implementation in Services (the only layer that can see both the stored row and the options).
+- **Pointing the server at an arbitrary host is admin-gated SSRF by design.** Only absolute http/https is accepted, so the box cannot be turned into a file reader; reaching internal hosts is the deliberate, role-gated capability.
+- **The "test address" probe confirms the network path only** — it cannot establish that the thing answering speaks MCP, and says so in its own wording.
 - **The null repository source is registered locally on purpose** — a fan-out exercised against one source until phase 7 is a fan-out first debugged in phase 7.
 - **`KnowledgeSourceState` has three values, not a boolean** — `inactive` (off by design) must not render like `unavailable` (should work, doesn't).
 - **The `users` table *is* the Identity store** (`User : IdentityUser<Guid>`) — one row per person, so every `owner_id` FK survived the change. A parallel identity table would have let credentials and owners drift apart.
@@ -307,10 +311,11 @@ source, the IIS box sets `"mcp"`, and nothing branches on an environment name �
    rendering an external link when `Url` is set and the existing deep link otherwise. Citations
    are stored as **jsonb**, so this needs no migration, and historical answers keep working
    because their citations simply carry no `Url`.
-3. **Implement `McpKnowledgeSource` in Integrations** against `IKnowledgeSource`, and allow
-   `"mcp"` in `KnowledgeSourceOptions` validation (it is rejected today with a phase-7 message).
-   Register it in `AddIntegrations` with its own `HttpClient`, base address and timeout, plus
-   whatever credential the server wants — via user-secrets and env vars, never appsettings.
+3. **Implement `McpKnowledgeSource` in Integrations** against `IKnowledgeSource`. It takes its
+   address from `IRepositorySourceSettings` (already built and UI-editable), not from
+   `IOptions`, so an administrator changing the address takes effect on the next question. The
+   servers are open on the org network, so no credential handling is needed. Replace
+   `NullRepositoryKnowledgeSource` at the registration in `AddIntegrations`.
 4. **Add an MCP health check** alongside the embedding and LLM ones, and make `CheckStatusAsync`
    return `Unavailable` with the reason so `/sources` stays honest rather than always Active.
 5. **Verify against the real server from the IIS box**, since the Mac cannot reach it: a genuine

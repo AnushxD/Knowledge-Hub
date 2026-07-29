@@ -675,7 +675,7 @@ Optional settings worth knowing:
 | `RateLimits__ChatRequests` | Questions per user per window, default 10 |
 | `Llm__Model` | `llama3.1:8b` or `qwen2.5:7b` follow the citation format better than the 3B default, at the cost of speed |
 | `Llm__ContextTokens` | Lower it on a constrained box — but lower `Chat__PassageCount` to match, rather than letting the prompt overflow |
-| `KnowledgeSources__RepositoryProvider` | Leave at `none` until phase 7 lands |
+| `KnowledgeSources__RepositoryProvider` | Leave at `none` — an administrator can set the MCP address from **Knowledge sources** in the UI instead, which overrides this |
 
 For Google sign-in:
 
@@ -939,6 +939,8 @@ requests are same-origin and CORS never applies.
 | `GET` | `/api/chat/sessions/{id}` | One conversation with citations |
 | `DELETE` | `/api/chat/sessions/{id}` | Delete a conversation |
 | `GET` | `/api/sources` | Knowledge sources the assistant may ground answers in, and each one's state |
+| `GET`/`PUT`/`DELETE` | `/api/sources/repository` | The repository source's address (Admin only). DELETE drops the override so configuration applies again |
+| `POST` | `/api/sources/repository/test` | Check an address answers before saving it (Admin only) |
 | `POST` | `/api/auth/login` | Sign in with an email and password; sets the session cookie |
 | `POST` | `/api/auth/logout` | End the session |
 | `GET` | `/api/auth/me` | The signed-in user, or 401 |
