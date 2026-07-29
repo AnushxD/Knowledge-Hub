@@ -34,6 +34,11 @@ Phases 1–6 are **complete and pushed**. Next objective is **Phase 7: the real 
 - **Phase 6** — API and client container images, `docker-compose.app.yml` for the built
   stack, GitHub Actions CI (server + client + images) and a publish workflow producing a
   single-site IIS artefact.
+- **Post-phase-6 tidying** — the repository source address is UI-editable; roadmap phase
+  language removed from every screen; the assistant dock and the document page's "Ask about
+  this doc" now reach the real assistant instead of being disabled placeholders; Upload and
+  Notifications removed from the top bar; the IIS runbook targets Portainer with Docker on
+  the same machine.
 - Swagger UI at `/swagger` (dev only, Admin only).
 - 128 tests green: 8 Integrations, 17 Api, 14 DataAccess, 89 Services.
 
@@ -200,6 +205,10 @@ CLAUDE.md · SESSION.md · README.md · architecture-blueprint.md
 - **`Cited in answers` counter on document detail is always 0** — never wired to chat citations.
 - Test suites share one Postgres per collection; assertions that could match other tests' documents must scope by `FolderId`.
 - ~5 test documents the assistant/search were verified against remain in the user's dev DB (`vpn-guide.md`, `runbook.pdf`, `expense-policy.docx`, duplicates), alongside the user's own uploads.
+- **Git identity was never configured**, so every commit up to 2026-07-30 is attributed to
+  `Anush S <anushs@Anushs-MacBook-Air.local>` — a synthesised hostname address that GitHub
+  cannot link to the account. Fixed going forward by setting `user.name`/`user.email`;
+  existing commits would need a history rewrite and a force-push, which has not been done.
 - A `vera@dochub.local` Viewer account (password `viewer-local-dev-pw`) was created in the dev DB while verifying role separation. Harmless, and useful for re-testing; disable or delete it if unwanted.
 
 ---
