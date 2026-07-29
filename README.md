@@ -558,6 +558,17 @@ the two are same-origin and the session cookie needs no CORS or `SameSite=None`.
 The complete first-time setup for the machine the app will actually run on.
 Follow it top to bottom; every step is configuration, not a code change.
 
+**What this machine needs — and what it does not.** The artefact you deploy is
+already compiled: .NET assemblies plus the built Angular bundle as plain JS and
+CSS. Nothing is built on the server.
+
+| Needed | Not needed |
+|---|---|
+| .NET 10 **Hosting Bundle** (runtime + the IIS module) | .NET **SDK** — only if you choose to run migrations here, and step 4 gives an alternative that avoids it |
+| Docker Desktop, for Postgres and Azurite | **Node.js / npm** — the Angular app arrives pre-built |
+| Ollama, for the two local models | **Angular CLI** — same reason |
+| | **Git** — you copy two files onto the machine, not the repository |
+
 **What runs where.** Only the application goes in IIS. The infrastructure runs in
 Docker Desktop beside it, using the same `docker-compose.yml` a developer uses:
 
@@ -582,7 +593,12 @@ Then install, in this order:
 
 1. The **.NET 10 Hosting Bundle** — not the SDK, not the plain runtime — from
    <https://dotnet.microsoft.com/download/dotnet/10.0>.
-2. **Docker Desktop**, set to start on login.
+2. **Docker Desktop**, set to start on login. It needs WSL 2 or Hyper-V enabled.
+   Note that Docker Desktop is only free for small businesses — larger
+   organisations need a paid subscription. If that is a problem, Docker Engine
+   on WSL 2 is free and runs the same `docker-compose.yml`, or point
+   `Database__ConnectionString` at a Postgres the org already runs, provided the
+   `vector` extension can be enabled on it.
 3. **Ollama for Windows** from <https://ollama.com/download/windows>.
 
 > **Order matters.** The Hosting Bundle registers `AspNetCoreModuleV2` with IIS.
@@ -700,7 +716,11 @@ docker compose exec -T postgres psql -U dochub -d dochub -f - < dochub-schema.sq
 
 Get the artefact from the **Publish (IIS artefact)** workflow in GitHub Actions
 and download `dochub-iis-*`. It is the published API with the built Angular app
-already inside `wwwroot`. To build it by hand instead:
+already inside `wwwroot` — compiled output only, which is why this machine needs
+no build tooling.
+
+If you would rather build it yourself, do so **on a development machine** — the
+one place Node and the .NET SDK are needed — and copy the result across:
 
 ```bash
 cd client && npm ci && npm run build && cd ..
