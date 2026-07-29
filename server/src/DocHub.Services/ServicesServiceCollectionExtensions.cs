@@ -1,8 +1,10 @@
+using DocHub.Integrations.Knowledge;
 using DocHub.Services.Chat;
 using DocHub.Services.Documents;
 using DocHub.Services.Folders;
 using DocHub.Services.Ingestion;
 using DocHub.Services.Ingestion.Extraction;
+using DocHub.Services.Knowledge;
 using DocHub.Services.Search;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -35,6 +37,12 @@ public static class ServicesServiceCollectionExtensions
         services.AddScoped<IIngestionService, IngestionService>();
         services.AddScoped<ISearchService, SearchService>();
         services.AddScoped<IChatService, ChatService>();
+
+        // Scoped, not singleton: it wraps ISearchService and so inherits the
+        // request-scoped DbContext underneath it. The external sources it fans
+        // out to alongside this one are registered in AddIntegrations.
+        services.AddScoped<IKnowledgeSource, DocumentKnowledgeSource>();
+        services.AddScoped<IKnowledgeRetriever, CompositeKnowledgeSource>();
 
         services
             .AddOptions<ChatOptions>()

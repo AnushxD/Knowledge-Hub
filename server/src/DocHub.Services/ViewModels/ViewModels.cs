@@ -137,6 +137,23 @@ public record SearchRequest
     public int Take { get; init; } = 20;
 }
 
+// ---- knowledge sources ------------------------------------------------------
+
+/// <summary>One body of knowledge the assistant can ground an answer in.</summary>
+/// <param name="Name">Stable identifier, matching what appears in the logs.</param>
+/// <param name="State">
+/// "active", "inactive" or "unavailable". Sent as a state rather than as a
+/// boolean because the three mean genuinely different things to a user: a
+/// source that is off by design is not a source that is broken.
+/// </param>
+/// <param name="Detail">Why it is in that state, in one actionable sentence.</param>
+public record KnowledgeSourceViewModel(
+    string Name,
+    string DisplayName,
+    string Description,
+    string State,
+    string Detail);
+
 // ---- chat -------------------------------------------------------------------
 
 /// <summary>A source backing an answer, resolvable to the exact passage.</summary>

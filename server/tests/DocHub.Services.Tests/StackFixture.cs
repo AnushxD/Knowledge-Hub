@@ -2,6 +2,7 @@ using Azure.Storage.Blobs;
 using DocHub.DataAccess;
 using DocHub.DataAccess.Repositories;
 using DocHub.Integrations.Embeddings;
+using DocHub.Integrations.Knowledge;
 using DocHub.Integrations.Llm;
 using DocHub.Integrations.Storage;
 using DocHub.Services;
@@ -10,6 +11,7 @@ using DocHub.Services.Documents;
 using DocHub.Services.Folders;
 using DocHub.Services.Ingestion;
 using DocHub.Services.Ingestion.Extraction;
+using DocHub.Services.Knowledge;
 using DocHub.Services.Search;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -76,7 +78,12 @@ public sealed class StackFixture : IAsyncLifetime
             .Options);
 
     /// <summary>The services of one request, sharing a DbContext as a request would.</summary>
-    public Scope NewScope()
+    /// <param name="extraSources">
+    /// Knowledge sources registered alongside the real two. Lets a test add a
+    /// source that fails, or that returns passages nothing else knows about,
+    /// without a second fixture.
+    /// </param>
+    public Scope NewScope(params IKnowledgeSource[] extraSources)
     {
         var db = CreateContext();
         var folderRepo = new FolderRepository(db);
@@ -105,6 +112,17 @@ public sealed class StackFixture : IAsyncLifetime
 
         var llm = new ScriptedLlmProvider();
 
+        // Composed exactly as AddServices + AddIntegrations do it, including
+        // the null repository source: the fan-out and merge are only worth
+        // testing against more than one source.
+        var knowledge = new CompositeKnowledgeSource(
+            [
+                new DocumentKnowledgeSource(searchService),
+                new NullRepositoryKnowledgeSource(Options.Create(new KnowledgeSourceOptions())),
+                .. extraSources,
+            ],
+            NullLogger<CompositeKnowledgeSource>.Instance);
+
         return new Scope(
             db,
             new FolderService(folderRepo, Storage, user, NullLogger<FolderService>.Instance),
@@ -117,11 +135,12 @@ public sealed class StackFixture : IAsyncLifetime
                 NullLogger<IngestionService>.Instance),
             searchService,
             new ChatService(
-                new ChatRepository(db), searchService, llm, user,
+                new ChatRepository(db), knowledge, llm, user,
                 Options.Create(new ChatOptions()), NullLogger<ChatService>.Instance),
             chunkRepo,
             queue,
-            llm);
+            llm,
+            knowledge);
     }
 
     /// <summary>
@@ -183,7 +202,8 @@ public sealed class StackFixture : IAsyncLifetime
         IChatService Chat,
         IChunkRepository Chunks,
         RecordingIngestionQueue Queue,
-        ScriptedLlmProvider Llm) : IAsyncDisposable
+        ScriptedLlmProvider Llm,
+        IKnowledgeRetriever Knowledge) : IAsyncDisposable
     {
         public ValueTask DisposeAsync() => Db.DisposeAsync();
     }

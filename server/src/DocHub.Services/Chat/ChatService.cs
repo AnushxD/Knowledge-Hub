@@ -4,6 +4,7 @@ using DocHub.DataAccess.Dtos;
 using DocHub.DataAccess.Entities;
 using DocHub.DataAccess.Repositories;
 using DocHub.Integrations.Llm;
+using DocHub.Services.Knowledge;
 using DocHub.Services.Search;
 using DocHub.Services.ViewModels;
 using Microsoft.Extensions.Logging;
@@ -13,7 +14,7 @@ namespace DocHub.Services.Chat;
 
 internal sealed class ChatService(
     IChatRepository sessions,
-    ISearchService search,
+    IKnowledgeRetriever knowledge,
     ILlmProvider llm,
     ICurrentUser currentUser,
     IOptions<ChatOptions> options,
@@ -64,7 +65,10 @@ internal sealed class ChatService(
 
         // ---- 2. Retrieve ----------------------------------------------------
 
-        var retrieval = await search.RetrieveAsync(
+        // Across every configured knowledge source, not just documents. What
+        // comes back is already merged and ranked, so nothing below this line
+        // knows or cares how many sources there were.
+        var retrieval = await knowledge.RetrieveAsync(
             new SearchRequest
             {
                 Query = question,
@@ -295,14 +299,15 @@ internal sealed class ChatService(
 
     /// <summary>
     /// Explains an empty retrieval in terms the user can act on. "Nothing
-    /// matched" and "semantic matching is down" look identical from the
-    /// outside, and only one of them means the answer does not exist.
+    /// matched" and "a source was down" look identical from the outside, and
+    /// only one of them means the answer does not exist.
     /// </summary>
-    private static string NoSourcesMessage(RetrievalResult retrieval) =>
-        retrieval.VectorSearchError is not null
+    private static string NoSourcesMessage(GroundingResult retrieval) =>
+        retrieval.Degradations.Count > 0
             ? GroundedPrompt.RefusalPhrase
-                + " Note that semantic matching was unavailable for this question, "
-                + "so only exact keyword matches were searched."
+                + " Not everything could be searched for this question, so the answer may "
+                + "exist somewhere that was not reached. "
+                + string.Join(" ", retrieval.Degradations)
             : GroundedPrompt.RefusalPhrase
                 + " Nothing in the indexed documents matched this question. Only documents "
                 + "that finished ingestion are searchable.";
