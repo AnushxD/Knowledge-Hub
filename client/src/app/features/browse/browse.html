@@ -259,9 +259,12 @@
     </div>
   } @else if (store.viewMode() === 'list') {
     <!-- ── List ──────────────────────────────────────────────────────── -->
-    <div class="dh-card overflow-hidden">
+    <!-- No overflow-hidden: it would clip the row action menu, which opens
+         downward and so is invisible on the last row. The corners it used to
+         round are rounded explicitly instead. -->
+    <div class="dh-card">
       <div
-        class="hidden items-center gap-3 border-b border-hairline bg-surface-inset px-4 py-2 text-[11px] font-medium text-subtle md:flex"
+        class="hidden items-center gap-3 rounded-t-dh-lg border-b border-hairline bg-surface-inset px-4 py-2 text-[11px] font-medium text-subtle md:flex"
       >
         <span class="w-9"></span>
         <span class="flex-1">Name</span>
@@ -274,7 +277,7 @@
 
       @for (doc of documents(); track doc.id) {
         <div
-          class="group relative flex items-center gap-3 border-b border-hairline px-4 py-2.5 transition last:border-0 hover:bg-surface-2/50"
+          class="group relative flex items-center gap-3 border-b border-hairline px-4 py-2.5 transition last:rounded-b-dh-lg last:border-0 hover:bg-surface-2/50"
         >
           <dh-file-icon [kind]="doc.kind" />
 
@@ -351,7 +354,7 @@
 
           @if (menuFor() === doc.id) {
             <div
-              class="dh-rise absolute top-full right-4 z-30 w-44 overflow-hidden rounded-dh border border-hairline bg-surface-1 py-1 shadow-dh-lg"
+              class="dh-rise absolute top-full right-4 z-50 w-44 overflow-hidden rounded-dh border border-hairline bg-surface-1 py-1 shadow-dh-lg"
             >
               <a [routerLink]="['/docs', doc.id]" class="dh-menu-item">
                 <i class="pi pi-eye text-[11px]"></i> Open
