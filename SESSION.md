@@ -172,7 +172,7 @@ CLAUDE.md · SESSION.md · README.md · architecture-blueprint.md
 # Pending Features (priority order)
 
 1. **Phase 7 — real MCP client** implementing `IKnowledgeSource` (the seam is in place: one class in Integrations plus a branch in `AddIntegrations`), then a vector-store scale review.
-2. **Prove the pipeline** — let CI run for the first time, deploy the artefact to the Windows box, and pick a registry if images should be pushed.
+2. **Prove the rest of the pipeline** — CI is green; still to do is deploying the artefact to the Windows box and picking a registry if images should be pushed.
 3. **Entra ID single sign-on** — one more branch in `AddDocHubAuthentication`; Google and local password already share that shape.
 4. **Verify Google sign-in end to end** against real credentials.
 5. Deferred, no phase assigned: audit log (`activity()` returns `[]`); OCR for scanned PDFs; client unit tests; the `Cited in answers` counter; CSRF tokens.
@@ -185,7 +185,7 @@ CLAUDE.md · SESSION.md · README.md · architecture-blueprint.md
 - **Local generation is slow** — ~5–15 tok/s on CPU-only Docker.
 - **Anthropic/Claude `ILlmProvider` not implemented.** User declined adding the Anthropic C# SDK dependency this session. The interface is the seam; adding it = one class + one branch in `AddIntegrations`. `LlmOptions.Provider` currently validates `ollama` only.
 - **`activity()` returns `[]`** — the audit log was *not* built in phase 5 and has no phase assigned. Authentication landed; recording who did what did not.
-- **CI has never actually run.** The workflows are committed but this repository's Actions have not executed them — every step was reproduced locally instead (Release build, `dotnet test`, the icon check, both image builds, the full compose stack). Expect the usual first-run friction.
+- **CI runs green on every push to `main`** — server, client and image jobs all pass. (An earlier note here claimed it had never run; that was wrong, it had been triggering on each push all along.) The runner warns that `actions/checkout@v4` and friends target the deprecated Node 20 and are being forced onto Node 24 — informational, and fixed by bumping those actions when newer majors land.
 - **Images are built but pushed nowhere**, and no step deploys anything. CI produces artefacts; a human still installs them.
 - **IIS itself is untested** — dev is a Mac. The single-site arrangement was verified by publishing and running the same output under Kestrel, which exercises the static-file serving and the anonymous SPA fallback but not `AspNetCoreModuleV2` or `web.config`.
 - **No Entra ID yet.** Phase 5 shipped local Identity plus optional Google. The OIDC provider is the same registration shape — one more branch in `AddDocHubAuthentication`.

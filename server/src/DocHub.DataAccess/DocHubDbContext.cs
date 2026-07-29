@@ -38,7 +38,10 @@ public sealed class DocHubDbContext(DbContextOptions<DocHubDbContext> options)
     /// </summary>
     public const string SearchConfiguration = "english";
 
-    public DbSet<User> Users => Set<User>();
+    // Users is not declared here: IdentityUserContext already exposes it as
+    // DbSet<User>, and re-declaring it shadowed the base property rather than
+    // replacing it — two ways to reach one table, only one of which Identity's
+    // own stores use.
 
     public DbSet<Folder> Folders => Set<Folder>();
 
