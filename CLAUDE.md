@@ -132,13 +132,14 @@ server/
 .github/workflows/{ci,publish}.yml
 docker-compose.yml                        # postgres+pgvector, azurite, ollama
 docker-compose.app.yml                    # the built stack on that infrastructure
-CLAUDE.md · SESSION.md · README.md · architecture-blueprint.md
+CLAUDE.md · SESSION.md · README.md · architecture-blueprint.md · chat-pipeline.md
 ```
 
 **Key files worth knowing before changing anything nearby**
 
 | Path | Why it matters |
 |---|---|
+| `chat-pipeline.md` | End-to-end walkthrough of answering one question, with flow charts. Read before changing anything in the chat path |
 | `Services/Chat/GroundedPrompt.cs` | Prompt construction, citation verification, refusal detection. Pure functions |
 | `Services/Chat/ChatService.cs` | RAG orchestrator: retrieve → refuse-or-generate → verify → persist |
 | `Services/Search/SearchService.cs` | Hybrid search + RRF; `RankAsync` shared by search and retrieval |

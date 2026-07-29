@@ -304,6 +304,10 @@ to be based on.
 Citations link to `/docs/:id?chunk=N`, which opens the document with that exact
 passage highlighted.
 
+For the full technical walkthrough — every stage from the HTTP request to the
+persisted citation, with flow charts, the exact prompt, the rank-fusion maths and
+a failure-mode table — see [chat-pipeline.md](chat-pipeline.md).
+
 ---
 
 ## Running tests
