@@ -118,7 +118,11 @@ public static class IntegrationsServiceCollectionExtensions
         // Registered as a source among others rather than special-cased: the
         // composite must see more than one source locally, or the fan-out is
         // only ever exercised in production.
-        services.AddSingleton<IKnowledgeSource, NullRepositoryKnowledgeSource>();
+        //
+        // Scoped, not singleton: it reads the administrator's current setting
+        // per request, so a change in the UI takes effect on the next question
+        // rather than on the next application pool recycle.
+        services.AddScoped<IKnowledgeSource, NullRepositoryKnowledgeSource>();
 
         services.AddHealthChecks()
             .AddCheck<BlobStorageHealthCheck>("blob-storage", tags: ["ready", "storage"])

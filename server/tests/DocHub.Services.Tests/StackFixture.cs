@@ -111,6 +111,12 @@ public sealed class StackFixture : IAsyncLifetime
         var searchService = new SearchService(
             chunkRepo, embeddings, NullLogger<SearchService>.Instance);
 
+        // Composed as the app does: the stub source reads the administrator's
+        // stored setting, falling back to configuration when there is none.
+        var settingRepo = new RepositorySourceSettingRepository(db);
+        var sourceSettings = new RepositorySourceSettings(
+            settingRepo, Options.Create(new KnowledgeSourceOptions()));
+
         var llm = new ScriptedLlmProvider();
 
         // Composed exactly as AddServices + AddIntegrations do it, including
@@ -119,7 +125,7 @@ public sealed class StackFixture : IAsyncLifetime
         var knowledge = new CompositeKnowledgeSource(
             [
                 new DocumentKnowledgeSource(searchService),
-                new NullRepositoryKnowledgeSource(Options.Create(new KnowledgeSourceOptions())),
+                new NullRepositoryKnowledgeSource(sourceSettings),
                 .. extraSources,
             ],
             NullLogger<CompositeKnowledgeSource>.Instance);
@@ -142,7 +148,8 @@ public sealed class StackFixture : IAsyncLifetime
             queue,
             llm,
             knowledge,
-            user);
+            user,
+            settingRepo);
     }
 
     /// <summary>
@@ -206,7 +213,8 @@ public sealed class StackFixture : IAsyncLifetime
         RecordingIngestionQueue Queue,
         ScriptedLlmProvider Llm,
         IKnowledgeRetriever Knowledge,
-        TestCurrentUser User) : IAsyncDisposable
+        TestCurrentUser User,
+        IRepositorySourceSettingRepository SourceSettings) : IAsyncDisposable
     {
         public ValueTask DisposeAsync() => Db.DisposeAsync();
     }

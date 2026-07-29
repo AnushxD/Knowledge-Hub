@@ -44,6 +44,10 @@ public static class ServicesServiceCollectionExtensions
         services.AddScoped<IKnowledgeSource, DocumentKnowledgeSource>();
         services.AddScoped<IKnowledgeRetriever, CompositeKnowledgeSource>();
 
+        // Contract in Integrations, implementation here — only this layer can see
+        // both the stored override and the configured baseline.
+        services.AddScoped<IRepositorySourceSettings, RepositorySourceSettings>();
+
         services
             .AddOptions<ChatOptions>()
             .Bind(configuration.GetSection(ChatOptions.SectionName))

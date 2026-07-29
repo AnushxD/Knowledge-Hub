@@ -45,6 +45,9 @@ public sealed class DocHubDbContext(DbContextOptions<DocHubDbContext> options)
 
     public DbSet<Folder> Folders => Set<Folder>();
 
+    public DbSet<RepositorySourceSetting> RepositorySourceSettings =>
+        Set<RepositorySourceSetting>();
+
     public DbSet<Document> Documents => Set<Document>();
 
     public DbSet<DocumentVersion> DocumentVersions => Set<DocumentVersion>();
@@ -105,6 +108,21 @@ public sealed class DocHubDbContext(DbContextOptions<DocHubDbContext> options)
                 Role = Roles.Admin,
                 CreatedAt = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero),
             });
+        });
+
+        builder.Entity<RepositorySourceSetting>(entity =>
+        {
+            entity.ToTable("repository_source_settings");
+            entity.HasKey(setting => setting.Name);
+            entity.Property(setting => setting.Name).HasMaxLength(64);
+            // Long enough for a hostname with a path; not unbounded, because an
+            // endpoint is a URL and an unbounded column invites pasting a page
+            // into it.
+            entity.Property(setting => setting.Endpoint).HasMaxLength(2000);
+
+            // Deliberately no seed row. Its absence is meaningful: it means
+            // nobody has overridden configuration, which is a different state
+            // from "an administrator set it to empty".
         });
 
         builder.Entity<Folder>(entity =>
