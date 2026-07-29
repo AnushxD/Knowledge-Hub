@@ -1,0 +1,281 @@
+using DocHub.Integrations.Knowledge;
+using DocHub.Services.Chat;
+using DocHub.Services.ViewModels;
+
+namespace DocHub.Services.Tests;
+
+/// <summary>
+/// The fan-out across knowledge sources, against the real document source and
+/// the real null repository source, with extra sources scripted per test.
+///
+/// What is under test is the composite's judgement: that one broken source
+/// costs an answer some grounding rather than all of it, that two sources
+/// agreeing on a passage do not spend two citations on it, and that a source
+/// which is off by design never reads as a source which is broken.
+/// </summary>
+[Collection(nameof(StackCollection))]
+public sealed class KnowledgeSourceTests(StackFixture fixture)
+{
+    private const string RunbookBody = """
+        ## Restarting the ingestion worker
+
+        Drain the queue before restarting the worker, then bring it back with the
+        supervisor. Jobs already in flight finish; nothing is lost.
+        """;
+
+    private static string Unique(string name) => $"{name}-{Guid.NewGuid():N}"[..22];
+
+    private static UploadRequest Upload(string body, string fileName) =>
+        new(StackFixture.FileOf(body), fileName, "text/markdown",
+            System.Text.Encoding.UTF8.GetByteCount(body));
+
+    /// <summary>Uploads and indexes a document, returning the folder it landed in.</summary>
+    private static async Task<Guid> IndexAsync(StackFixture.Scope scope, string name)
+    {
+        var folder = await scope.Folders.CreateAsync(new CreateFolderRequest(null, Unique(name)));
+        var document = await scope.Documents.UploadAsync(folder.Id, Upload(RunbookBody, $"{name}.md"));
+        await scope.Ingestion.IngestAsync(document.Id);
+        return folder.Id;
+    }
+
+    private static SearchRequest Ask(Guid folderId) =>
+        new() { Query = "How do I restart the ingestion worker?", FolderId = folderId, Take = 5 };
+
+    private static KnowledgeResult ResultFrom(Guid documentId, int chunkId, string text) =>
+        new(documentId, "Scripted source", chunkId, "Section 1", text, 1.0, "keyword");
+
+    [Fact]
+    public async Task Every_source_is_searched_for_one_question()
+    {
+        var wiki = new FakeKnowledgeSource("wiki", []);
+        var tickets = new FakeKnowledgeSource("tickets", []);
+
+        await using var scope = fixture.NewScope(wiki, tickets);
+        var folderId = await IndexAsync(scope, "fanout");
+
+        await scope.Knowledge.RetrieveAsync(Ask(folderId));
+
+        // The point of the abstraction is that adding a source adds it to every
+        // question, with no change anywhere else.
+        Assert.Equal(1, wiki.SearchCount);
+        Assert.Equal(1, tickets.SearchCount);
+    }
+
+    [Fact]
+    public async Task The_null_repository_source_contributes_nothing_but_is_still_listed()
+    {
+        await using var scope = fixture.NewScope();
+        var folderId = await IndexAsync(scope, "nullsrc");
+
+        var retrieval = await scope.Knowledge.RetrieveAsync(Ask(folderId));
+        var sources = await scope.Knowledge.DescribeSourcesAsync();
+
+        // Every passage came from the documents; the stub added none.
+        Assert.NotEmpty(retrieval.Passages);
+        Assert.Empty(retrieval.Degradations);
+
+        var repositories = Assert.Single(sources, source => source.Name == "repositories");
+
+        // Inactive, not unavailable: nothing is broken, and a source that is
+        // permanently red is one users learn to ignore.
+        Assert.Equal("inactive", repositories.State);
+        Assert.Contains("documents only", repositories.Detail);
+
+        var documents = Assert.Single(sources, source => source.Name == "documents");
+        Assert.Equal("active", documents.State);
+    }
+
+    [Fact]
+    public async Task Passages_from_a_second_source_are_merged_into_the_ranked_list()
+    {
+        var wiki = new FakeKnowledgeSource("wiki",
+            [ResultFrom(Guid.CreateVersion7(), 0, "The worker is supervised by systemd.")]);
+
+        await using var scope = fixture.NewScope(wiki);
+        var folderId = await IndexAsync(scope, "merge");
+
+        var retrieval = await scope.Knowledge.RetrieveAsync(Ask(folderId));
+
+        Assert.Contains(retrieval.Passages, passage => passage.Text.Contains("Drain the queue"));
+        Assert.Contains(retrieval.Passages, passage => passage.Text.Contains("systemd"));
+
+        // Fused by rank, not by the sources' own scores: the scripted source
+        // reports 1.0 and the document source reports a reciprocal-rank sum, and
+        // comparing those numbers directly would be meaningless.
+        Assert.All(retrieval.Passages, passage => Assert.True(passage.Score < 1.0));
+    }
+
+    [Fact]
+    public async Task The_same_passage_from_two_sources_is_offered_once()
+    {
+        await using var probe = fixture.NewScope();
+        var folderId = await IndexAsync(probe, "dedupe");
+
+        var first = await probe.Knowledge.RetrieveAsync(Ask(folderId));
+        var original = first.Passages[0];
+
+        // A second source that indexes the same file and returns the same chunk.
+        var mirror = new FakeKnowledgeSource("mirror",
+            [ResultFrom(original.DocumentId, original.ChunkId, original.Text)]);
+
+        await using var scope = fixture.NewScope(mirror);
+        var retrieval = await scope.Knowledge.RetrieveAsync(Ask(folderId));
+
+        // One passage, not two: duplicates would spend two citation slots on one
+        // source and make the answer look better supported than it is.
+        Assert.Single(
+            retrieval.Passages,
+            passage => passage.DocumentId == original.DocumentId
+                && passage.ChunkId == original.ChunkId);
+    }
+
+    [Fact]
+    public async Task A_failing_source_degrades_the_answer_instead_of_losing_it()
+    {
+        var broken = new FakeKnowledgeSource("wiki", [],
+            searchFailure: new HttpRequestException("connection refused"));
+
+        await using var scope = fixture.NewScope(broken);
+        var folderId = await IndexAsync(scope, "degrade");
+
+        var retrieval = await scope.Knowledge.RetrieveAsync(Ask(folderId));
+
+        // The documents still ground the answer.
+        Assert.NotEmpty(retrieval.Passages);
+
+        // But the thinner grounding is reported rather than hidden — a thin
+        // answer and a broken source must not look the same.
+        var degradation = Assert.Single(retrieval.Degradations);
+        Assert.Contains("could not be searched", degradation);
+        Assert.Contains("connection refused", degradation);
+    }
+
+    [Fact]
+    public async Task An_answer_is_still_produced_when_a_source_is_down()
+    {
+        var broken = new FakeKnowledgeSource("wiki", [],
+            searchFailure: new HttpRequestException("connection refused"));
+
+        await using var scope = fixture.NewScope(broken);
+        var folderId = await IndexAsync(scope, "stillans");
+
+        scope.Llm.Answer = "Drain the queue first [1].";
+
+        var events = new List<ChatEvent>();
+        await foreach (var @event in scope.Chat.AskAsync(new AskRequest
+        {
+            Question = "How do I restart the ingestion worker?",
+            FolderId = folderId,
+        }))
+        {
+            events.Add(@event);
+        }
+
+        var completed = Assert.IsType<ChatEvent.Completed>(events[^1]);
+
+        // One unreachable source must not turn a question the documents could
+        // answer into an error.
+        Assert.False(completed.IsRefusal);
+        Assert.Single(completed.Citations);
+    }
+
+    [Fact]
+    public async Task A_refusal_names_the_source_that_could_not_be_searched()
+    {
+        var broken = new FakeKnowledgeSource("wiki", [],
+            searchFailure: new HttpRequestException("connection refused"));
+
+        await using var scope = fixture.NewScope(broken);
+
+        // An empty folder, so the documents contribute nothing either.
+        var folder = await scope.Folders.CreateAsync(new CreateFolderRequest(null, Unique("Bare")));
+
+        var answer = new System.Text.StringBuilder();
+        await foreach (var @event in scope.Chat.AskAsync(new AskRequest
+        {
+            Question = "How do I restart the ingestion worker?",
+            FolderId = folder.Id,
+        }))
+        {
+            if (@event is ChatEvent.Token token) answer.Append(token.Text);
+        }
+
+        // Still a refusal — with nothing retrieved the model is never called —
+        // but the user is told the answer may exist somewhere unreachable
+        // rather than being told it does not exist.
+        Assert.Equal(0, scope.Llm.CallCount);
+        Assert.Contains("don't have information", answer.ToString());
+        Assert.Contains("could not be searched", answer.ToString());
+    }
+
+    [Fact]
+    public async Task A_source_that_cannot_report_its_status_is_shown_as_unavailable()
+    {
+        var mute = new FakeKnowledgeSource("wiki", [],
+            statusFailure: new HttpRequestException("no route to host"));
+
+        await using var scope = fixture.NewScope(mute);
+
+        var sources = await scope.Knowledge.DescribeSourcesAsync();
+        var wiki = Assert.Single(sources, source => source.Name == "wiki");
+
+        Assert.Equal("unavailable", wiki.State);
+        Assert.Contains("no route to host", wiki.Detail);
+
+        // One silent source must not blank the whole screen.
+        Assert.Equal("active", Assert.Single(sources, s => s.Name == "documents").State);
+    }
+
+    [Fact]
+    public async Task An_empty_query_is_rejected_rather_than_reported_as_a_broken_source()
+    {
+        var wiki = new FakeKnowledgeSource("wiki", []);
+        await using var scope = fixture.NewScope(wiki);
+
+        // A bad request is the caller's fault and applies to every source, so it
+        // must not be swallowed into "this source is unwell".
+        await Assert.ThrowsAsync<ValidationException>(
+            () => scope.Knowledge.RetrieveAsync(new SearchRequest { Query = "  " }));
+
+        Assert.Equal(0, wiki.SearchCount);
+    }
+
+    /// <summary>
+    /// A source that returns, or fails, exactly as the test tells it to.
+    ///
+    /// The behaviour under test is the composite's — what it asks, what it does
+    /// with a failure, how it merges — none of which needs a source that really
+    /// searches anything.
+    /// </summary>
+    private sealed class FakeKnowledgeSource(
+        string name,
+        IReadOnlyList<KnowledgeResult> results,
+        Exception? searchFailure = null,
+        Exception? statusFailure = null) : IKnowledgeSource
+    {
+        public int SearchCount { get; private set; }
+
+        public string Name => name;
+
+        public string DisplayName => name;
+
+        public string Description => "A source that exists only inside this test.";
+
+        public Task<KnowledgeSourceStatus> CheckStatusAsync(CancellationToken ct = default) =>
+            statusFailure is not null
+                ? Task.FromException<KnowledgeSourceStatus>(statusFailure)
+                : Task.FromResult(new KnowledgeSourceStatus(
+                    KnowledgeSourceState.Active, "Scripted."));
+
+        public Task<KnowledgeSearchResult> SearchAsync(
+            KnowledgeQuery query,
+            CancellationToken ct = default)
+        {
+            SearchCount++;
+
+            return searchFailure is not null
+                ? Task.FromException<KnowledgeSearchResult>(searchFailure)
+                : Task.FromResult(new KnowledgeSearchResult(results));
+        }
+    }
+}
