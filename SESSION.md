@@ -190,6 +190,8 @@ CLAUDE.md · SESSION.md · README.md · architecture-blueprint.md
 - **IIS itself is untested** — dev is a Mac. The single-site arrangement was verified by publishing and running the same output under Kestrel, which exercises the static-file serving and the anonymous SPA fallback but not `AspNetCoreModuleV2` or `web.config`.
 - **No Entra ID yet.** Phase 5 shipped local Identity plus optional Google. The OIDC provider is the same registration shape — one more branch in `AddDocHubAuthentication`.
 - **Google sign-in is untested against real Google.** The domain allow-list is unit-tested and the provider is registered correctly, but no end-to-end run has happened without credentials. Configure `Authentication:Google:*` and try it before relying on it.
+- **No per-source timeout in `CompositeKnowledgeSource`.** Latent today because the only real source is the local database and the other returns instantly; it becomes reachable the moment a network source is added. Fix it first in phase 7.
+- **Data Protection keys are not persisted.** On IIS this means an app pool recycle signs everyone out unless the pool loads the user profile (see `docs/iis-setup.md`). One line in `Program.cs` fixes it permanently.
 - **CSRF rests on SameSite=Lax plus a JSON content type.** Antiforgery tokens were not added; worth revisiting if a form-encoded endpoint ever appears.
 - **`Cited in answers` counter on document detail is always 0** — never wired to chat citations.
 - Test suites share one Postgres per collection; assertions that could match other tests' documents must scope by `FolderId`.
@@ -289,11 +291,35 @@ inactive source renders as its own state, not as a failure.
 
 # Next Immediate Steps
 
-1. Decide the citation target for a non-document source — the one part of the phase 4 contract expected to change.
-2. Implement the MCP client in Integrations against `IKnowledgeSource`, replacing `NullRepositoryKnowledgeSource`, and allow `RepositoryProvider: "mcp"` in the options validation.
-3. Point it at a real MCP server; verify the composite's failure isolation against a source that can genuinely be down.
-4. Revisit vector-store scale — HNSW parameters and whether pgvector still fits at the corpus size by then.
-5. Update README + `CLAUDE.md` roadmap markers; commit and push each chunk.
+The org's MCP server is reachable **only from inside the org network**. That is the shape the
+phase 4 stub was built for: the Mac dev machine keeps `RepositoryProvider: "none"` and the null
+source, the IIS box sets `"mcp"`, and nothing branches on an environment name — config decides.
+
+1. **Add a per-source timeout to `CompositeKnowledgeSource`.** Do this first. `SearchAllAsync`
+   awaits `Task.WhenAll` with only the request's token, so failure isolation catches an
+   exception but *not* slowness — a hanging MCP server would stall every question, including
+   ones the documents alone could answer. Needs a linked CTS per source (5–10s) and the timeout
+   reported as a degradation, exactly like a thrown failure.
+2. **Decide the citation target for a non-document source.** `KnowledgeResult` is
+   document-shaped because a persisted `Citation` deep-links to `/docs/:id?chunk=n`; a file at a
+   commit has no document id. Plan: add optional `SourceName` + `Url` through
+   `KnowledgeResult` → `RetrievedPassage` → `Citation` → `CitationViewModel` → `citation-text.ts`,
+   rendering an external link when `Url` is set and the existing deep link otherwise. Citations
+   are stored as **jsonb**, so this needs no migration, and historical answers keep working
+   because their citations simply carry no `Url`.
+3. **Implement `McpKnowledgeSource` in Integrations** against `IKnowledgeSource`, and allow
+   `"mcp"` in `KnowledgeSourceOptions` validation (it is rejected today with a phase-7 message).
+   Register it in `AddIntegrations` with its own `HttpClient`, base address and timeout, plus
+   whatever credential the server wants — via user-secrets and env vars, never appsettings.
+4. **Add an MCP health check** alongside the embedding and LLM ones, and make `CheckStatusAsync`
+   return `Unavailable` with the reason so `/sources` stays honest rather than always Active.
+5. **Verify against the real server from the IIS box**, since the Mac cannot reach it: a genuine
+   outage is the first real test of the composite's failure isolation.
+6. Revisit vector-store scale — HNSW parameters and whether pgvector still fits the corpus.
+7. Update README + `CLAUDE.md` roadmap markers; commit and push each chunk.
+
+Grounding rules are unchanged and still bind: MCP results must be verbatim passages, not
+summaries, or the assistant would be citing text it was never given.
 
 ---
 
