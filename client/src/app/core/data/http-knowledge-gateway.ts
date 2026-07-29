@@ -1,9 +1,12 @@
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
-import { Observable, forkJoin, map, of, switchMap } from 'rxjs';
+import { Observable, catchError, forkJoin, map, of, switchMap } from 'rxjs';
 import {
+  Account,
   ActivityEvent,
   AskRequest,
+  AuthOptions,
+  NewAccount,
   ChatEvent,
   ChatSession,
   ChatTranscript,
@@ -19,6 +22,8 @@ import {
   Person,
   SearchQuery,
   SearchResponse,
+  SignedInUser,
+  UserRole,
 } from '../models/knowledge.models';
 import { extensionsForKind, kindFromExtension } from '../utils/file-kind';
 import { KnowledgeGateway } from './knowledge-gateway';
@@ -195,6 +200,47 @@ export class HttpKnowledgeGateway extends KnowledgeGateway {
     return this.http.get<string[]>(`${this.base}/documents/tags`);
   }
 
+  // ---- authentication ------------------------------------------------------
+
+  currentUser(): Observable<SignedInUser | null> {
+    return this.http.get<SignedInUser>(`${this.base}/auth/me`).pipe(
+      // 401 is the answer, not a failure: it is what the server says when
+      // nobody is signed in, which is the ordinary state on first load.
+      catchError(() => of(null)),
+    );
+  }
+
+  authOptions(): Observable<AuthOptions> {
+    return this.http.get<AuthOptions>(`${this.base}/auth/options`);
+  }
+
+  signIn(email: string, password: string): Observable<SignedInUser> {
+    return this.http.post<SignedInUser>(`${this.base}/auth/login`, { email, password });
+  }
+
+  signOut(): Observable<void> {
+    return this.http.post<void>(`${this.base}/auth/logout`, {});
+  }
+
+  accounts(): Observable<Account[]> {
+    return this.http.get<Account[]>(`${this.base}/users`);
+  }
+
+  createAccount(input: NewAccount): Observable<Account> {
+    return this.http.post<Account>(`${this.base}/users`, input);
+  }
+
+  changeAccountRole(id: string, role: UserRole): Observable<Account> {
+    return this.http.put<Account>(`${this.base}/users/${id}/role`, { role });
+  }
+
+  setAccountEnabled(id: string, enabled: boolean): Observable<Account> {
+    return this.http.post<Account>(
+      `${this.base}/users/${id}/${enabled ? 'enable' : 'disable'}`,
+      {},
+    );
+  }
+
   knowledgeSources(): Observable<KnowledgeSource[]> {
     // Passed through as-is: the API already returns the three states and an
     // actionable detail line, and a client that reinterpreted them would be a
@@ -289,6 +335,9 @@ export class HttpKnowledgeGateway extends KnowledgeGateway {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(request),
             signal: controller.signal,
+            // The interceptor cannot reach this call — it is fetch, not
+            // HttpClient — so the session cookie is attached here.
+            credentials: 'include',
           });
 
           if (!response.ok || !response.body) {

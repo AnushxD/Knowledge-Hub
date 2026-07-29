@@ -45,19 +45,20 @@
       <div>
         <h2 class="text-[14px] font-semibold text-ink">Account</h2>
         <p class="mt-1 text-[12.5px] text-muted">
-          Local identity for now. Entra ID single sign-on replaces this in phase 5.
+          Signed in with a local account. Entra ID single sign-on replaces this in production;
+          Google sign-in can be turned on for company addresses.
         </p>
       </div>
-      <span class="shrink-0 rounded-full border border-hairline px-2.5 py-1 text-[11px] text-subtle"
-        >Phase 5</span
-      >
     </div>
     <div class="mt-4 flex items-center gap-3 rounded-dh border border-hairline p-3">
-      <dh-avatar [person]="currentUser" size="md" />
+      <dh-avatar [person]="currentUser()" size="md" />
       <div class="min-w-0 flex-1">
-        <p class="text-[13px] font-medium text-ink">{{ currentUser.name }}</p>
-        <p class="text-[11.5px] text-subtle">Administrator · signed in locally</p>
+        <p class="text-[13px] font-medium text-ink">{{ currentUser().name }}</p>
+        <p class="truncate text-[11.5px] text-subtle">
+          {{ auth.currentUser()?.email }} · {{ auth.role() }}
+        </p>
       </div>
+      <button class="dh-btn-ghost shrink-0" type="button" (click)="auth.signOut()">Sign out</button>
     </div>
   </section>
 

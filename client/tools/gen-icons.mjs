@@ -73,6 +73,7 @@ const MAP = {
   'toggle-on': 'toggle-right',
   trash: 'trash-2',
   upload: 'upload',
+  users: 'users',
 };
 
 /** Classes that should render as a solid glyph rather than a stroke outline. */

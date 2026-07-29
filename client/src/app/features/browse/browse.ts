@@ -5,6 +5,7 @@ import { map } from 'rxjs';
 import { ActivatedRoute } from '@angular/router';
 import { TooltipDirective } from '../../shared/directives/tooltip.directive';
 import { LibraryStore } from '../../core/state/library-store';
+import { AuthStore } from '../../core/state/auth-store';
 import { FileKind, IngestionStatus } from '../../core/models/knowledge.models';
 import { presentationFor } from '../../core/utils/file-kind';
 import { FileIcon } from '../../shared/components/file-icon';
@@ -37,6 +38,7 @@ import { UploadDialog } from './upload-dialog';
 })
 export class Browse {
   protected readonly store = inject(LibraryStore);
+  protected readonly auth = inject(AuthStore);
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
 

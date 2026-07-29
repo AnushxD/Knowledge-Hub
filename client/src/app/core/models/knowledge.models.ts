@@ -269,3 +269,46 @@ export interface KnowledgeSource {
   /** Why it is in that state, in one actionable sentence. */
   detail: string;
 }
+
+/** What a signed-in person may do. Mirrors the server's three roles. */
+export type UserRole = 'Admin' | 'Editor' | 'Viewer';
+
+/** The signed-in user, as every screen needs them. */
+export interface SignedInUser {
+  id: string;
+  name: string;
+  email: string;
+  initials: string;
+  role: UserRole;
+}
+
+/**
+ * Which sign-in methods this deployment offers.
+ *
+ * Comes from the server because only the server knows whether Google is
+ * configured — a button that fails on click is worse than no button.
+ */
+export interface AuthOptions {
+  googleEnabled: boolean;
+}
+
+/** An account as an administrator sees it. */
+export interface Account {
+  id: string;
+  name: string;
+  email: string;
+  role: UserRole;
+  /** False for an account that only signs in through Google. */
+  hasPassword: boolean;
+  isLockedOut: boolean;
+  createdAt: string;
+}
+
+/** A new account, as an administrator fills it in. */
+export interface NewAccount {
+  name: string;
+  email: string;
+  role: UserRole;
+  /** Omitted for an account that will only ever sign in through Google. */
+  password?: string;
+}

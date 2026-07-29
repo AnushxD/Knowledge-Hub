@@ -2,8 +2,11 @@ import { Injectable } from '@angular/core';
 import { BehaviorSubject, Observable, from, map, of, timer } from 'rxjs';
 import { concatMap, delay, delayWhen, take } from 'rxjs/operators';
 import {
+  Account,
   ActivityEvent,
   AskRequest,
+  AuthOptions,
+  NewAccount,
   ChatEvent,
   ChatSession,
   ChatTranscript,
@@ -21,6 +24,8 @@ import {
   SearchQuery,
   SearchResponse,
   SearchResult,
+  SignedInUser,
+  UserRole,
 } from '../models/knowledge.models';
 import { kindFromFileName } from '../utils/file-kind';
 import { KnowledgeGateway } from './knowledge-gateway';
@@ -957,6 +962,76 @@ export class MockKnowledgeGateway extends KnowledgeGateway {
 
     // Paced so the streaming UI is exercised rather than filled in one frame.
     return from(events).pipe(concatMap((event) => of(event).pipe(delay(28))));
+  }
+
+  // ---- authentication ------------------------------------------------------
+  // Always signed in as an admin. The mock exists to develop screens without a
+  // backend, and a login wall in front of that would defeat the purpose — the
+  // real gateway is what exercises the auth path.
+
+  private readonly mockUser: SignedInUser = {
+    id: 'u1',
+    name: 'Ana Ruiz',
+    email: 'ana@dochub.local',
+    initials: 'AR',
+    role: 'Admin',
+  };
+
+  private readonly mockAccounts: Account[] = PEOPLE.map((person, index) => ({
+    id: person.id,
+    name: person.name,
+    email: `${person.name.split(' ')[0].toLowerCase()}@dochub.local`,
+    role: (index === 0 ? 'Admin' : index < 3 ? 'Editor' : 'Viewer') as UserRole,
+    hasPassword: index !== 4,
+    isLockedOut: false,
+    createdAt: ago(30 * DAY),
+  }));
+
+  currentUser(): Observable<SignedInUser | null> {
+    return of(this.mockUser).pipe(delay(80));
+  }
+
+  authOptions(): Observable<AuthOptions> {
+    return of({ googleEnabled: true }).pipe(delay(40));
+  }
+
+  signIn(): Observable<SignedInUser> {
+    return of(this.mockUser).pipe(delay(200));
+  }
+
+  signOut(): Observable<void> {
+    return of(void 0).pipe(delay(80));
+  }
+
+  accounts(): Observable<Account[]> {
+    return of([...this.mockAccounts]).pipe(delay(120));
+  }
+
+  createAccount(input: NewAccount): Observable<Account> {
+    const account: Account = {
+      id: `u-${this.mockAccounts.length + 1}`,
+      name: input.name,
+      email: input.email,
+      role: input.role,
+      hasPassword: !!input.password,
+      isLockedOut: false,
+      createdAt: new Date().toISOString(),
+    };
+
+    this.mockAccounts.push(account);
+    return of(account).pipe(delay(150));
+  }
+
+  changeAccountRole(id: string, role: UserRole): Observable<Account> {
+    const account = this.mockAccounts.find((candidate) => candidate.id === id)!;
+    account.role = role;
+    return of(account).pipe(delay(120));
+  }
+
+  setAccountEnabled(id: string, enabled: boolean): Observable<Account> {
+    const account = this.mockAccounts.find((candidate) => candidate.id === id)!;
+    account.isLockedOut = !enabled;
+    return of(account).pipe(delay(120));
   }
 
   knowledgeSources(): Observable<KnowledgeSource[]> {

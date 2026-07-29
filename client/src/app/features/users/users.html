@@ -1,0 +1,180 @@
+<div class="mx-auto max-w-3xl px-6 py-8 lg:px-10">
+  <div class="flex flex-wrap items-start justify-between gap-3">
+    <div>
+      <h1 class="text-[21px] font-semibold text-ink">People</h1>
+      <p class="mt-1.5 text-[13px] text-muted">
+        Accounts are created here — there is no self-registration. A new account starts as a viewer
+        and is promoted deliberately.
+      </p>
+    </div>
+
+    @if (!showForm()) {
+      <button class="dh-btn-primary shrink-0" type="button" (click)="showForm.set(true)">
+        <i class="pi pi-plus text-[12px]"></i>
+        Add person
+      </button>
+    }
+  </div>
+
+  @if (failure(); as message) {
+    <div
+      class="mt-5 flex items-start gap-2.5 rounded-dh border p-3"
+      role="alert"
+      [style.borderColor]="'color-mix(in oklab, var(--dh-status-failed) 32%, transparent)'"
+      [style.background]="'color-mix(in oklab, var(--dh-status-failed) 10%, transparent)'"
+    >
+      <i
+        class="pi pi-exclamation-triangle mt-[1px] text-[13px]"
+        [style.color]="'var(--dh-status-failed)'"
+      ></i>
+      <p class="min-w-0 flex-1 text-[12.5px] text-ink">{{ message }}</p>
+      <button type="button" class="text-subtle hover:text-ink" (click)="failure.set(null)">
+        <i class="pi pi-times text-[12px]"></i>
+      </button>
+    </div>
+  }
+
+  @if (showForm()) {
+    <section class="dh-card mt-5 p-5">
+      <h2 class="text-[14px] font-semibold text-ink">New account</h2>
+
+      <div class="mt-4 grid gap-3 sm:grid-cols-2">
+        <label class="block">
+          <span class="mb-1.5 block text-[12px] font-medium text-ink">Name</span>
+          <input
+            class="h-9 w-full rounded-dh border border-hairline bg-surface-1 px-3 text-[13px] text-ink outline-none transition focus:border-brand-500/50"
+            type="text"
+            [ngModel]="draftName()"
+            (ngModelChange)="draftName.set($event)"
+          />
+        </label>
+
+        <label class="block">
+          <span class="mb-1.5 block text-[12px] font-medium text-ink">Email</span>
+          <input
+            class="h-9 w-full rounded-dh border border-hairline bg-surface-1 px-3 text-[13px] text-ink outline-none transition focus:border-brand-500/50"
+            type="email"
+            autocapitalize="off"
+            spellcheck="false"
+            [ngModel]="draftEmail()"
+            (ngModelChange)="draftEmail.set($event)"
+          />
+        </label>
+
+        <label class="block">
+          <span class="mb-1.5 block text-[12px] font-medium text-ink">Role</span>
+          <select
+            class="h-9 w-full rounded-dh border border-hairline bg-surface-1 px-2.5 text-[13px] text-ink outline-none transition focus:border-brand-500/50"
+            [ngModel]="draftRole()"
+            (ngModelChange)="draftRole.set($event)"
+          >
+            @for (role of roles; track role) {
+              <option [value]="role">{{ role }}</option>
+            }
+          </select>
+          <span class="mt-1.5 block text-[11.5px] text-subtle">{{ roleHint(draftRole()) }}</span>
+        </label>
+
+        <label class="block">
+          <span class="mb-1.5 block text-[12px] font-medium text-ink">
+            Password <span class="font-normal text-subtle">(optional)</span>
+          </span>
+          <input
+            class="h-9 w-full rounded-dh border border-hairline bg-surface-1 px-3 text-[13px] text-ink outline-none transition focus:border-brand-500/50"
+            type="password"
+            autocomplete="new-password"
+            [ngModel]="draftPassword()"
+            (ngModelChange)="draftPassword.set($event)"
+          />
+          <span class="mt-1.5 block text-[11.5px] text-subtle">
+            Leave blank for someone who will sign in with Google only.
+          </span>
+        </label>
+      </div>
+
+      <div class="mt-4 flex justify-end gap-2">
+        <button class="dh-btn-ghost" type="button" (click)="reset()">Cancel</button>
+        <button
+          class="dh-btn-primary disabled:opacity-60"
+          type="button"
+          [disabled]="saving()"
+          (click)="create()"
+        >
+          {{ saving() ? 'Creating…' : 'Create account' }}
+        </button>
+      </div>
+    </section>
+  }
+
+  @if (loading()) {
+    <div class="mt-5 space-y-2">
+      @for (placeholder of [1, 2, 3]; track placeholder) {
+        <div class="dh-card h-[62px] animate-pulse"></div>
+      }
+    </div>
+  } @else {
+    <div class="mt-5 space-y-2">
+      @for (account of accounts(); track account.id) {
+        <div class="dh-card flex flex-wrap items-center gap-x-4 gap-y-3 p-4">
+          <div class="min-w-0 flex-1">
+            <div class="flex flex-wrap items-center gap-2">
+              <p class="text-[13.5px] font-medium text-ink">{{ account.name }}</p>
+
+              @if (account.id === auth.currentUser()?.id) {
+                <span
+                  class="rounded-full border border-hairline px-2 py-px text-[10.5px] text-subtle"
+                >
+                  you
+                </span>
+              }
+              @if (account.isLockedOut) {
+                <span
+                  class="rounded-full border px-2 py-px text-[10.5px]"
+                  [style.color]="'var(--dh-status-failed)'"
+                  [style.borderColor]="'color-mix(in oklab, var(--dh-status-failed) 32%, transparent)'"
+                >
+                  disabled
+                </span>
+              }
+              @if (!account.hasPassword) {
+                <span
+                  class="rounded-full border border-hairline px-2 py-px text-[10.5px] text-subtle"
+                >
+                  Google only
+                </span>
+              }
+            </div>
+            <p class="mt-0.5 truncate text-[12px] text-subtle">{{ account.email }}</p>
+          </div>
+
+          <select
+            class="h-8 shrink-0 rounded-dh border border-hairline bg-surface-1 px-2 text-[12.5px] text-ink outline-none disabled:opacity-50"
+            [disabled]="account.id === auth.currentUser()?.id"
+            (change)="changeRole(account, $any($event.target).value)"
+          >
+            <!-- Selected on the option, not as [value] on the select: the
+                 options do not exist yet when the select's value is bound, so
+                 that form silently leaves every row showing the first role. -->
+            @for (role of roles; track role) {
+              <option [value]="role" [selected]="role === account.role">{{ role }}</option>
+            }
+          </select>
+
+          <button
+            class="dh-btn-ghost h-8 shrink-0 disabled:opacity-40"
+            type="button"
+            [disabled]="account.id === auth.currentUser()?.id"
+            (click)="toggleEnabled(account)"
+          >
+            {{ account.isLockedOut ? 'Enable' : 'Disable' }}
+          </button>
+        </div>
+      }
+    </div>
+
+    <p class="mt-5 text-[12px] text-subtle">
+      Disabling keeps everything a person wrote and only stops them signing in. Accounts are never
+      deleted — they own documents, folders and conversations.
+    </p>
+  }
+</div>

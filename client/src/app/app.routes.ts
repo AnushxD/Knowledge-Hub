@@ -1,10 +1,20 @@
 import { Routes } from '@angular/router';
 import { Shell } from './layout/shell';
+import { adminGuard, authGuard } from './core/data/auth-guard';
 
 export const routes: Routes = [
   {
+    path: 'login',
+    title: 'Sign in · DocHub',
+    loadComponent: () => import('./features/auth/login').then((m) => m.LoginPage),
+  },
+  {
     path: '',
     component: Shell,
+    // Everything inside the shell needs a session. The API refuses an
+    // unauthenticated caller anyway; this is so a signed-out visitor sees a
+    // login form rather than a screen of failed requests.
+    canActivate: [authGuard],
     children: [
       {
         path: '',
@@ -36,6 +46,12 @@ export const routes: Routes = [
         path: 'sources',
         title: 'Knowledge sources · DocHub',
         loadComponent: () => import('./features/sources/sources').then((m) => m.SourcesPage),
+      },
+      {
+        path: 'users',
+        title: 'People · DocHub',
+        canActivate: [adminGuard],
+        loadComponent: () => import('./features/users/users').then((m) => m.UsersPage),
       },
       {
         path: 'settings',

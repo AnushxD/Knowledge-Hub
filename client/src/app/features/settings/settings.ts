@@ -1,8 +1,9 @@
-import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/core';
 import { LibraryStore } from '../../core/state/library-store';
 import { ThemeService } from '../../core/theme/theme.service';
 import { Avatar } from '../../shared/components/avatar';
 import { Person } from '../../core/models/knowledge.models';
+import { AuthStore } from '../../core/state/auth-store';
 
 @Component({
   selector: 'dh-settings',
@@ -15,12 +16,18 @@ export class SettingsPage {
   protected readonly theme = inject(ThemeService);
   protected readonly store = inject(LibraryStore);
 
-  protected readonly currentUser: Person = {
-    id: 'u1',
-    name: 'Ana Ruiz',
-    initials: 'AR',
-    tint: '#7c5cff',
-  };
+  protected readonly auth = inject(AuthStore);
+
+  protected readonly currentUser = computed<Person>(() => {
+    const user = this.auth.currentUser();
+
+    return {
+      id: user?.id ?? 'anonymous',
+      name: user?.name ?? 'Signed out',
+      initials: user?.initials ?? '?',
+      tint: '#7c5cff',
+    };
+  });
 
   protected readonly themes = [
     {

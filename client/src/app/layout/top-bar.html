@@ -24,15 +24,19 @@
 </button>
 
 <div class="flex shrink-0 items-center gap-1">
-  <a
-    routerLink="/browse"
-    [queryParams]="{ upload: 1 }"
-    class="hidden h-9 items-center gap-2 rounded-dh px-3.5 text-[13px] font-medium text-white transition hover:brightness-110 sm:flex"
-    style="background: linear-gradient(135deg, var(--dh-brand-600), var(--dh-brand-500))"
-  >
-    <i class="pi pi-upload text-[13px]"></i>
-    Upload
-  </a>
+  <!-- Hidden from viewers as a courtesy; the endpoint refuses them either
+       way, which is what actually enforces it. -->
+  @if (auth.canContribute()) {
+    <a
+      routerLink="/browse"
+      [queryParams]="{ upload: 1 }"
+      class="hidden h-9 items-center gap-2 rounded-dh px-3.5 text-[13px] font-medium text-white transition hover:brightness-110 sm:flex"
+      style="background: linear-gradient(135deg, var(--dh-brand-600), var(--dh-brand-500))"
+    >
+      <i class="pi pi-upload text-[13px]"></i>
+      Upload
+    </a>
+  }
 
   <button
     type="button"
@@ -45,12 +49,54 @@
     <span class="absolute top-2 right-2.5 size-1.5 rounded-full bg-status-failed"></span>
   </button>
 
-  <button
-    type="button"
-    class="ml-1 rounded-full transition hover:opacity-85"
-    [dhTooltip]="currentUser.name"
-    tooltipPosition="bottom"
-  >
-    <dh-avatar [person]="currentUser" size="md" />
-  </button>
+  <div class="relative ml-1">
+    <button
+      type="button"
+      class="rounded-full transition hover:opacity-85"
+      [dhTooltip]="currentUser().name + ' · ' + (auth.role() ?? '')"
+      tooltipPosition="bottom"
+      (click)="menuOpen.set(!menuOpen())"
+      aria-label="Account"
+    >
+      <dh-avatar [person]="currentUser()" size="md" />
+    </button>
+
+    @if (menuOpen()) {
+      <!-- Closes on any outside click; a menu that only closes on its own
+           button is one users end up clicking twice. -->
+      <div class="fixed inset-0 z-40" (click)="menuOpen.set(false)"></div>
+
+      <div class="dh-card absolute right-0 z-50 mt-2 w-56 p-1.5 shadow-dh-lg" role="menu">
+        <div class="px-2.5 py-2">
+          <p class="truncate text-[12.5px] font-medium text-ink">{{ currentUser().name }}</p>
+          <p class="truncate text-[11.5px] text-subtle">{{ auth.currentUser()?.email }}</p>
+          <p class="mt-1 text-[11px] text-subtle">{{ auth.role() }}</p>
+        </div>
+
+        <hr class="dh-divider my-1" />
+
+        @if (auth.isAdmin()) {
+          <a
+            class="flex items-center gap-2 rounded-dh px-2.5 py-1.5 text-[12.5px] text-ink transition hover:bg-surface-2"
+            routerLink="/users"
+            role="menuitem"
+            (click)="menuOpen.set(false)"
+          >
+            <i class="pi pi-users text-[12px] text-subtle"></i>
+            People
+          </a>
+        }
+
+        <button
+          type="button"
+          class="flex w-full items-center gap-2 rounded-dh px-2.5 py-1.5 text-left text-[12.5px] text-ink transition hover:bg-surface-2"
+          role="menuitem"
+          (click)="signOut()"
+        >
+          <i class="pi pi-lock text-[12px] text-subtle"></i>
+          Sign out
+        </button>
+      </div>
+    }
+  </div>
 </div>

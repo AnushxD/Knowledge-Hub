@@ -1,7 +1,10 @@
 import { Observable } from 'rxjs';
 import {
+  Account,
   ActivityEvent,
   AskRequest,
+  AuthOptions,
+  NewAccount,
   ChatEvent,
   ChatSession,
   ChatTranscript,
@@ -14,6 +17,8 @@ import {
   Person,
   SearchQuery,
   SearchResponse,
+  SignedInUser,
+  UserRole,
 } from '../models/knowledge.models';
 
 /**
@@ -27,6 +32,30 @@ import {
  * Integrations layers.
  */
 export abstract class KnowledgeGateway {
+  /**
+   * The signed-in user, or null when the session is gone.
+   *
+   * Null rather than an error, because "nobody is signed in" is the normal
+   * state on first load and not something to render as a failure.
+   */
+  abstract currentUser(): Observable<SignedInUser | null>;
+
+  abstract authOptions(): Observable<AuthOptions>;
+
+  abstract signIn(email: string, password: string): Observable<SignedInUser>;
+
+  abstract signOut(): Observable<void>;
+
+  // ---- account administration (Admin only; the API enforces it) ------------
+
+  abstract accounts(): Observable<Account[]>;
+
+  abstract createAccount(input: NewAccount): Observable<Account>;
+
+  abstract changeAccountRole(id: string, role: UserRole): Observable<Account>;
+
+  abstract setAccountEnabled(id: string, enabled: boolean): Observable<Account>;
+
   abstract folders(): Observable<Folder[]>;
   abstract documents(query: DocumentQuery): Observable<DocumentSummary[]>;
   abstract document(id: string): Observable<DocumentDetail | undefined>;

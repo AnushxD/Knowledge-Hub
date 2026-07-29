@@ -29,21 +29,23 @@
         </span>
       </div>
 
-      <div class="flex items-center gap-2">
-        <button type="button" class="dh-btn-ghost" (click)="newFolder()">
-          <i class="pi pi-folder-plus text-[12px]"></i>
-          <span class="hidden sm:inline">New folder</span>
-        </button>
-        <button
-          type="button"
-          class="flex h-8.5 items-center gap-2 rounded-dh px-3.5 text-[12.5px] font-medium text-white transition hover:brightness-110"
-          style="background: linear-gradient(135deg, var(--dh-brand-600), var(--dh-brand-500))"
-          (click)="showUpload.set(true)"
-        >
-          <i class="pi pi-upload text-[12px]"></i>
-          Upload
-        </button>
-      </div>
+      @if (auth.canContribute()) {
+        <div class="flex items-center gap-2">
+          <button type="button" class="dh-btn-ghost" (click)="newFolder()">
+            <i class="pi pi-folder-plus text-[12px]"></i>
+            <span class="hidden sm:inline">New folder</span>
+          </button>
+          <button
+            type="button"
+            class="flex h-8.5 items-center gap-2 rounded-dh px-3.5 text-[12.5px] font-medium text-white transition hover:brightness-110"
+            style="background: linear-gradient(135deg, var(--dh-brand-600), var(--dh-brand-500))"
+            (click)="showUpload.set(true)"
+          >
+            <i class="pi pi-upload text-[12px]"></i>
+            Upload
+          </button>
+        </div>
+      }
     </div>
   </div>
 
@@ -242,14 +244,16 @@
           heading="Nothing here yet"
           message="Drop files anywhere on this page, or upload them explicitly. They'll be extracted, chunked and embedded automatically."
         >
-          <button type="button" class="dh-btn-primary" (click)="showUpload.set(true)">
-            <i class="pi pi-upload text-[12px]"></i>
-            Upload documents
-          </button>
-          <button type="button" class="dh-btn-ghost" (click)="newFolder()">
-            <i class="pi pi-folder-plus text-[12px]"></i>
-            New folder
-          </button>
+          @if (auth.canContribute()) {
+            <button type="button" class="dh-btn-primary" (click)="showUpload.set(true)">
+              <i class="pi pi-upload text-[12px]"></i>
+              Upload documents
+            </button>
+            <button type="button" class="dh-btn-ghost" (click)="newFolder()">
+              <i class="pi pi-folder-plus text-[12px]"></i>
+              New folder
+            </button>
+          }
         </dh-empty-state>
       }
     </div>

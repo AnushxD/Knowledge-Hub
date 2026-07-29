@@ -1,0 +1,97 @@
+<div class="grid min-h-dvh place-items-center bg-canvas px-6 py-10">
+  <div class="w-full max-w-sm">
+    <div class="flex items-center gap-2.5">
+      <span
+        class="grid size-9 place-items-center rounded-[11px]"
+        style="background: linear-gradient(135deg, var(--dh-ai-from), var(--dh-ai-to))"
+      >
+        <i class="pi pi-sparkles text-[15px] text-white"></i>
+      </span>
+      <div>
+        <p class="text-[15px] font-semibold text-ink">DocHub</p>
+        <p class="text-[11.5px] text-subtle">Documentation &amp; Knowledge Hub</p>
+      </div>
+    </div>
+
+    <section class="dh-card mt-6 p-6">
+      <h1 class="text-[16px] font-semibold text-ink">Sign in</h1>
+      <p class="mt-1 text-[12.5px] text-muted">
+        Your documents and the assistant are only available to signed-in members.
+      </p>
+
+      @if (failure(); as message) {
+        <div
+          class="mt-4 flex items-start gap-2.5 rounded-dh border p-3"
+          role="alert"
+          [style.borderColor]="'color-mix(in oklab, var(--dh-status-failed) 32%, transparent)'"
+          [style.background]="'color-mix(in oklab, var(--dh-status-failed) 10%, transparent)'"
+        >
+          <i
+            class="pi pi-exclamation-triangle mt-[1px] text-[13px]"
+            [style.color]="'var(--dh-status-failed)'"
+          ></i>
+          <p class="text-[12.5px] text-ink">{{ message }}</p>
+        </div>
+      }
+
+      <form class="mt-5 space-y-4" (ngSubmit)="submit()">
+        <label class="block">
+          <span class="mb-1.5 block text-[12px] font-medium text-ink">Email</span>
+          <input
+            class="h-9 w-full rounded-dh border border-hairline bg-surface-1 px-3 text-[13px] text-ink outline-none transition placeholder:text-subtle focus:border-brand-500/50"
+            type="email"
+            name="email"
+            autocomplete="username"
+            autocapitalize="off"
+            spellcheck="false"
+            required
+            [ngModel]="email()"
+            (ngModelChange)="email.set($event)"
+          />
+        </label>
+
+        <label class="block">
+          <span class="mb-1.5 block text-[12px] font-medium text-ink">Password</span>
+          <input
+            class="h-9 w-full rounded-dh border border-hairline bg-surface-1 px-3 text-[13px] text-ink outline-none transition placeholder:text-subtle focus:border-brand-500/50"
+            type="password"
+            name="password"
+            autocomplete="current-password"
+            required
+            [ngModel]="password()"
+            (ngModelChange)="password.set($event)"
+          />
+        </label>
+
+        <button
+          class="dh-btn-primary w-full justify-center disabled:opacity-60"
+          type="submit"
+          [disabled]="submitting()"
+        >
+          {{ submitting() ? 'Signing in…' : 'Sign in' }}
+        </button>
+      </form>
+
+      @if (options().googleEnabled) {
+        <div class="mt-5 flex items-center gap-3">
+          <span class="h-px flex-1 bg-hairline-strong/40"></span>
+          <span class="text-[11px] text-subtle">or</span>
+          <span class="h-px flex-1 bg-hairline-strong/40"></span>
+        </div>
+
+        <button
+          class="dh-btn-ghost mt-4 w-full justify-center"
+          type="button"
+          (click)="signInWithGoogle()"
+        >
+          <i class="pi pi-sparkles text-[13px]"></i>
+          Continue with your company Google account
+        </button>
+      }
+    </section>
+
+    <p class="mt-4 text-center text-[11.5px] text-subtle">
+      Accounts are created by an administrator. There is no self-registration.
+    </p>
+  </div>
+</div>
