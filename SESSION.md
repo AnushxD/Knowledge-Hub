@@ -16,7 +16,7 @@ Internal **Documentation & Knowledge Hub** (DocHub): upload/organise/search team
 
 # Current Objective
 
-Phases 1–3 are **complete and pushed**. Next objective is **Phase 4: MCP `IKnowledgeSource` abstraction + stub implementation** — the seam that lets repository/code search join document search without the RAG orchestrator changing.
+Phases 1–4 are **complete and pushed**. Next objective is **Phase 5: real auth + roles + security hardening** — Identity locally → Entra ID, replacing `SeededCurrentUser`, securing `/jobs` and `/swagger`, rate-limiting chat.
 
 ---
 
@@ -26,15 +26,16 @@ Phases 1–3 are **complete and pushed**. Next objective is **Phase 4: MCP `IKno
 - **Phase 1** — folders, upload, metadata, versioning, preview, blob storage.
 - **Phase 2** — ingestion pipeline (extract → chunk → embed → index), hybrid search, search screen.
 - **Phase 3** — RAG assistant: streaming grounded answers, verified citations, refusals, session history.
+- **Phase 4** — `IKnowledgeSource` abstraction, composite retrieval with per-source failure
+  isolation, null repository stub, `GET /api/sources`, real `/sources` screen.
 - Swagger UI at `/swagger` (dev only).
-- 99 tests green: 8 Integrations, 14 DataAccess, 77 Services.
+- 108 tests green: 8 Integrations, 14 DataAccess, 86 Services.
 
 ## In Progress
 - Nothing. Working tree clean, all work pushed.
 
 ## Remaining (roadmap)
-4. MCP `IKnowledgeSource` abstraction + stub — **next**
-5. Real auth + roles + security hardening
+5. Real auth + roles + security hardening — **next**
 6. Deployment pipeline (Docker, GitHub Actions, IIS)
 7. Real MCP integration + revisit vector-store scale
 
@@ -59,6 +60,14 @@ Phases 1–3 are **complete and pushed**. Next objective is **Phase 4: MCP `IKno
 - **`fetch` (not HttpClient) for SSE in the client gateway** — HttpClient buffers the whole body.
 - **Hangfire enqueues via `IIngestionQueue`** defined in Services, implemented in Api — keeps the job runner a composition detail.
 - **Swagger UI is the UI package only**; document generation stays with `Microsoft.AspNetCore.OpenApi` to avoid two competing generators.
+- **`IKnowledgeSource` lives in Integrations, its implementations wherever their work belongs** — Services references Integrations and never the reverse, so a contract an MCP client must implement cannot be defined in Services. `DocumentKnowledgeSource` and `CompositeKnowledgeSource` are therefore Services types implementing an Integrations interface.
+- **`ChatService` depends on `IKnowledgeRetriever` (Services), not on `IKnowledgeSource`** — the composite returns `RetrievedPassage`, so `GroundedPrompt` and citation verification were untouched by phase 4.
+- **`KnowledgeResult` was introduced rather than reusing `RetrievedPassage`** — forced, since Integrations cannot see a Services type. It maps to `RetrievedPassage` at the composite boundary.
+- **Sources fan out concurrently; at most one may touch the DbContext.** The document source is that one. A second DB-backed source must run sequentially with it, exactly as the keyword and vector branches do.
+- **Sources merge by rank (RRF, k=60), never by score** — each source scores in its own units.
+- **A failing source degrades one answer and is named in the reply**; only if every source fails does the normal refusal path take over.
+- **The null repository source is registered locally on purpose** — a fan-out exercised against one source until phase 7 is a fan-out first debugged in phase 7.
+- **`KnowledgeSourceState` has three values, not a boolean** — `inactive` (off by design) must not render like `unavailable` (should work, doesn't).
 
 ---
 
@@ -67,15 +76,15 @@ Phases 1–3 are **complete and pushed**. Next objective is **Phase 4: MCP `IKno
 ```
 client/
   src/app/core/{data,models,state,theme,utils}
-  src/app/features/{dashboard,browse,document-detail,search,chat,settings,roadmap}
+  src/app/features/{dashboard,browse,document-detail,search,chat,sources,settings,roadmap}
   src/app/layout/{shell,nav-rail,top-bar,folder-tree,ai-dock,command-palette}
   src/app/shared/{components,directives,pipes}
   src/styles.css                     # --dh-* design tokens (single source of truth)
 server/
   src/DocHub.Api/{Controllers,Infrastructure}
-  src/DocHub.Services/{Documents,Folders,Ingestion,Search,Chat,ViewModels}
+  src/DocHub.Services/{Documents,Folders,Ingestion,Search,Chat,Knowledge,ViewModels}
   src/DocHub.DataAccess/{Entities,Dtos,Repositories,Migrations}
-  src/DocHub.Integrations/{Storage,Embeddings,Llm,HealthChecks}
+  src/DocHub.Integrations/{Storage,Embeddings,Llm,Knowledge,HealthChecks}
   tests/{DocHub.Services.Tests,DocHub.DataAccess.Tests,DocHub.Integrations.Tests}
 docker-compose.yml                   # postgres+pgvector, azurite, ollama
 CLAUDE.md · SESSION.md · README.md · architecture-blueprint.md
@@ -89,6 +98,9 @@ CLAUDE.md · SESSION.md · README.md · architecture-blueprint.md
 |---|---|---|
 | `server/src/DocHub.Services/Chat/GroundedPrompt.cs` | Prompt construction + citation verification/stripping/refusal detection. Pure functions. | Done, mutation-tested |
 | `server/src/DocHub.Services/Chat/ChatService.cs` | RAG orchestrator: retrieve → refuse-or-generate → verify → persist | Done |
+| `server/src/DocHub.Services/Knowledge/CompositeKnowledgeSource.cs` | Fan-out, per-source failure isolation, rank fusion, dedupe; `DescribeSourcesAsync` | Done |
+| `server/src/DocHub.Services/Knowledge/DocumentKnowledgeSource.cs` | Documents as one source; wraps `ISearchService`, adds no ranking | Done |
+| `server/src/DocHub.Integrations/Knowledge/IKnowledgeSource.cs` | The contract a real MCP client implements in phase 7 | Done |
 | `server/src/DocHub.Services/Search/SearchService.cs` | Hybrid search + RRF; `RankAsync` shared by search and retrieval | Done |
 | `server/src/DocHub.Services/Ingestion/IngestionService.cs` | extract → chunk → embed → index; permanent vs transient failure split | Done |
 | `server/src/DocHub.Services/Ingestion/TextChunker.cs` | Structure-aware chunking, overlap, per-document minimum | Done |
@@ -117,6 +129,7 @@ CLAUDE.md · SESSION.md · README.md · architecture-blueprint.md
 - Search screen: linkable `?q=`, filters, highlighted snippets, branch badges.
 - RAG assistant: streaming SSE, sources-before-tokens, citation verification, refusals, session history, stop, delete.
 - Citations deep-link to `/docs/:id?chunk=N` and highlight the passage.
+- Knowledge sources: concurrent fan-out, rank fusion across sources, per-source failure isolation, `GET /api/sources`, and a `/sources` screen distinguishing inactive from unavailable.
 - Health checks: postgres, blob-storage, embeddings, assistant-model — each names the fixing command.
 - Swagger UI + OpenAPI; root redirects to `/swagger`.
 
@@ -124,11 +137,10 @@ CLAUDE.md · SESSION.md · README.md · architecture-blueprint.md
 
 # Pending Features (priority order)
 
-1. **Phase 4 — MCP `IKnowledgeSource`**: `IKnowledgeSource` interface, `DocumentKnowledgeSource` (wraps existing hybrid search), `NullRepositoryKnowledgeSource`, `CompositeKnowledgeSource` fanning out in parallel; `/sources` screen replacing the placeholder. `ChatService` should retrieve through the composite rather than `ISearchService` directly.
-2. Phase 5 — auth (Identity → Entra ID), roles, replace `SeededCurrentUser`, secure `/jobs` + `/swagger`, rate-limit chat.
-3. Phase 6 — Dockerfile, GitHub Actions, IIS deploy.
-4. Phase 7 — real MCP, vector-store scale review.
-5. Deferred: OCR for scanned PDFs; audit log (`activity()` returns `[]`); client unit tests.
+1. **Phase 5 — auth**: Identity → Entra ID, roles, replace `SeededCurrentUser`, secure `/jobs` + `/swagger`, rate-limit chat.
+2. Phase 6 — Dockerfile, GitHub Actions, IIS deploy.
+3. Phase 7 — real MCP client implementing `IKnowledgeSource` (the seam is in place: one class in Integrations plus a branch in `AddIntegrations`), vector-store scale review.
+4. Deferred: OCR for scanned PDFs; audit log (`activity()` returns `[]`); client unit tests.
 
 ---
 
@@ -149,21 +161,12 @@ CLAUDE.md · SESSION.md · README.md · architecture-blueprint.md
 
 No files are mid-edit; the tree is clean and pushed.
 
-**Starting point for phase 4** (from `architecture-blueprint.md` §6):
+**Starting point for phase 5** — auth. `SeededCurrentUser` (registered in
+`ServicesServiceCollectionExtensions`) is the seam: `ICurrentUser.Id` is already what every
+service uses for ownership, so real auth replaces one registration. `/jobs` and `/swagger`
+are dev-only by registration and need real protection once they are not.
 
-```csharp
-public interface IKnowledgeSource {
-    string Name { get; }
-    Task<IReadOnlyList<KnowledgeResult>> SearchAsync(string query, CancellationToken ct);
-}
-```
-
-- Put `IKnowledgeSource` in **Integrations** (it is an external-system abstraction), but `DocumentKnowledgeSource` wraps `ISearchService` which lives in Services — so either define the interface in Services, or have the composite live in Services and only the MCP client in Integrations. **Unresolved — decide first.**
-- `ChatService.AskAsync` currently calls `search.RetrieveAsync(...)`. Phase 4 should swap that for the composite while keeping `RetrievedPassage` (or a `KnowledgeResult` that maps to it) so citation verification is unchanged.
-- The `/sources` route still points at `features/roadmap/sources-placeholder`.
-- Local dev must register the null repository source; config decides.
-
-**Edge cases already handled — don't re-solve:** empty retrieval refusal; fabricated citation markers; vector-branch outage degrading to keyword-only; DbContext concurrency; SSE validation-before-headers; unresolved markers rendered as plain text.
+**Edge cases already handled — don't re-solve:** empty retrieval refusal; fabricated citation markers; vector-branch outage degrading to keyword-only; DbContext concurrency; SSE validation-before-headers; unresolved markers rendered as plain text; a knowledge source failing mid-question; duplicate passages returned by two sources; an empty query reaching the composite.
 
 ---
 
@@ -223,27 +226,30 @@ Ports: client 4200 · API 5080 (`/swagger`, `/jobs`, `/healthz`) · Postgres 543
 
 # Questions Still Open
 
-- Which layer owns `IKnowledgeSource` and `CompositeKnowledgeSource` (Services vs Integrations), given `DocumentKnowledgeSource` must call `ISearchService`.
-- Whether phase 4 introduces `KnowledgeResult` or reuses `RetrievedPassage` — affects whether citation verification changes at all.
 - Whether to build the Anthropic `ILlmProvider` now or defer to when Claude becomes the default.
 - Whether to bump the default chat model to `llama3.1:8b` for citation reliability, trading speed/disk.
-- How `/sources` should present an inactive (null) repository source honestly.
 - Whether to wire the document-detail "Cited in answers" counter to real chat citations.
+- Whether a per-source toggle ("search without repositories for this question") belongs in phase 7 or earlier — the composite currently searches every registered source unconditionally.
+- What a repository citation resolves to. `KnowledgeResult` is document-shaped because a persisted `Citation` carries a document id and deep-links to `/docs/:id?chunk=n`; a file-at-a-commit needs a citation target that is not a document id. This is the one part of the phase 4 contract expected to change.
+
+**Resolved in phase 4:** `IKnowledgeSource` lives in Integrations and its implementations
+wherever their work belongs (forced by the reference direction); `KnowledgeResult` was
+introduced and maps to `RetrievedPassage`, leaving citation verification untouched; an
+inactive source renders as its own state, not as a failure.
 
 ---
 
 # Next Immediate Steps
 
-1. Decide the layer that owns `IKnowledgeSource` / `CompositeKnowledgeSource`; record the decision in `CLAUDE.md`.
-2. Add `IKnowledgeSource` + `KnowledgeResult`, and `DocumentKnowledgeSource` wrapping `ISearchService.RetrieveAsync`.
-3. Add `NullRepositoryKnowledgeSource` (returns empty, registered locally by config) and `CompositeKnowledgeSource` fanning out in parallel and merging.
-4. Point `ChatService.AskAsync` at the composite; confirm citation verification and all 77 Services tests still pass unchanged.
-5. Replace the `/sources` placeholder with a real screen listing active sources and their state.
-6. Add tests: composite merges/dedupes, a failing source degrades rather than fails the answer, null source contributes nothing.
-7. Update README + `CLAUDE.md` roadmap markers; commit and push each chunk.
+1. ASP.NET Core Identity in the API, with the local login flow and a real `ICurrentUser` replacing `SeededCurrentUser`.
+2. Roles (reader / contributor / admin) and authorisation on the document, folder and chat endpoints.
+3. Secure `/jobs` and `/swagger` behind an admin policy rather than relying on dev-only registration.
+4. Rate-limit `POST /api/chat` — generation is the expensive endpoint and is currently unbounded.
+5. Client: sign-in screen, auth interceptor on `HttpKnowledgeGateway`, and the settings screen's account section wired to the real principal.
+6. Update README + `CLAUDE.md` roadmap markers; commit and push each chunk.
 
 ---
 
 # Context Recovery Prompt
 
-> Read `SESSION.md` and `CLAUDE.md` at the repo root before doing anything else. This is DocHub — an ASP.NET Core + Angular documentation hub with local-Ollama RAG. Phases 1–3 (doc management, ingestion + hybrid search, grounded AI assistant with verified citations) are **complete, tested and pushed to `main`** — do not re-analyse or rebuild them. All 99 tests pass. Start on **Phase 4: the MCP `IKnowledgeSource` abstraction**, beginning with the open question of which layer owns the interface and composite, then follow the "Next Immediate Steps" checklist in `SESSION.md`. Respect the grounding rules and layering constraints in `CLAUDE.md`. Build and test before each commit, and commit + push each finished chunk to `main` without asking.
+> Read `SESSION.md` and `CLAUDE.md` at the repo root before doing anything else. This is DocHub — an ASP.NET Core + Angular documentation hub with local-Ollama RAG. Phases 1–4 (doc management, ingestion + hybrid search, grounded AI assistant with verified citations, and the `IKnowledgeSource` abstraction with composite retrieval) are **complete, tested and pushed to `main`** — do not re-analyse or rebuild them. All 108 tests pass. Start on **Phase 5: real auth + roles + security hardening**, following the "Next Immediate Steps" checklist in `SESSION.md`. Respect the grounding rules and layering constraints in `CLAUDE.md`. Build and test before each commit, and commit + push each finished chunk to `main` without asking.

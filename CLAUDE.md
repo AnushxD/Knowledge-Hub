@@ -93,12 +93,12 @@ doc-knowledge-hub/
 1. ✅ Core doc management (upload, folders, metadata, preview) — NO AI yet
 2. ✅ Ingestion pipeline (extract → chunk → embed) + hybrid search (keyword + vector)
 3. ✅ AI chat assistant with citations, RAG over uploaded docs only
-4. MCP `IKnowledgeSource` abstraction + stub implementation  ← NEXT
-5. Real auth + roles + security hardening
+4. ✅ MCP `IKnowledgeSource` abstraction + stub implementation
+5. Real auth + roles + security hardening  ← NEXT
 6. Deployment pipeline (Docker, GitHub Actions, IIS deploy)
 7. Real MCP integration + revisit scale (vector store, search)
 
-## Grounding rules (phases 2–3, non-negotiable)
+## Grounding rules (phases 2–4, non-negotiable)
 - Only `Indexed` documents are retrievable. A half-processed or failed document must never
   be searchable or citable.
 - The LLM is never called with zero retrieved passages — that is exactly what produces
@@ -111,6 +111,12 @@ doc-knowledge-hub/
   a document cannot rewrite a historical answer.
 - Search and the assistant share one ranking implementation (`SearchService.RankAsync`), so
   the assistant can only cite what the search screen would have shown.
+- A knowledge source that fails is left out of that one answer and named in the reply — never
+  silently dropped, and never allowed to fail the whole question. If every source fails there
+  is nothing to ground on, and the normal refusal path handles it.
+- Sources are merged by rank, never by score. Each source scores in its own units, so adding
+  them together would be arbitrary — the same reason the keyword and vector branches fuse
+  by rank.
 
 ## Provisioning is explicit
 The API never creates databases, containers or schema at startup. Setup is operator-run:

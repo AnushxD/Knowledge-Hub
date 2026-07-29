@@ -4,11 +4,14 @@ An internal Documentation & Knowledge Hub: upload, organise and search team
 documentation, with an AI assistant that answers questions grounded strictly
 in indexed content and always cites its sources.
 
-> **Status:** phases 1–3 are **complete**. Documents upload, index and become
+> **Status:** phases 1–4 are **complete**. Documents upload, index and become
 > searchable by hybrid keyword + semantic search, and an AI assistant answers
 > questions from them — citing the exact passage behind every claim, and
-> saying "I don't know" when the answer isn't there. Phase 4 (MCP knowledge
-> sources) is next. See [Current state](#current-state).
+> saying "I don't know" when the answer isn't there. The assistant now retrieves
+> through an `IKnowledgeSource` abstraction, so a repository source over MCP
+> joins document search without the assistant changing; the repository source
+> ships as an inactive stub until phase 7. Phase 5 (auth and roles) is next.
+> See [Current state](#current-state).
 
 ---
 
@@ -363,6 +366,8 @@ Key settings, one strongly-typed Options class per external dependency:
 | `Llm:Temperature` | Low by default (0.1); sampling variety is how a model starts inventing |
 | `Chat:PassageCount` | Passages retrieved per question (default 6) |
 | `Chat:HistoryTurns` | Prior turns replayed for follow-ups (default 4) |
+| `KnowledgeSources:RepositoryProvider` | `none` (default) registers the inactive stub; `mcp` arrives in phase 7 and is rejected at startup until then |
+| `KnowledgeSources:RepositoryEndpoint` | The MCP server's address; unused while the provider is `none` |
 | `Cors:AllowedOrigins` | Origins allowed to call the API in development |
 
 **Using a bigger or hosted model.** `Llm:Model` takes any model Ollama can
@@ -482,16 +487,23 @@ docker compose down
 | Answer generation (`ILlmProvider`) | Done |
 | RAG orchestrator with citation verification | Done |
 | Assistant screen: streaming answers, sources, session history | Done |
+| `IKnowledgeSource` abstraction + composite retrieval, `/sources` screen | Done |
 
-**Phases 1–3 are complete.** Upload a Markdown, PDF or Word file and it is
+**Phases 1–4 are complete.** Upload a Markdown, PDF or Word file and it is
 extracted, chunked, embedded and searchable within seconds. Ask a question and
 the assistant answers from those documents, links every claim to the exact
 passage behind it, and declines when the answer isn't there.
 
-Not yet built, by design (later phases): MCP repository sources;
-authentication and roles; the deployment pipeline. OCR for scanned documents is
-also deferred, so image-only PDFs are reported as failed rather than silently
-indexed as empty.
+Retrieval runs through `IKnowledgeSource`: every configured source is searched
+concurrently and merged by rank, a source that fails is left out of that answer
+and named in the reply rather than failing the whole question, and `/sources`
+shows which are contributing. A repository source is registered locally as an
+inactive stub — the real MCP client is phase 7, and having a second source
+present from the start means the fan-out is exercised before then.
+
+Not yet built, by design (later phases): the real MCP client; authentication and
+roles; the deployment pipeline. OCR for scanned documents is also deferred, so
+image-only PDFs are reported as failed rather than silently indexed as empty.
 
 The client talks to the API through one seam, `KnowledgeGateway`. Two
 implementations exist:
@@ -529,6 +541,7 @@ requests are same-origin and CORS never applies.
 | `GET` | `/api/chat/sessions` | Conversation history |
 | `GET` | `/api/chat/sessions/{id}` | One conversation with citations |
 | `DELETE` | `/api/chat/sessions/{id}` | Delete a conversation |
+| `GET` | `/api/sources` | Knowledge sources the assistant may ground answers in, and each one's state |
 
 Errors come back as RFC 7807 problem details — 400 for a rejected business
 rule (with a message meant for the user), 404 for a missing entity.
