@@ -95,7 +95,15 @@ export interface Person {
 
 export interface ActivityEvent {
   id: string;
-  type: 'uploaded' | 'indexed' | 'failed' | 'updated' | 'folder-created';
+  type:
+    | 'uploaded'
+    | 'updated'
+    | 'moved'
+    | 'deleted'
+    | 'indexed'
+    | 'failed'
+    | 'folder-created'
+    | 'folder-deleted';
   actor: Person;
   target: string;
   targetId?: string;

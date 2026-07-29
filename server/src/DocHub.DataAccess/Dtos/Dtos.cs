@@ -205,3 +205,12 @@ public record ChunkSearchDto
     /// <summary>Candidates to pull from each branch before fusion.</summary>
     public int Limit { get; init; } = 40;
 }
+
+/// <summary>One entry in the activity trail, with its actor resolved.</summary>
+public sealed record ActivityEventDto(
+    Guid Id,
+    ActivityType Type,
+    UserDto Actor,
+    string Target,
+    Guid? TargetId,
+    DateTimeOffset At);

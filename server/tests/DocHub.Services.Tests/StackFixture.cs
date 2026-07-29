@@ -7,6 +7,7 @@ using DocHub.Integrations.Knowledge;
 using DocHub.Integrations.Llm;
 using DocHub.Integrations.Storage;
 using DocHub.Services;
+using DocHub.Services.Activity;
 using DocHub.Services.Chat;
 using DocHub.Services.Documents;
 using DocHub.Services.Folders;
@@ -126,6 +127,12 @@ public sealed class StackFixture : IAsyncLifetime
         var sourceSettings = new RepositorySourceSettings(
             settingRepo, Options.Create(new KnowledgeSourceOptions()));
 
+        // The real activity log, not a stub: recording is a side effect of
+        // ordinary operations, and a stub here would let it silently stop
+        // working while every test still passed.
+        var activityRepo = new ActivityRepository(db);
+        var activity = new ActivityLog(activityRepo, user, NullLogger<ActivityLog>.Instance);
+
         var llm = new ScriptedLlmProvider();
 
         // Composed exactly as AddServices + AddIntegrations do it, including
@@ -142,13 +149,14 @@ public sealed class StackFixture : IAsyncLifetime
 
         return new Scope(
             db,
-            new FolderService(folderRepo, Storage, user, NullLogger<FolderService>.Instance),
+            new FolderService(
+                folderRepo, Storage, activity, user, NullLogger<FolderService>.Instance),
             new DocumentService(
-                documentRepo, folderRepo, chunkRepo, Storage, queue, user,
+                documentRepo, folderRepo, chunkRepo, Storage, queue, activity, user,
                 NullLogger<DocumentService>.Instance),
             new IngestionService(
                 documentRepo, chunkRepo, Storage, extractors,
-                new TextChunker(ingestionOptions), embeddings, queue,
+                new TextChunker(ingestionOptions), embeddings, queue, activity,
                 NullLogger<IngestionService>.Instance),
             searchService,
             new ChatService(
@@ -159,7 +167,8 @@ public sealed class StackFixture : IAsyncLifetime
             llm,
             knowledge,
             user,
-            settingRepo);
+            settingRepo,
+            activity);
     }
 
     /// <summary>
@@ -224,7 +233,8 @@ public sealed class StackFixture : IAsyncLifetime
         ScriptedLlmProvider Llm,
         IKnowledgeRetriever Knowledge,
         TestCurrentUser User,
-        IRepositorySourceSettingRepository SourceSettings) : IAsyncDisposable
+        IRepositorySourceSettingRepository SourceSettings,
+        IActivityLog Activity) : IAsyncDisposable
     {
         public ValueTask DisposeAsync() => Db.DisposeAsync();
     }

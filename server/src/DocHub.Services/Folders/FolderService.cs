@@ -1,4 +1,6 @@
+using DocHub.DataAccess.Entities;
 using DocHub.DataAccess.Repositories;
+using DocHub.Services.Activity;
 using DocHub.Integrations.Storage;
 using DocHub.Services.ViewModels;
 using Microsoft.Extensions.Logging;
@@ -8,6 +10,7 @@ namespace DocHub.Services.Folders;
 internal sealed class FolderService(
     IFolderRepository folders,
     IFileStorage storage,
+    IActivityLog activity,
     ICurrentUser currentUser,
     ILogger<FolderService> logger) : IFolderService
 {
@@ -35,6 +38,8 @@ internal sealed class FolderService(
 
         var created = await folders.CreateAsync(request.ParentId, name, currentUser.Id, ct);
         logger.LogInformation("Created folder {FolderId} at {Path}", created.Id, created.Path);
+
+        await activity.RecordAsync(ActivityType.FolderCreated, created.Name, ct: ct);
 
         return created.ToViewModel();
     }
@@ -67,8 +72,15 @@ internal sealed class FolderService(
         // documents owned. Deleting the rows first means a storage failure
         // leaves orphaned files rather than rows pointing at missing files —
         // the recoverable direction of the two.
+        // The name has to be read before the row goes, for the same reason a
+        // deleted document's title does.
+        var name = (await folders.GetAllAsync(ct))
+            .FirstOrDefault(folder => folder.Id == id)?.Name ?? "a folder";
+
         var orphanedBlobs = await folders.DeleteAsync(id, ct);
         await storage.DeleteManyAsync(orphanedBlobs, ct);
+
+        await activity.RecordAsync(ActivityType.FolderDeleted, name, ct: ct);
 
         logger.LogInformation(
             "Deleted folder {FolderId} and {BlobCount} stored files", id, orphanedBlobs.Count);

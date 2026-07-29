@@ -1,4 +1,6 @@
 using DocHub.DataAccess.Dtos;
+using DocHub.DataAccess.Entities;
+using DocHub.Services.Activity;
 using DocHub.DataAccess.Repositories;
 using DocHub.Integrations.Storage;
 using DocHub.Services.Ingestion;
@@ -13,6 +15,7 @@ internal sealed class DocumentService(
     IChunkRepository chunks,
     IFileStorage storage,
     IIngestionQueue ingestion,
+    IActivityLog activity,
     ICurrentUser currentUser,
     ILogger<DocumentService> logger) : IDocumentService
 {
@@ -125,6 +128,8 @@ internal sealed class DocumentService(
                 "Uploaded document {DocumentId} ({FileName}) to folder {FolderId}",
                 created.Id, fileName, folderId);
 
+            await activity.RecordAsync(ActivityType.Uploaded, created.Title, created.Id, ct: ct);
+
             // Queued rather than awaited: extracting and embedding a document
             // takes seconds to minutes, and the upload response should not.
             ingestion.Enqueue(created.Id);
@@ -200,6 +205,14 @@ internal sealed class DocumentService(
         var updated = await documents.UpdateMetadataAsync(id, update, ct)
             ?? throw new NotFoundException("Document", id);
 
+        // Starring is a personal bookmark, not an edit worth announcing. Left
+        // in, every star and un-star would crowd genuine changes out of a feed
+        // that only shows the most recent dozen.
+        var starOnly = request.Title is null && request.Description is null && request.Tags is null;
+
+        if (!starOnly)
+            await activity.RecordAsync(ActivityType.Updated, updated.Title, updated.Id, ct: ct);
+
         return updated.ToViewModel();
     }
 
@@ -214,17 +227,33 @@ internal sealed class DocumentService(
         var moved = await documents.MoveAsync(id, folderId, ct)
             ?? throw new NotFoundException("Document", id);
 
+        await activity.RecordAsync(ActivityType.Moved, moved.Title, moved.Id, ct: ct);
+
         return moved.ToViewModel();
     }
 
     public async Task DeleteAsync(Guid id, CancellationToken ct = default)
     {
+        // Read the title before destroying the row. "Who deleted what" is the
+        // entry most likely to be asked about later, and it is worthless
+        // without the name.
+        var doomed = await documents.GetByIdAsync(id, ct);
+
         var orphanedBlobs = await documents.DeleteAsync(id, ct);
 
         if (orphanedBlobs.Count == 0)
             throw new NotFoundException("Document", id);
 
         await storage.DeleteManyAsync(orphanedBlobs, ct);
+
+        await activity.RecordAsync(
+            ActivityType.Deleted,
+            doomed?.Document.Title ?? "a document",
+            // No target id: the document is gone, and a link to it would only
+            // ever lead to "not found".
+            targetId: null,
+            ct: ct);
+
         logger.LogInformation(
             "Deleted document {DocumentId} and {BlobCount} stored files", id, orphanedBlobs.Count);
     }

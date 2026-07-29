@@ -1,4 +1,5 @@
 using DocHub.Integrations.Knowledge;
+using DocHub.Services.Activity;
 using DocHub.Services.Chat;
 using DocHub.Services.Documents;
 using DocHub.Services.Folders;
@@ -37,6 +38,7 @@ public static class ServicesServiceCollectionExtensions
         services.AddScoped<IIngestionService, IngestionService>();
         services.AddScoped<ISearchService, SearchService>();
         services.AddScoped<IChatService, ChatService>();
+        services.AddScoped<IActivityLog, ActivityLog>();
 
         // Scoped, not singleton: it wraps ISearchService and so inherits the
         // request-scoped DbContext underneath it. The external sources it fans

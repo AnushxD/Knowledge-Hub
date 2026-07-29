@@ -110,6 +110,15 @@ interface ApiSearchResponse {
   };
 }
 
+interface ApiActivityEvent {
+  id: string;
+  type: ActivityEvent['type'];
+  actor: ApiUser;
+  target: string;
+  targetId: string | null;
+  at: string;
+}
+
 interface ApiStats {
   documents: number;
   indexed: number;
@@ -183,13 +192,22 @@ export class HttpKnowledgeGateway extends KnowledgeGateway {
     );
   }
 
-  /**
-   * No audit trail exists server-side yet. Returning an empty list keeps the
-   * dashboard honest: it shows its "no activity yet" state rather than
-   * inventing events.
-   */
-  activity(): Observable<ActivityEvent[]> {
-    return of([]);
+  activity(limit = 12): Observable<ActivityEvent[]> {
+    return this.http
+      .get<ApiActivityEvent[]>(`${this.base}/activity`, {
+        params: new HttpParams().set('limit', limit),
+      })
+      .pipe(
+        map((events) =>
+          events.map((event) => ({
+            ...event,
+            // The avatar needs a colour, which the server has no opinion about.
+            actor: toPerson(event.actor),
+            // Absent rather than null, so the template's @if reads naturally.
+            targetId: event.targetId ?? undefined,
+          })),
+        ),
+      );
   }
 
   people(): Observable<Person[]> {

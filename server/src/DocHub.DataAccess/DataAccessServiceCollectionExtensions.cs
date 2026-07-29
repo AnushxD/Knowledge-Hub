@@ -39,6 +39,7 @@ public static class DataAccessServiceCollectionExtensions
         services.AddScoped<IDocumentRepository, DocumentRepository>();
         services.AddScoped<IChunkRepository, ChunkRepository>();
         services.AddScoped<IChatRepository, ChatRepository>();
+        services.AddScoped<IActivityRepository, ActivityRepository>();
         services.AddScoped<IRepositorySourceSettingRepository,
             RepositorySourceSettingRepository>();
 

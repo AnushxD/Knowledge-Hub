@@ -137,6 +137,27 @@ public record SearchRequest
     public int Take { get; init; } = 20;
 }
 
+// ---- activity ---------------------------------------------------------------
+
+/// <summary>One entry in the dashboard's activity feed.</summary>
+/// <param name="Type">
+/// "uploaded", "indexed", "deleted" and so on. A string rather than an enum on
+/// the wire: the client turns it into a verb, and an unknown value should read
+/// as a generic "updated" rather than break the feed.
+/// </param>
+/// <param name="TargetId">
+/// The document, when the entry has one, so the feed can link to it. Null for a
+/// folder, and for a document that has since been deleted the link simply leads
+/// to a "not found" — which is the honest outcome.
+/// </param>
+public record ActivityEventViewModel(
+    Guid Id,
+    string Type,
+    UserViewModel Actor,
+    string Target,
+    Guid? TargetId,
+    DateTimeOffset At);
+
 // ---- authentication ---------------------------------------------------------
 
 /// <summary>The signed-in user, as every screen needs them.</summary>

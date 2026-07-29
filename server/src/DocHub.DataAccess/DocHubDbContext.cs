@@ -45,6 +45,8 @@ public sealed class DocHubDbContext(DbContextOptions<DocHubDbContext> options)
 
     public DbSet<Folder> Folders => Set<Folder>();
 
+    public DbSet<ActivityEvent> ActivityEvents => Set<ActivityEvent>();
+
     public DbSet<RepositorySourceSetting> RepositorySourceSettings =>
         Set<RepositorySourceSetting>();
 
@@ -108,6 +110,31 @@ public sealed class DocHubDbContext(DbContextOptions<DocHubDbContext> options)
                 Role = Roles.Admin,
                 CreatedAt = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero),
             });
+        });
+
+        builder.Entity<ActivityEvent>(entity =>
+        {
+            entity.ToTable("activity_events");
+            entity.HasKey(activity => activity.Id);
+            entity.Property(activity => activity.Target).HasMaxLength(500).IsRequired();
+
+            // Text, like every other enum here, so reordering the C# values
+            // cannot silently remap history.
+            entity.Property(activity => activity.Type)
+                .HasConversion<string>()
+                .HasMaxLength(32)
+                .IsRequired();
+
+            entity.HasOne(activity => activity.Actor)
+                .WithMany()
+                .HasForeignKey(activity => activity.ActorId)
+                // Accounts are disabled rather than deleted, so this never
+                // fires — but if one ever were, losing the audit trail with it
+                // is the opposite of what an audit trail is for.
+                .OnDelete(DeleteBehavior.Restrict);
+
+            // The feed only ever asks for the newest few.
+            entity.HasIndex(activity => activity.At).IsDescending();
         });
 
         builder.Entity<RepositorySourceSetting>(entity =>

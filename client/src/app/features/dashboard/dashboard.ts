@@ -112,8 +112,14 @@ export class Dashboard {
         return 'finished indexing';
       case 'failed':
         return 'hit an ingestion failure on';
+      case 'moved':
+        return 'moved';
+      case 'deleted':
+        return 'deleted';
       case 'folder-created':
         return 'created the folder';
+      case 'folder-deleted':
+        return 'deleted the folder';
       default:
         return 'updated';
     }

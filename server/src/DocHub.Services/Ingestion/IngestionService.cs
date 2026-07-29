@@ -1,6 +1,8 @@
 using System.Diagnostics;
 using DocHub.DataAccess.Dtos;
 using DocHub.DataAccess.Entities;
+using DocHub.Services.Activity;
+using DocHub.DataAccess.Entities;
 using DocHub.DataAccess.Repositories;
 using DocHub.Integrations.Embeddings;
 using DocHub.Integrations.Storage;
@@ -18,6 +20,7 @@ internal sealed class IngestionService(
     ITextChunker chunker,
     IEmbeddingProvider embeddings,
     IIngestionQueue queue,
+    IActivityLog activity,
     ILogger<IngestionService> logger) : IIngestionService
 {
     public IReadOnlyList<string> SupportedExtensions => extractors.SupportedExtensions;
@@ -91,6 +94,12 @@ internal sealed class IngestionService(
             await documents.SetStatusAsync(
                 documentId, IngestionStatus.Indexed, chunkCount: chunked.Count, ct: ct);
 
+            // Attributed to the owner, not to a signed-in user: ingestion runs
+            // on a background worker where nobody is signed in, and inventing a
+            // system identity would put a name in the feed nobody recognises.
+            await activity.RecordAsync(
+                ActivityType.Indexed, document.Title, documentId, document.Owner.Id, ct);
+
             logger.LogInformation(
                 "Indexed document {DocumentId} ({FileName}): {ChunkCount} chunks in {ElapsedMs}ms "
                 + "using {Provider}",
@@ -146,8 +155,24 @@ internal sealed class IngestionService(
         return await extractor.ExtractAsync(file.Content, extension, ct);
     }
 
-    private async Task FailAsync(Guid documentId, string reason, CancellationToken ct) =>
+    private async Task FailAsync(Guid documentId, string reason, CancellationToken ct)
+    {
         await documents.SetStatusAsync(documentId, IngestionStatus.Failed, reason, ct: ct);
+
+        // A failed document is invisible to search and the assistant, so the
+        // feed is where its owner is most likely to notice it at all.
+        var failed = await documents.GetByIdAsync(documentId, ct);
+
+        if (failed is not null)
+        {
+            await activity.RecordAsync(
+                ActivityType.Failed,
+                failed.Document.Title,
+                documentId,
+                failed.Document.Owner.Id,
+                ct);
+        }
+    }
 
     /// <summary>
     /// A one-line reason fit to show a user. The full exception is already in
