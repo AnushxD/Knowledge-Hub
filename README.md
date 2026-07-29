@@ -836,7 +836,7 @@ $env:FileStorage__ConnectionString = "UseDevelopmentStorage=true"
 Then set the administrator password — type it in rather than storing it:
 
 ```powershell
-$env:Authentication__SeedAdminPassword = "<a real password, 12+ characters>"
+$env:Authentication__SeedAdminPassword = "<a real password, 7+ characters>"
 .\DocHub.Api.exe seed-admin
 ```
 

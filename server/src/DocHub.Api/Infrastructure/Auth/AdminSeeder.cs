@@ -72,7 +72,7 @@ internal static class AdminSeeder
         if (result.Succeeded) return true;
 
         // Identity's own messages name the failing rule — "passwords must be at
-        // least 12 characters" is more use than "seeding failed".
+        // least 7 characters" is more use than "seeding failed".
         Console.Error.WriteLine($"Could not {action}:");
 
         foreach (var error in result.Errors)

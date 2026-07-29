@@ -58,7 +58,13 @@ internal static class AuthenticationRegistration
                 // Length over composition rules. Character-class requirements
                 // are what produce "Password1!" everywhere; length is the part
                 // that actually costs an attacker something.
-                options.Password.RequiredLength = 12;
+                //
+                // Seven is short for that argument, and is a deliberate
+                // usability choice for an internal tool rather than a security
+                // one. What carries the weight instead is the lockout below:
+                // five attempts then a fifteen-minute wait makes online
+                // guessing impractical regardless of length.
+                options.Password.RequiredLength = 7;
                 options.Password.RequireNonAlphanumeric = false;
                 options.Password.RequireUppercase = false;
                 options.Password.RequireLowercase = false;
