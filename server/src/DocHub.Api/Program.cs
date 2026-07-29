@@ -127,15 +127,25 @@ if (args.Contains("seed-admin"))
 
 app.UseExceptionHandler();
 
+// Order matters: who you are, then what you may do, then the endpoint.
+app.UseAuthentication();
+app.UseAuthorization();
+
+// Both dashboards are now gated on the Admin role rather than on the
+// environment. Dev-only registration was a stand-in for authorisation — it kept
+// them off production, but it also meant every developer's machine served an
+// open jobs dashboard to anything that could reach the port.
+app.UseAdminOnly("/swagger", "/openapi");
+
 if (app.Environment.IsDevelopment())
 {
-    app.MapOpenApi();
+    app.MapOpenApi().AllowAnonymous();
     app.UseCors(DevCorsPolicy);
 
     // Interactive API browser at /swagger, reading the document MapOpenApi
-    // serves. Development only, for the same reason as the jobs dashboard
-    // below: it is unauthenticated and it invites callers to fire real
-    // requests at real data.
+    // serves. Registered in development only — an API explorer is a
+    // development tool, not something to ship and then defend — and behind the
+    // admin gate above even there.
     app.UseSwaggerUI(swagger =>
     {
         swagger.SwaggerEndpoint("/openapi/v1.json", "DocHub API v1");
@@ -146,39 +156,44 @@ if (app.Environment.IsDevelopment())
         swagger.DisplayRequestDuration();
     });
 
-    // Development only: the dashboard is unauthenticated and exposes job
-    // arguments — including document ids. It gets real authorisation when auth
-    // lands in phase 5, and only then can it be exposed anywhere else.
-    app.UseHangfireDashboard("/jobs");
-
     // Landing on the API root in a browser is nearly always someone looking
     // for the docs.
-    app.MapGet("/", () => Results.Redirect("/swagger")).ExcludeFromDescription();
+    app.MapGet("/", () => Results.Redirect("/swagger"))
+        .AllowAnonymous()
+        .ExcludeFromDescription();
 }
 else
 {
     app.UseHttpsRedirection();
 }
 
-// Order matters: who you are, then what you may do, then the endpoint.
-app.UseAuthentication();
-app.UseAuthorization();
+// The jobs dashboard exposes job arguments, which include document ids, so it
+// is administrators only. Registered in every environment now that it is
+// actually protected — a queue you can only inspect on a developer's laptop is
+// not much use when a production job is stuck.
+app.UseHangfireDashboard("/jobs", new DashboardOptions
+{
+    Authorization = [new AdminDashboardFilter()],
+});
 
 app.MapControllers();
 
 // Liveness: is the process up at all. Deliberately checks nothing external, so
 // an orchestrator does not restart the app just because Postgres blipped.
+// Anonymous, deliberately: the thing asking is a load balancer or an
+// orchestrator, which has no session and never will. Neither endpoint reveals
+// anything but whether dependencies answer.
 app.MapHealthChecks("/healthz/live", new HealthCheckOptions
 {
     Predicate = _ => false,
-});
+}).AllowAnonymous();
 
 // Readiness: can this instance actually serve traffic (DB + blob reachable).
 app.MapHealthChecks("/healthz", new HealthCheckOptions
 {
     Predicate = check => check.Tags.Contains("ready"),
     ResponseWriter = WriteHealthResponse,
-});
+}).AllowAnonymous();
 
 app.Run();
 

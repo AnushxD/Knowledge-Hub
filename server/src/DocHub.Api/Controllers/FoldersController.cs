@@ -1,5 +1,7 @@
+using DocHub.Api.Infrastructure.Auth;
 using DocHub.Services.Folders;
 using DocHub.Services.ViewModels;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace DocHub.Api.Controllers;
@@ -19,6 +21,7 @@ public sealed class FoldersController(IFolderService folders) : ControllerBase
     public async Task<IReadOnlyList<FolderViewModel>> GetAll(CancellationToken ct) =>
         await folders.GetAllAsync(ct);
 
+    [Authorize(Policy = Policies.Contribute)]
     [HttpPost]
     [ProducesResponseType<FolderViewModel>(StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
@@ -31,6 +34,7 @@ public sealed class FoldersController(IFolderService folders) : ControllerBase
         return CreatedAtAction(nameof(GetAll), new { id = created.Id }, created);
     }
 
+    [Authorize(Policy = Policies.Contribute)]
     [HttpPut("{id:guid}")]
     [ProducesResponseType<FolderViewModel>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
@@ -42,6 +46,7 @@ public sealed class FoldersController(IFolderService folders) : ControllerBase
         await folders.RenameAsync(id, request, ct);
 
     /// <summary>Deletes the folder, its subtree, and every stored file beneath it.</summary>
+    [Authorize(Policy = Policies.Contribute)]
     [HttpDelete("{id:guid}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]

@@ -1,7 +1,9 @@
+using DocHub.Api.Infrastructure.Auth;
 using DocHub.Services;
 using DocHub.Services.Documents;
 using DocHub.Services.Ingestion;
 using DocHub.Services.ViewModels;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace DocHub.Api.Controllers;
@@ -22,6 +24,7 @@ public sealed class DocumentsController(
     /// Puts a document back through ingestion. Backs the retry action on a
     /// failed document, and re-indexing after the chunking settings change.
     /// </summary>
+    [Authorize(Policy = Policies.Contribute)]
     [HttpPost("{id:guid}/reindex")]
     [ProducesResponseType<DocumentViewModel>(StatusCodes.Status202Accepted)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -73,6 +76,7 @@ public sealed class DocumentsController(
     }
 
     /// <summary>Uploads a new document into a folder.</summary>
+    [Authorize(Policy = Policies.Contribute)]
     [HttpPost]
     [ProducesResponseType<DocumentViewModel>(StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
@@ -87,6 +91,7 @@ public sealed class DocumentsController(
     }
 
     /// <summary>Uploads a replacement file as a new version of an existing document.</summary>
+    [Authorize(Policy = Policies.Contribute)]
     [HttpPost("{id:guid}/versions")]
     [ProducesResponseType<DocumentViewModel>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
@@ -98,6 +103,7 @@ public sealed class DocumentsController(
         CancellationToken ct) =>
         await documents.AddVersionAsync(id, ToUploadRequest(file, note), ct);
 
+    [Authorize(Policy = Policies.Contribute)]
     [HttpPatch("{id:guid}")]
     [ProducesResponseType<DocumentViewModel>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
@@ -108,6 +114,7 @@ public sealed class DocumentsController(
         CancellationToken ct) =>
         await documents.UpdateAsync(id, request, ct);
 
+    [Authorize(Policy = Policies.Contribute)]
     [HttpPost("{id:guid}/move")]
     [ProducesResponseType<DocumentViewModel>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -117,6 +124,7 @@ public sealed class DocumentsController(
         CancellationToken ct) =>
         await documents.MoveAsync(id, request.FolderId, ct);
 
+    [Authorize(Policy = Policies.Contribute)]
     [HttpDelete("{id:guid}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]

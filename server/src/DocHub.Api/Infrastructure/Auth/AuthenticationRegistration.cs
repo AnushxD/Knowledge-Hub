@@ -4,6 +4,7 @@ using DocHub.DataAccess;
 using DocHub.DataAccess.Entities;
 using DocHub.Services;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authentication.OAuth.Claims;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.WebUtilities;
@@ -116,6 +117,20 @@ internal static class AuthenticationRegistration
                 context.Response.StatusCode = StatusCodes.Status403Forbidden;
                 return Task.CompletedTask;
             };
+
+            // Re-reads the user's security stamp periodically and rejects the
+            // cookie if it has moved. Without this, a role change or a disabled
+            // account would not take effect until the cookie expired — up to
+            // SessionHours of someone keeping access they no longer have.
+            options.Events.OnValidatePrincipal = SecurityStampValidator.ValidatePrincipalAsync;
+        });
+
+        services.Configure<SecurityStampValidatorOptions>(options =>
+        {
+            // Five minutes is the usual trade: a revoked permission lingers for
+            // at most that long, and a signed-in user costs one extra query per
+            // five minutes rather than one per request.
+            options.ValidationInterval = TimeSpan.FromMinutes(5);
         });
 
         // Holds the half-finished identity between leaving for an external
@@ -200,10 +215,15 @@ internal static class AuthenticationRegistration
             options.AddPolicy(Policies.Contribute, policy =>
                 policy.RequireRole(Roles.Admin, Roles.Editor));
 
-            // Everything else still requires *someone* — see the fallback
-            // policy applied to controllers, which makes authentication the
-            // default rather than something each endpoint must remember.
             options.AddPolicy(Policies.Read, policy => policy.RequireAuthenticatedUser());
+
+            // Everything is protected unless it says otherwise. The opposite
+            // default — open unless someone remembered an attribute — makes
+            // every new endpoint a chance to leak the library, and the mistake
+            // is invisible in review because it looks like nothing.
+            options.FallbackPolicy = new AuthorizationPolicyBuilder()
+                .RequireAuthenticatedUser()
+                .Build();
         });
 
         services.AddHttpContextAccessor();

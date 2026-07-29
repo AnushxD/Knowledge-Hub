@@ -165,6 +165,37 @@ public record LoginRequest
     public string Password { get; init; } = string.Empty;
 }
 
+/// <summary>An account as an administrator sees it on the users screen.</summary>
+/// <param name="HasPassword">
+/// False for an account that only signs in through Google. Shown because
+/// "cannot sign in" and "signs in another way" look identical otherwise.
+/// </param>
+public record AccountViewModel(
+    Guid Id,
+    string Name,
+    string Email,
+    string Role,
+    bool HasPassword,
+    bool IsLockedOut,
+    DateTimeOffset CreatedAt);
+
+/// <summary>A new account. The password is optional for a Google-only user.</summary>
+public record CreateAccountRequest
+{
+    public string Name { get; init; } = string.Empty;
+
+    public string Email { get; init; } = string.Empty;
+
+    public string Role { get; init; } = "Viewer";
+
+    public string? Password { get; init; }
+}
+
+public record ChangeRoleRequest
+{
+    public string Role { get; init; } = "Viewer";
+}
+
 // ---- knowledge sources ------------------------------------------------------
 
 /// <summary>One body of knowledge the assistant can ground an answer in.</summary>
