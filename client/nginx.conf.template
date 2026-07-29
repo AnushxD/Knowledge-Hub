@@ -1,0 +1,68 @@
+# Serves the built Angular app and forwards /api to the API.
+#
+# Same-origin on purpose: the session is an HttpOnly cookie, and putting the
+# client and the API on one origin means the browser sends it without CORS or
+# SameSite=None ever entering the picture. It is the deployed equivalent of the
+# dev server's proxy.
+#
+# ${API_ORIGIN} is substituted at container start by the nginx image's
+# entrypoint (see NGINX_ENVSUBST_FILTER in the Dockerfile/compose), so the same
+# image works against any API host.
+
+server {
+    listen       80;
+    server_name  _;
+
+    root  /usr/share/nginx/html;
+    index index.html;
+
+    # Angular fingerprints its build output, so those files are safe to cache
+    # forever — the filename changes whenever the contents do.
+    location ~* \.(?:js|css|woff2?|png|jpg|jpeg|gif|svg|ico)$ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+        try_files $uri =404;
+    }
+
+    # index.html is the one file that must never be cached: it names the
+    # fingerprinted bundles, so a stale copy pins users to an old build.
+    location = /index.html {
+        add_header Cache-Control "no-cache, no-store, must-revalidate";
+    }
+
+    location /api/ {
+        proxy_pass         ${API_ORIGIN};
+        proxy_http_version 1.1;
+
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        # Without this the API sees plain http behind a TLS terminator and
+        # would issue redirects and Secure cookies for the wrong scheme.
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # The assistant streams its answer as server-sent events. nginx buffers
+        # proxied responses by default, which would hold the whole answer and
+        # release it in one go — the stream still "works", it just stops being
+        # a stream, which is the entire point of the endpoint.
+        proxy_buffering off;
+        proxy_cache     off;
+
+        # A grounded answer from a local model takes tens of seconds. The
+        # default 60s read timeout would cut long answers off mid-sentence.
+        proxy_read_timeout 300s;
+        proxy_send_timeout 300s;
+    }
+
+    # Every other path is an Angular route, not a file. Without this fallback a
+    # reload on /browse or a pasted deep link into /docs/:id returns 404 from
+    # nginx before Angular ever loads.
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    # Uploads are capped at 25 MB by both the service and Kestrel; matching it
+    # here means an oversized file is refused at the edge with a clear 413
+    # rather than after being streamed all the way through.
+    client_max_body_size 25m;
+}

@@ -1,0 +1,70 @@
+# Runs the built application on top of the development infrastructure.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.app.yml up -d --build
+#
+# `docker-compose.yml` on its own stays what it has always been: the Postgres,
+# Azurite and Ollama that `dotnet run` and `ng serve` talk to. This file adds
+# the API and client as containers, for checking that the images actually work
+# together before a pipeline pushes them anywhere.
+#
+# Provisioning is still explicit. After the first `up`, run these once:
+#   docker compose -f docker-compose.yml -f docker-compose.app.yml run --rm api dotnet DocHub.Api.dll init-storage
+#   docker compose -f docker-compose.yml -f docker-compose.app.yml run --rm api dotnet DocHub.Api.dll seed-admin
+# and apply migrations from the repository with `dotnet ef database update`.
+services:
+  api:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    container_name: dochub-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      azurite:
+        condition: service_healthy
+    environment:
+      # Production, deliberately: this stack is here to exercise what ships.
+      # Swagger and the developer conveniences are absent as a result.
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_HTTP_PORTS: '8080'
+
+      # Service names, not localhost — inside the compose network each
+      # container's own localhost is itself.
+      Database__ConnectionString: 'Host=postgres;Port=5432;Database=dochub;Username=dochub;Password=dochub_local_dev'
+      FileStorage__ConnectionString: 'DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite:10000/devstoreaccount1;'
+      FileStorage__ContainerName: documents
+      Embeddings__BaseUrl: 'http://ollama:11434'
+      Llm__BaseUrl: 'http://ollama:11434'
+
+      # A throwaway password for a throwaway stack. Anywhere real this arrives
+      # as an environment variable from a secret store, and never from a file
+      # in the repository.
+      Authentication__SeedAdminPassword: 'dochub-local-dev-admin'
+
+      # The client is same-origin through nginx, so no cross-origin caller
+      # needs allowing. An empty list is the honest default.
+      Cors__AllowedOrigins__0: ''
+    ports:
+      # Exposed so the operator commands and /healthz can be reached directly;
+      # the browser goes through the client's nginx instead.
+      - '8080:8080'
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -q -O- http://localhost:8080/healthz/live || exit 1']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  client:
+    build:
+      context: .
+      dockerfile: client/Dockerfile
+    container_name: dochub-client
+    restart: unless-stopped
+    depends_on:
+      - api
+    environment:
+      API_ORIGIN: 'http://api:8080'
+    ports:
+      - '4300:80'

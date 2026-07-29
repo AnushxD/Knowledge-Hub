@@ -1,0 +1,38 @@
+# Build context for both images (they are built from the repository root, so
+# this one file governs each).
+#
+# Excluding build output is not only about size: a bin/ or node_modules/ copied
+# in from a developer's Mac would shadow what the image builds for linux and
+# produce an image that runs locally and nowhere else.
+
+**/bin/
+**/obj/
+**/node_modules/
+**/dist/
+**/.angular/
+
+.git/
+.github/
+.vscode/
+.claude/
+**/.DS_Store
+
+# Nothing in the images needs the docs or the local compose file.
+*.md
+docker-compose*.yml
+
+# Local overrides and anything secret-shaped. Real configuration reaches a
+# container through environment variables, never through a copied file.
+#
+# appsettings.Development.json is excluded deliberately: it is safe in the
+# repository because it only points at containers on one machine, but it also
+# carries the local seed-admin password, and a published image has no business
+# containing any credential at all.
+**/appsettings.Development.json
+**/appsettings.Development.json.local
+**/secrets.json
+**/.env
+**/*.env
+
+**/TestResults/
+**/publish/
