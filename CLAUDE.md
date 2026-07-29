@@ -1,4 +1,4 @@
-# CLAUDE.md — DocHub
+# CLAUDE.md — Document Hub
 
 Stable project knowledge: goals, stack, architecture, decisions, conventions and
 workflow. This file changes rarely.

@@ -1,8 +1,8 @@
-# DocHub client — built with Node, served by nginx. The runtime image contains
+# Document Hub client — built with Node, served by nginx. The runtime image contains
 # static files only; Node never ships.
 #
 # Build from the repository root:
-#   docker build -f client/Dockerfile -t dochub-client .
+#   docker build -f client/Dockerfile -t documenthub-client .
 
 FROM node:22-alpine AS build
 WORKDIR /src

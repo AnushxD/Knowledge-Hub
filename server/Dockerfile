@@ -1,8 +1,8 @@
-# DocHub API — multi-stage so the shipped image carries the runtime and the
+# Document Hub API — multi-stage so the shipped image carries the runtime and the
 # published output, never the SDK or the source.
 #
 # Build from the repository root, not from server/:
-#   docker build -f server/Dockerfile -t dochub-api .
+#   docker build -f server/Dockerfile -t documenthub-api .
 
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
@@ -46,7 +46,7 @@ COPY --from=build /app/publish .
 # Provisioning stays explicit — this image never migrates the database or
 # creates the blob container on boot. Those are operator commands run against
 # the same image:
-#   docker run --rm dochub-api dotnet DocHub.Api.dll init-storage
-#   docker run --rm dochub-api dotnet DocHub.Api.dll seed-admin
+#   docker run --rm documenthub-api dotnet DocHub.Api.dll init-storage
+#   docker run --rm documenthub-api dotnet DocHub.Api.dll seed-admin
 # and `dotnet ef database update` from the repository.
 ENTRYPOINT ["dotnet", "DocHub.Api.dll"]

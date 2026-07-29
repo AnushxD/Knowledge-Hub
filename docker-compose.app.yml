@@ -16,7 +16,7 @@ services:
     build:
       context: .
       dockerfile: server/Dockerfile
-    container_name: dochub-api
+    container_name: documenthub-api
     restart: unless-stopped
     depends_on:
       postgres:
@@ -31,7 +31,7 @@ services:
 
       # Service names, not localhost — inside the compose network each
       # container's own localhost is itself.
-      Database__ConnectionString: 'Host=postgres;Port=5432;Database=dochub;Username=dochub;Password=dochub_local_dev'
+      Database__ConnectionString: 'Host=postgres;Port=5432;Database=documenthub;Username=documenthub;Password=documenthub_local_dev'
       FileStorage__ConnectionString: 'DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite:10000/devstoreaccount1;'
       FileStorage__ContainerName: documents
       Embeddings__BaseUrl: 'http://ollama:11434'
@@ -40,7 +40,7 @@ services:
       # A throwaway password for a throwaway stack. Anywhere real this arrives
       # as an environment variable from a secret store, and never from a file
       # in the repository.
-      Authentication__SeedAdminPassword: 'dochub-local-dev-admin'
+      Authentication__SeedAdminPassword: 'documenthub-local-dev-admin'
 
       # The client is same-origin through nginx, so no cross-origin caller
       # needs allowing. An empty list is the honest default.
@@ -60,7 +60,7 @@ services:
     build:
       context: .
       dockerfile: client/Dockerfile
-    container_name: dochub-client
+    container_name: documenthub-client
     restart: unless-stopped
     depends_on:
       - api

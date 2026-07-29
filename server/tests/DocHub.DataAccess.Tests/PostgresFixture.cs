@@ -7,13 +7,13 @@ namespace DocHub.DataAccess.Tests;
 /// provider — materialised-path LIKE queries, text[] columns and the GIN index
 /// are exactly the things an in-memory provider would fail to catch.
 ///
-/// Uses a dedicated `dochub_test` database on the docker-compose instance, so
+/// Uses a dedicated `documenthub_test` database on the docker-compose instance, so
 /// tests never touch development data. Start it with `docker compose up -d`.
 /// </summary>
 public sealed class PostgresFixture : IAsyncLifetime
 {
     private const string DefaultConnection =
-        "Host=localhost;Port=5432;Database=dochub_test;Username=dochub;Password=dochub_local_dev";
+        "Host=localhost;Port=5432;Database=documenthub_test;Username=documenthub;Password=documenthub_local_dev";
 
     public string ConnectionString { get; } =
         Environment.GetEnvironmentVariable("DOCHUB_TEST_DB") ?? DefaultConnection;

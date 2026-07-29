@@ -1,4 +1,4 @@
-# DocHub — AI Documentation & Knowledge Hub
+# Document Hub — AI Documentation & Knowledge Hub
 
 An internal Documentation & Knowledge Hub: upload, organise and search team
 documentation, with an AI assistant that answers questions grounded strictly
@@ -148,7 +148,7 @@ dotnet run --project server/src/DocHub.Api -- seed-admin
 ```
 
 That applies `Authentication:SeedAdminPassword` from
-`appsettings.Development.json` (`dochub-local-dev-admin` by default) and exits.
+`appsettings.Development.json` (`documenthub-local-dev-admin` by default) and exits.
 Re-running it resets the password, which is also how to recover a forgotten
 local one. There is no self-registration — sign in as the administrator and
 create everyone else under **People**.
@@ -189,7 +189,7 @@ npm --prefix client start
 | Swagger UI — browse and call every endpoint | http://localhost:5080/swagger — development only |
 | Background jobs dashboard | http://localhost:5080/jobs — development only |
 | OpenAPI document | http://localhost:5080/openapi/v1.json |
-| Postgres | `localhost:5432` — db `dochub`, user `dochub`, password `dochub_local_dev` |
+| Postgres | `localhost:5432` — db `documenthub`, user `documenthub`, password `documenthub_local_dev` |
 | Azurite blob | `localhost:10000` |
 | Ollama | `localhost:11434` |
 
@@ -317,7 +317,7 @@ providers. Docker must be running.
 
 - **Data access** — materialised-path queries, `text[]` columns and the GIN
   index are exactly what an in-memory provider would fail to catch. Uses a
-  separate `dochub_test` database, created and dropped per run.
+  separate `documenthub_test` database, created and dropped per run.
 - **Integrations** — exercises the actual Azure SDK against Azurite, including
   the 404 behaviour the code depends on. Uses a throwaway blob container per
   run.
@@ -628,7 +628,7 @@ The second command should list `AspNetCoreModuleV2`.
 
 #### 2. Deploy the infrastructure as a Portainer stack
 
-In Portainer: **Stacks → Add stack**, name it `dochub`, and paste the contents of
+In Portainer: **Stacks → Add stack**, name it `documenthub`, and paste the contents of
 the repository's `docker-compose.yml` into the web editor. Then **Deploy the
 stack**.
 
@@ -679,7 +679,7 @@ where any process on the box could read them.
 
 ```powershell
 $appcmd = "C:\Windows\System32\inetsrv\appcmd.exe"
-& $appcmd add apppool /name:DocHub /managedRuntimeVersion:""
+& $appcmd add apppool /name:DocumentHub /managedRuntimeVersion:""
 ```
 
 `managedRuntimeVersion:""` means **No Managed Code** — the .NET runtime lives in
@@ -688,17 +688,17 @@ the published app, not in IIS.
 ```powershell
 function Set-PoolEnv($name, $value) {
   & $appcmd set config -section:system.applicationHost/applicationPools `
-    "/+[name='DocHub'].environmentVariables.[name='$name',value='$value']" /commit:apphost
+    "/+[name='DocumentHub'].environmentVariables.[name='$name',value='$value']" /commit:apphost
 }
 
 ```powershell
 Set-PoolEnv "ASPNETCORE_ENVIRONMENT"        "Production"
-Set-PoolEnv "Database__ConnectionString"    "Host=localhost;Port=5432;Database=dochub;Username=dochub;Password=<the password you set in step 2>"
+Set-PoolEnv "Database__ConnectionString"    "Host=localhost;Port=5432;Database=documenthub;Username=documenthub;Password=<the password you set in step 2>"
 Set-PoolEnv "FileStorage__ConnectionString" "UseDevelopmentStorage=true"
 Set-PoolEnv "FileStorage__ContainerName"    "documents"
 Set-PoolEnv "Embeddings__BaseUrl"           "http://localhost:11434"
 Set-PoolEnv "Llm__BaseUrl"                  "http://localhost:11434"
-Set-PoolEnv "Authentication__KeyPath"       "C:\inetpub\dochub-keys"
+Set-PoolEnv "Authentication__KeyPath"       "C:\inetpub\documenthub-keys"
 ```
 
 `Authentication__KeyPath` is where the keys that encrypt the session cookie are
@@ -748,7 +748,7 @@ Without it — preferable on a server — generate an idempotent script on a
 development machine:
 
 ```bash
-dotnet ef migrations script --idempotent --project server/src/DocHub.DataAccess --startup-project server/src/DocHub.Api --output dochub-schema.sql
+dotnet ef migrations script --idempotent --project server/src/DocHub.DataAccess --startup-project server/src/DocHub.Api --output documenthub-schema.sql
 ```
 
 The script is safe to re-run and applies only the migrations that are missing.
@@ -758,16 +758,16 @@ Portainer gives you no `docker compose exec`, so apply it one of these ways:
   route if you have the client installed:
 
   ```powershell
-  psql -h localhost -p 5432 -U dochub -d dochub -f dochub-schema.sql
+  psql -h localhost -p 5432 -U documenthub -d documenthub -f documenthub-schema.sql
   ```
 - **Through Portainer**, with no client to install — open the `postgres`
-  container, **Console → Connect** (`/bin/sh`), run `psql -U dochub -d dochub`,
+  container, **Console → Connect** (`/bin/sh`), run `psql -U documenthub -d documenthub`,
   and paste the script in. Fine once; awkward for a long script.
 
 #### 5. Deploy the site
 
 Get the artefact from the **Publish (IIS artefact)** workflow in GitHub Actions
-and download `dochub-iis-*`. It is the published API with the built Angular app
+and download `documenthub-iis-*`. It is the published API with the built Angular app
 already inside `wwwroot` — compiled output only, which is why this machine needs
 no build tooling.
 
@@ -780,18 +780,18 @@ dotnet publish server/src/DocHub.Api/DocHub.Api.csproj -c Release -r win-x64 --s
 mkdir -p publish/wwwroot && cp -r client/dist/client/browser/. publish/wwwroot/
 ```
 
-Extract to `C:\inetpub\dochub`, then:
+Extract to `C:\inetpub\documenthub`, then:
 
 ```powershell
-& $appcmd add site /name:DocHub /physicalPath:"C:\inetpub\dochub" /bindings:"http/*:8080:"
-& $appcmd set app "DocHub/" /applicationPool:DocHub
+& $appcmd add site /name:DocumentHub /physicalPath:"C:\inetpub\documenthub" /bindings:"http/*:8080:"
+& $appcmd set app "DocumentHub/" /applicationPool:DocumentHub
 ```
 
 **Load the user profile — do not skip this:**
 
 ```powershell
 & $appcmd set config -section:system.applicationHost/applicationPools `
-  "/[name='DocHub'].processModel.loadUserProfile:true" /commit:apphost
+  "/[name='DocumentHub'].processModel.loadUserProfile:true" /commit:apphost
 ```
 
 ASP.NET Core encrypts the session cookie with Data Protection keys. With no user
@@ -802,12 +802,12 @@ configuration problem.
 Permissions — read and execute on the folder, write only to `logs\`:
 
 ```powershell
-icacls "C:\inetpub\dochub" /grant "IIS AppPool\DocHub:(OI)(CI)RX"
-icacls "C:\inetpub\dochub\logs" /grant "IIS AppPool\DocHub:(OI)(CI)M"
+icacls "C:\inetpub\documenthub" /grant "IIS AppPool\DocumentHub:(OI)(CI)RX"
+icacls "C:\inetpub\documenthub\logs" /grant "IIS AppPool\DocumentHub:(OI)(CI)M"
 
 # The Data Protection keys from step 3 — the pool has to be able to write here.
-New-Item -ItemType Directory -Force -Path "C:\inetpub\dochub-keys" | Out-Null
-icacls "C:\inetpub\dochub-keys" /grant "IIS AppPool\DocHub:(OI)(CI)M"
+New-Item -ItemType Directory -Force -Path "C:\inetpub\documenthub-keys" | Out-Null
+icacls "C:\inetpub\documenthub-keys" /grant "IIS AppPool\DocumentHub:(OI)(CI)M"
 ```
 
 The key folder sits **outside** the site directory on purpose: replacing the
@@ -820,10 +820,10 @@ environment variables do **not** reach a command prompt, so set what they need
 in the shell first:
 
 ```powershell
-cd C:\inetpub\dochub
+cd C:\inetpub\documenthub
 # Pool variables do not reach a command prompt, so repeat the two these need.
 $env:ASPNETCORE_ENVIRONMENT = "Production"
-$env:Database__ConnectionString = "Host=localhost;Port=5432;Database=dochub;Username=dochub;Password=<the password you set in step 2>"
+$env:Database__ConnectionString = "Host=localhost;Port=5432;Database=documenthub;Username=documenthub;Password=<the password you set in step 2>"
 $env:FileStorage__ConnectionString = "UseDevelopmentStorage=true"
 
 .\DocHub.Api.exe init-storage
@@ -843,7 +843,7 @@ Close the shell afterwards.
 #### 7. Start and verify
 
 ```powershell
-& $appcmd start site /site.name:DocHub
+& $appcmd start site /site.name:DocumentHub
 ```
 
 In order:
@@ -860,7 +860,7 @@ In order:
 Open it to the network:
 
 ```powershell
-New-NetFirewallRule -DisplayName "DocHub" -Direction Inbound -LocalPort 8080 -Protocol TCP -Action Allow
+New-NetFirewallRule -DisplayName "Document Hub" -Direction Inbound -LocalPort 8080 -Protocol TCP -Action Allow
 ```
 
 For HTTPS, add a binding with the org certificate. The session cookie is
@@ -1098,7 +1098,7 @@ offender with `lsof -ti:5080` and stop it, or change the port in
 in `appsettings.Development.json` if you move the client).
 
 **Tests fail to connect** — they need Docker running, same as the app. They
-create and drop the `dochub_test` database themselves.
+create and drop the `documenthub_test` database themselves.
 
 **Client build fails after pulling** — dependencies changed; run
 `npm --prefix client install` again.

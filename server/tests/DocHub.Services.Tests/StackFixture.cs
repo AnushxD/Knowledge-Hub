@@ -32,7 +32,7 @@ namespace DocHub.Services.Tests;
 public sealed class StackFixture : IAsyncLifetime
 {
     private const string DefaultDb =
-        "Host=localhost;Port=5432;Database=dochub_services_test;Username=dochub;Password=dochub_local_dev";
+        "Host=localhost;Port=5432;Database=documenthub_services_test;Username=documenthub;Password=documenthub_local_dev";
 
     private readonly string _containerName = $"svc-{Guid.NewGuid():N}";
 

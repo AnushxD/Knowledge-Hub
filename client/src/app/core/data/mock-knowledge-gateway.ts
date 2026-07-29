@@ -974,7 +974,7 @@ export class MockKnowledgeGateway extends KnowledgeGateway {
   private readonly mockUser: SignedInUser = {
     id: 'u1',
     name: 'Ana Ruiz',
-    email: 'ana@dochub.local',
+    email: 'ana@documenthub.local',
     initials: 'AR',
     role: 'Admin',
   };
@@ -982,7 +982,7 @@ export class MockKnowledgeGateway extends KnowledgeGateway {
   private readonly mockAccounts: Account[] = PEOPLE.map((person, index) => ({
     id: person.id,
     name: person.name,
-    email: `${person.name.split(' ')[0].toLowerCase()}@dochub.local`,
+    email: `${person.name.split(' ')[0].toLowerCase()}@documenthub.local`,
     role: (index === 0 ? 'Admin' : index < 3 ? 'Editor' : 'Viewer') as UserRole,
     hasPassword: index !== 4,
     isLockedOut: false,

@@ -75,6 +75,6 @@ jobs:
       - name: Upload the artefact
         uses: actions/upload-artifact@v4
         with:
-          name: dochub-iis-${{ github.sha }}
+          name: documenthub-iis-${{ github.sha }}
           path: publish
           if-no-files-found: error

@@ -79,7 +79,7 @@ builder.Services.AddOpenApi(options =>
     {
         document.Info = new()
         {
-            Title = "DocHub API",
+            Title = "Document Hub API",
             Version = "v1",
             Description =
                 "Documentation & Knowledge Hub — folders, documents, ingestion and "
@@ -175,8 +175,8 @@ if (app.Environment.IsDevelopment())
     // admin gate above even there.
     app.UseSwaggerUI(swagger =>
     {
-        swagger.SwaggerEndpoint("/openapi/v1.json", "DocHub API v1");
-        swagger.DocumentTitle = "DocHub API";
+        swagger.SwaggerEndpoint("/openapi/v1.json", "Document Hub API v1");
+        swagger.DocumentTitle = "Document Hub API";
         // Collapsed by default; the endpoint list is long enough that expanded
         // models bury it.
         swagger.DocExpansion(DocExpansion.List);
