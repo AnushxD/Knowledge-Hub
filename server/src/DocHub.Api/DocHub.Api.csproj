@@ -27,6 +27,15 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Kept out of the publish output. It is safe in the repository because it
+         only points at containers on one machine, but it also carries the local
+         seed-admin password — and a deployable artefact has no business
+         containing a credential at all. Still copied for `dotnet run`, which
+         reads it from the project directory. -->
+    <Content Update="appsettings.Development.json" CopyToPublishDirectory="Never" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\DocHub.Services\DocHub.Services.csproj" />
     <ProjectReference Include="..\DocHub.DataAccess\DocHub.DataAccess.csproj" />
     <ProjectReference Include="..\DocHub.Integrations\DocHub.Integrations.csproj" />

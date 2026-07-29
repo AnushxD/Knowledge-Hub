@@ -1,0 +1,80 @@
+name: Publish (IIS artefact)
+
+# Deliberately not on every push. This produces the thing an operator copies
+# onto the Windows box, and a deployable build should be something someone
+# asked for rather than a side effect of merging.
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'ASPNETCORE_ENVIRONMENT baked into web.config'
+        required: false
+        default: 'Production'
+  push:
+    tags: ['v*']
+
+env:
+  DOTNET_VERSION: '10.0.x'
+  NODE_VERSION: '22'
+  DOTNET_NOLOGO: 'true'
+  DOTNET_CLI_TELEMETRY_OPTOUT: 'true'
+
+jobs:
+  publish:
+    name: Publish for IIS
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+
+      - name: Build the client
+        working-directory: client
+        run: |
+          npm ci
+          npm run build
+
+      # win-x64 because the target is IIS on Windows. Framework-dependent: the
+      # box has the hosting bundle installed, which is also what registers
+      # AspNetCoreModuleV2, so bundling a runtime would only duplicate it.
+      - name: Publish the API
+        run: >
+          dotnet publish server/src/DocHub.Api/DocHub.Api.csproj
+          --configuration Release
+          --runtime win-x64
+          --self-contained false
+          --output publish
+
+      # The API serves these when they are present, which is what makes the IIS
+      # deployment a single site with no reverse proxy in front of it.
+      - name: Copy the client into wwwroot
+        run: |
+          mkdir -p publish/wwwroot
+          cp -r client/dist/client/browser/. publish/wwwroot/
+
+      # A published folder must never carry developer configuration. This is a
+      # check rather than a deletion: if one appears, something upstream changed
+      # and quietly removing it would hide that.
+      - name: Assert no developer settings were published
+        run: |
+          if ls publish/appsettings.Development.json 2>/dev/null; then
+            echo "appsettings.Development.json was published — it carries the local seed password."
+            exit 1
+          fi
+          echo "No developer settings in the artefact."
+
+      - name: Upload the artefact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dochub-iis-${{ github.sha }}
+          path: publish
+          if-no-files-found: error

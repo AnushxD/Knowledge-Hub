@@ -128,6 +128,28 @@ if (args.Contains("seed-admin"))
 
 app.UseExceptionHandler();
 
+// Serves the built Angular app when it has been published into wwwroot.
+//
+// This is how the IIS deployment works: one site, one application pool, the
+// client and the API on a single origin. The alternative on IIS is a second
+// site plus Application Request Routing to proxy /api across, which is another
+// component to install and keep configured on the org's Windows box — and a
+// cross-origin session cookie to get right for no benefit.
+//
+// It is deliberately conditional. In the container deployment nginx serves the
+// client and this directory is empty, so the block does nothing and the two
+// arrangements share one binary.
+//
+// Placed before authentication: the bundle is the sign-in screen, so it has to
+// be reachable by someone who is not signed in yet.
+var clientRoot = app.Environment.WebRootPath;
+
+if (!string.IsNullOrEmpty(clientRoot) && File.Exists(Path.Combine(clientRoot, "index.html")))
+{
+    app.UseDefaultFiles();
+    app.UseStaticFiles();
+}
+
 // Order matters: who you are, then what you may do, then the endpoint.
 app.UseAuthentication();
 app.UseAuthorization();
@@ -182,6 +204,18 @@ app.UseHangfireDashboard("/jobs", new DashboardOptions
 });
 
 app.MapControllers();
+
+// Angular owns every path the API does not. Without this a reload on /browse,
+// or a citation link pasted into /docs/:id, would 404 before the app ever
+// loads — the same job nginx's try_files does in the container image.
+//
+// Anonymous, and it must be: this fallback *is* the login screen, and a
+// fallback policy that demanded a session would 401 the page whose whole
+// purpose is to obtain one.
+if (!string.IsNullOrEmpty(clientRoot) && File.Exists(Path.Combine(clientRoot, "index.html")))
+{
+    app.MapFallbackToFile("index.html").AllowAnonymous();
+}
 
 // Liveness: is the process up at all. Deliberately checks nothing external, so
 // an orchestrator does not restart the app just because Postgres blipped.
