@@ -283,6 +283,8 @@ public sealed class KnowledgeSourceTests(StackFixture fixture)
         var folder = await scope.Folders.CreateAsync(new CreateFolderRequest(null, Unique("Bare")));
 
         var answer = new System.Text.StringBuilder();
+        var completed = default(ChatEvent.Completed);
+
         await foreach (var @event in scope.Chat.AskAsync(new AskRequest
         {
             Question = "How do I restart the ingestion worker?",
@@ -290,6 +292,7 @@ public sealed class KnowledgeSourceTests(StackFixture fixture)
         }))
         {
             if (@event is ChatEvent.Token token) answer.Append(token.Text);
+            if (@event is ChatEvent.Completed done) completed = done;
         }
 
         // Still a refusal — with nothing retrieved the model is never called —
@@ -297,7 +300,13 @@ public sealed class KnowledgeSourceTests(StackFixture fixture)
         // rather than being told it does not exist.
         Assert.Equal(0, scope.Llm.CallCount);
         Assert.Contains("don't have information", answer.ToString());
-        Assert.Contains("could not be searched", answer.ToString());
+        Assert.Contains("was not reached", answer.ToString());
+
+        // Which source, and why, rides on the message rather than being spliced
+        // into the prose — so the UI renders it once and it survives a reload.
+        Assert.NotNull(completed);
+        var degradation = Assert.Single(completed.Degradations);
+        Assert.Contains("could not be searched", degradation);
     }
 
     [Fact]

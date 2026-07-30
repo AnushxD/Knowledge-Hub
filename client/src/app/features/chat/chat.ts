@@ -23,6 +23,8 @@ interface Turn {
   content: string;
   citations: Citation[];
   isRefusal: boolean;
+  /** Sources that could not be searched for this answer. Usually empty. */
+  degradations: string[];
   /** True while tokens are still arriving for this turn. */
   streaming: boolean;
 }
@@ -56,11 +58,6 @@ export class ChatPage {
    */
   protected readonly pendingSources = signal<Citation[]>([]);
 
-  /**
-   * The retrieved sources collapsed to one chip per document. Retrieval often
-   * returns several passages from the same file, and repeating its name four
-   * times says less than naming four different documents would.
-   */
   /**
    * One chip per source being read, not one per passage.
    *
@@ -139,6 +136,7 @@ export class ChatPage {
         content: question,
         citations: [],
         isRefusal: false,
+        degradations: [],
         streaming: false,
       },
       {
@@ -147,6 +145,7 @@ export class ChatPage {
         content: '',
         citations: [],
         isRefusal: false,
+        degradations: [],
         streaming: true,
       },
     ]);
@@ -169,7 +168,12 @@ export class ChatPage {
             break;
 
           case 'done':
-            this.completePending(event.citations, event.isRefusal, event.messageId);
+            this.completePending(
+              event.citations,
+              event.isRefusal,
+              event.messageId,
+              event.degradations ?? [],
+            );
             break;
 
           case 'error':
@@ -247,10 +251,17 @@ export class ChatPage {
     this.scrollToEnd();
   }
 
-  private completePending(citations: Citation[], isRefusal: boolean, messageId: string): void {
+  private completePending(
+    citations: Citation[],
+    isRefusal: boolean,
+    messageId: string,
+    degradations: string[],
+  ): void {
     this.turns.update((turns) =>
       turns.map((turn) =>
-        turn.streaming ? { ...turn, id: messageId, citations, isRefusal, streaming: false } : turn,
+        turn.streaming
+          ? { ...turn, id: messageId, citations, isRefusal, degradations, streaming: false }
+          : turn,
       ),
     );
     this.pendingSources.set([]);
@@ -292,6 +303,7 @@ function toTurn(message: ChatMessage): Turn {
     content: message.content,
     citations: message.citations,
     isRefusal: message.isRefusal,
+    degradations: message.degradations ?? [],
     streaming: false,
   };
 }

@@ -613,6 +613,24 @@ BEGIN
 END $EF$;
 COMMIT;
 
+START TRANSACTION;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM __ef_migrations_history WHERE "MigrationId" = '20260730193518_MessageDegradations') THEN
+    ALTER TABLE chat_messages ADD "Degradations" jsonb NOT NULL DEFAULT ('[]'::jsonb);
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM __ef_migrations_history WHERE "MigrationId" = '20260730193518_MessageDegradations') THEN
+    INSERT INTO __ef_migrations_history ("MigrationId", "ProductVersion")
+    VALUES ('20260730193518_MessageDegradations', '10.0.10');
+    END IF;
+END $EF$;
+COMMIT;
+
 
 -- Default administrator for a fresh deployment.
 --

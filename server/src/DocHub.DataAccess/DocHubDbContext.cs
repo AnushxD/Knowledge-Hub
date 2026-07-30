@@ -309,6 +309,16 @@ public sealed class DocHubDbContext(DbContextOptions<DocHubDbContext> options)
 
             entity.Property(message => message.Citations).HasColumnType("jsonb");
 
+            // Same jsonb treatment as citations, and for the same reason: read
+            // whole with the message, never queried across.
+            entity.Property(message => message.Degradations)
+                .HasConversion(DegradationsConverter)
+                .Metadata.SetValueComparer(DegradationsComparer);
+
+            entity.Property(message => message.Degradations)
+                .HasColumnType("jsonb")
+                .HasDefaultValueSql("'[]'::jsonb");
+
             entity.HasOne(message => message.Session)
                 .WithMany(session => session.Messages)
                 .HasForeignKey(message => message.SessionId)
@@ -337,6 +347,19 @@ public sealed class DocHubDbContext(DbContextOptions<DocHubDbContext> options)
             citations => JsonSerializer.Serialize(citations, CitationJson),
             json => JsonSerializer.Deserialize<List<Citation>>(json, CitationJson)
                 ?? new List<Citation>());
+
+    private static readonly ValueConverter<IReadOnlyList<string>, string> DegradationsConverter =
+        new(
+            degradations => JsonSerializer.Serialize(degradations, CitationJson),
+            json => JsonSerializer.Deserialize<List<string>>(json, CitationJson)
+                ?? new List<string>());
+
+    private static readonly ValueComparer<IReadOnlyList<string>> DegradationsComparer =
+        new(
+            (left, right) => left!.SequenceEqual(right!),
+            degradations => degradations.Aggregate(
+                0, (hash, entry) => HashCode.Combine(hash, entry.GetHashCode())),
+            degradations => degradations.ToList());
 
     /// <summary>
     /// Without this EF compares the list by reference and never notices an

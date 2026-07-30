@@ -95,6 +95,19 @@ public class ChatMessage
     public IReadOnlyList<Citation> Citations { get; set; } = [];
 
     /// <summary>
+    /// Knowledge sources that could not be searched for this answer, each as one
+    /// sentence naming what was missed.
+    ///
+    /// Persisted rather than reported live and forgotten. An answer given while
+    /// the repository source was unreachable was grounded in less than usual,
+    /// and that is a property of the answer — reopening the conversation
+    /// tomorrow should still say so, exactly as it still shows what was cited.
+    ///
+    /// Empty is the normal case and means every source answered.
+    /// </summary>
+    public IReadOnlyList<string> Degradations { get; set; } = [];
+
+    /// <summary>
     /// True when the assistant declined because retrieval found nothing to
     /// ground an answer in.
     ///

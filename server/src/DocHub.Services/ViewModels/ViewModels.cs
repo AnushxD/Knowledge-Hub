@@ -295,13 +295,19 @@ public record ChatSessionViewModel(
 /// this very differently from an answer — it is a designed outcome, not a
 /// failure.
 /// </param>
+/// <param name="Degradations">
+/// Sources that could not be searched when this answer was given. Persisted
+/// with the message, so reopening the conversation still says the grounding was
+/// thinner than usual.
+/// </param>
 public record ChatMessageViewModel(
     Guid Id,
     string Role,
     string Content,
     IReadOnlyList<CitationViewModel> Citations,
     bool IsRefusal,
-    DateTimeOffset CreatedAt);
+    DateTimeOffset CreatedAt,
+    IReadOnlyList<string> Degradations);
 
 public record ChatTranscriptViewModel(
     ChatSessionViewModel Session,

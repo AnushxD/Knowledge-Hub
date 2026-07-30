@@ -27,10 +27,19 @@ public abstract record ChatEvent
     public sealed record Token(string Text) : ChatEvent;
 
     /// <summary>The finished, persisted answer with its verified citations.</summary>
+    /// <param name="Degradations">
+    /// Sources that could not be searched for this answer, each one sentence.
+    ///
+    /// Carried on the answer rather than logged and forgotten: a source that
+    /// failed is left out of one answer and has to be *named* in it, or a
+    /// thinner answer is indistinguishable from a complete one. Empty is the
+    /// normal case.
+    /// </param>
     public sealed record Completed(
         Guid MessageId,
         IReadOnlyList<CitationViewModel> Citations,
-        bool IsRefusal) : ChatEvent;
+        bool IsRefusal,
+        IReadOnlyList<string> Degradations) : ChatEvent;
 
     /// <summary>Generation failed. Distinct from a refusal, which is a valid answer.</summary>
     public sealed record Failed(string Reason) : ChatEvent;

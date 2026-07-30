@@ -90,6 +90,7 @@ public sealed class ChatController(IChatService chat) : ControllerBase
                     messageId = completed.MessageId,
                     citations = completed.Citations,
                     isRefusal = completed.IsRefusal,
+                    degradations = completed.Degradations,
                 }),
             ChatEvent.Failed failed =>
                 ("error", new { reason = failed.Reason }),

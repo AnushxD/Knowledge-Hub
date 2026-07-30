@@ -143,9 +143,42 @@
                     "
                   >
                     <i class="pi pi-info-circle mt-px text-[12px] text-subtle"></i>
-                    <p class="text-[13px] leading-relaxed text-muted">{{ turn.content }}</p>
+                    <div class="min-w-0">
+                      <p class="text-[13px] leading-relaxed text-muted">{{ turn.content }}</p>
+                      <!-- Which source was missed. The refusal text says only
+                           that something was, because repeating the specifics
+                           in prose and again here would say it twice. -->
+                      @for (degradation of turn.degradations; track degradation) {
+                        <p class="mt-1 text-[12px] leading-relaxed text-subtle">{{ degradation }}</p>
+                      }
+                    </div>
                   </div>
                 } @else {
+                  <!-- Placed above the answer, not below it: that a source was
+                       missing changes how the answer should be read, so it has
+                       to arrive before the answer rather than as a footnote. -->
+                  @if (!turn.streaming && turn.degradations.length) {
+                    <div
+                      class="mb-2.5 flex items-start gap-2.5 rounded-dh border px-3.5 py-2.5"
+                      style="
+                        border-color: color-mix(in oklab, var(--dh-status-failed) 28%, transparent);
+                        background: color-mix(in oklab, var(--dh-status-failed) 8%, transparent);
+                      "
+                    >
+                      <i class="pi pi-exclamation-triangle mt-px text-[12px] text-status-failed"></i>
+                      <div class="min-w-0">
+                        <p class="text-[12.5px] font-medium text-ink">
+                          Answered on less than the usual sources
+                        </p>
+                        @for (degradation of turn.degradations; track degradation) {
+                          <p class="mt-0.5 text-[12px] leading-relaxed text-muted">
+                            {{ degradation }}
+                          </p>
+                        }
+                      </div>
+                    </div>
+                  }
+
                   <dh-citation-text
                     [content]="turn.content"
                     [citations]="turn.citations"

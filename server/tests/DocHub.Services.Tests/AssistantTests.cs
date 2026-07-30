@@ -1,3 +1,4 @@
+using DocHub.Integrations.Knowledge;
 using DocHub.Services.Chat;
 using DocHub.Services.ViewModels;
 
@@ -78,6 +79,83 @@ public sealed class AssistantTests(StackFixture fixture)
         var completed = Assert.IsType<ChatEvent.Completed>(events[^1]);
         Assert.False(completed.IsRefusal);
         Assert.Single(completed.Citations);
+    }
+
+    [Fact]
+    public async Task An_answer_given_without_a_source_names_the_one_that_was_missed()
+    {
+        // A second source that is configured and simply cannot be reached —
+        // what an unreachable MCP server looks like from here.
+        var broken = new UnreachableSource();
+
+        await using var scope = fixture.NewScope(broken);
+        var folderId = await IndexAsync(scope, VpnGuide, "degraded");
+
+        scope.Llm.Answer = "Connect through the company VPN [1].";
+
+        var (events, _) = await AskAsync(scope, new AskRequest
+        {
+            Question = "How do I reach internal systems?",
+            FolderId = folderId,
+        });
+
+        var completed = Assert.IsType<ChatEvent.Completed>(events[^1]);
+
+        // The documents still answered — one source failing must not lose an
+        // answer the others could give.
+        Assert.False(completed.IsRefusal);
+        Assert.NotEmpty(completed.Citations);
+
+        // And the reader is told it was answered on less than usual. Without
+        // this a thinner answer is indistinguishable from a complete one.
+        var degradation = Assert.Single(completed.Degradations);
+        Assert.Contains("could not be searched", degradation);
+
+        // Persisted, not just streamed: reopening the conversation tomorrow has
+        // to say the same thing, exactly as it still shows what was cited.
+        var transcript = await scope.Chat.GetTranscriptAsync(
+            Assert.IsType<ChatEvent.SessionOpened>(events[0]).SessionId);
+
+        var answer = transcript.Messages.Last(message => message.Role == "assistant");
+        Assert.Equal(completed.Degradations, answer.Degradations);
+    }
+
+    [Fact]
+    public async Task An_answer_from_healthy_sources_reports_no_degradation()
+    {
+        await using var scope = fixture.NewScope();
+        var folderId = await IndexAsync(scope, VpnGuide, "healthy");
+
+        scope.Llm.Answer = "Connect through the company VPN [1].";
+
+        var (events, _) = await AskAsync(scope, new AskRequest
+        {
+            Question = "How do I reach internal systems?",
+            FolderId = folderId,
+        });
+
+        // The warning has to be absent when nothing went wrong, or it stops
+        // meaning anything when it does appear.
+        Assert.Empty(Assert.IsType<ChatEvent.Completed>(events[^1]).Degradations);
+    }
+
+    /// <summary>A source that is configured but cannot be reached.</summary>
+    private sealed class UnreachableSource : IKnowledgeSource
+    {
+        public string Name => "repositories";
+
+        public string DisplayName => "Repositories";
+
+        public string Description => "A source that exists only inside this test.";
+
+        public Task<KnowledgeSourceStatus> CheckStatusAsync(CancellationToken ct = default) =>
+            Task.FromResult(new KnowledgeSourceStatus(
+                KnowledgeSourceState.Unavailable, "Scripted failure."));
+
+        public Task<KnowledgeSearchResult> SearchAsync(
+            KnowledgeQuery query,
+            CancellationToken ct = default) =>
+            throw new HttpRequestException("connection refused");
     }
 
     [Fact]

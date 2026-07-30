@@ -131,6 +131,10 @@ public record ChatSessionDto(
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt);
 
+/// <param name="Degradations">
+/// Sources that could not be searched for this answer. Empty when every source
+/// answered.
+/// </param>
 public record ChatMessageDto(
     Guid Id,
     Guid SessionId,
@@ -138,7 +142,8 @@ public record ChatMessageDto(
     string Content,
     IReadOnlyList<Citation> Citations,
     bool IsRefusal,
-    DateTimeOffset CreatedAt);
+    DateTimeOffset CreatedAt,
+    IReadOnlyList<string> Degradations);
 
 /// <summary>A session together with its whole transcript.</summary>
 public record ChatTranscriptDto(
@@ -152,6 +157,9 @@ public record NewChatMessageDto
     public required string Content { get; init; }
     public IReadOnlyList<Citation> Citations { get; init; } = [];
     public bool IsRefusal { get; init; }
+
+    /// <summary>Sources that could not be searched for this answer.</summary>
+    public IReadOnlyList<string> Degradations { get; init; } = [];
 }
 
 /// <summary>One chunk ready to be persisted, as produced by the ingestion pipeline.</summary>

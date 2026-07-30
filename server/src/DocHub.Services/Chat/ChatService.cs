@@ -95,10 +95,12 @@ internal sealed class ChatService(
         // precisely the situation that produces confident fabrication.
         if (passages.Count == 0)
         {
-            var refusal = await SaveRefusalAsync(sessionId, NoSourcesMessage(retrieval), ct);
+            var refusal = await SaveRefusalAsync(
+                sessionId, NoSourcesMessage(retrieval), retrieval.Degradations, ct);
 
             yield return new ChatEvent.Token(refusal.Content);
-            yield return new ChatEvent.Completed(refusal.Id, [], IsRefusal: true);
+            yield return new ChatEvent.Completed(
+                refusal.Id, [], IsRefusal: true, retrieval.Degradations);
             yield break;
         }
 
@@ -165,6 +167,10 @@ internal sealed class ChatService(
                 Content = cleaned,
                 Citations = citations,
                 IsRefusal = isRefusal,
+                // The answer stood, but on less than the usual grounding. Saying
+                // so is the difference between a thin answer and a thin answer
+                // the reader knows to treat as thin.
+                Degradations = retrieval.Degradations,
             },
             ct)
             ?? throw new NotFoundException("Chat session", sessionId);
@@ -177,7 +183,8 @@ internal sealed class ChatService(
         yield return new ChatEvent.Completed(
             saved.Id,
             [.. citations.Select(ToViewModel)],
-            isRefusal);
+            isRefusal,
+            retrieval.Degradations);
     }
 
     public async Task<IReadOnlyList<ChatSessionViewModel>> ListSessionsAsync(
@@ -288,6 +295,7 @@ internal sealed class ChatService(
     private async Task<ChatMessageDto> SaveRefusalAsync(
         Guid sessionId,
         string content,
+        IReadOnlyList<string> degradations,
         CancellationToken ct) =>
         await sessions.AppendMessageAsync(
             sessionId,
@@ -296,6 +304,7 @@ internal sealed class ChatService(
                 Role = ChatRole.Assistant,
                 Content = content,
                 IsRefusal = true,
+                Degradations = degradations,
             },
             ct)
             ?? throw new NotFoundException("Chat session", sessionId);
@@ -307,10 +316,11 @@ internal sealed class ChatService(
     /// </summary>
     private static string NoSourcesMessage(GroundingResult retrieval) =>
         retrieval.Degradations.Count > 0
+            // The specifics are carried structurally on the message and rendered
+            // once, so they are not repeated in the prose here.
             ? GroundedPrompt.RefusalPhrase
                 + " Not everything could be searched for this question, so the answer may "
-                + "exist somewhere that was not reached. "
-                + string.Join(" ", retrieval.Degradations)
+                + "exist somewhere that was not reached."
             : GroundedPrompt.RefusalPhrase
                 + " Nothing in the indexed documents matched this question. Only documents "
                 + "that finished ingestion are searchable.";
@@ -350,5 +360,6 @@ internal sealed class ChatService(
             message.Content,
             [.. message.Citations.Select(ToViewModel)],
             message.IsRefusal,
-            message.CreatedAt);
+            message.CreatedAt,
+            message.Degradations);
 }

@@ -233,6 +233,14 @@ export interface ChatMessage {
    * unanswerable question, not an error.
    */
   isRefusal: boolean;
+  /**
+   * Sources that could not be searched when this answer was given, each one
+   * sentence. Empty is the normal case.
+   *
+   * Persisted with the message rather than shown once and lost, so reopening
+   * the conversation still says the grounding was thinner than usual.
+   */
+  degradations?: string[];
   createdAt: string;
 }
 
@@ -249,7 +257,13 @@ export type ChatEvent =
   | { type: 'session'; sessionId: string; title: string }
   | { type: 'sources'; sources: Citation[] }
   | { type: 'token'; text: string }
-  | { type: 'done'; messageId: string; citations: Citation[]; isRefusal: boolean }
+  | {
+      type: 'done';
+      messageId: string;
+      citations: Citation[];
+      isRefusal: boolean;
+      degradations?: string[];
+    }
   | { type: 'error'; reason: string };
 
 export interface AskRequest {
