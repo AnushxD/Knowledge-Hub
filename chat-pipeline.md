@@ -91,7 +91,7 @@ sequenceDiagram
         end
         Note over S: verify [n] markers,<br/>strip unresolvable ones
         S->>PG: append answer + jsonb citations
-        S-->>C: Completed(verified citations)
+        S-->>C: Completed(citations + degradations)
         C-->>B: event: done
     end
 ```
@@ -249,7 +249,7 @@ flowchart TD
     A["KnowledgeQuery(text, folderId, Take=6)"] --> B["Task.WhenAll over every registered source"]
 
     B --> C1["Documents source"]
-    B --> C2["Repository source<br/>(inactive stub until phase 7)"]
+    B --> C2["Repository source<br/>(MCP, or a stub when unconfigured)"]
 
     C1 --> D1{"outcome"}
     C2 --> D2{"outcome"}
@@ -554,7 +554,7 @@ flowchart TD
     G -->|no| H["discarded"]
     G -->|yes| I{"already seen?"}
     I -->|yes| H
-    I -->|no| J["Citation(marker, documentId,<br/>title, chunkId, heading)"]
+    I -->|no| J["Citation(marker, kind, title, heading,<br/>documentId?, chunkId?, url?, sourceName?)"]
 
     J --> K["order by marker"]
     H --> L["StripUnresolvedMarkers<br/>deletes them from the text"]
@@ -607,7 +607,7 @@ Five SSE event names, each with a distinct job:
 | `session` | `sessionId`, `title` | Makes a brand-new conversation addressable |
 | `sources` | all retrieved passages, numbered | Renders the source list **while the answer is still being written** |
 | `token` | `text` | Appends to the streaming answer |
-| `done` | `messageId`, **verified** citations, `isRefusal` | Replaces the provisional source list with what was actually cited |
+| `done` | `messageId`, **verified** citations, `isRefusal`, `degradations` | Replaces the provisional source list with what was actually cited, and names any source that could not be searched |
 | `error` | `reason` | Shows a failure, distinct from a refusal |
 
 > **The subtlety worth internalising:** `sources` carries everything *retrieved*
@@ -662,21 +662,23 @@ the symptom is simply that the answer arrives in one lump.
 | `num_ctx` too low | **Silent.** Passages are truncated away and the model cites sources it never saw | [LlmOptions.cs:34](server/src/DocHub.Integrations/Llm/LlmOptions.cs:34) |
 | Client disconnects | The linked cancellation token aborts retrieval and generation | [ChatController.cs:52](server/src/DocHub.Api/Controllers/ChatController.cs:52) |
 
-### One known gap
+### How a degraded answer is reported
 
-`GroundingResult.Degradations` is consumed in exactly one place —
-[`NoSourcesMessage`](server/src/DocHub.Services/Chat/ChatService.cs:305), which
-only runs when `passages.Count == 0`. So when a source fails *but the remaining
-sources still return passages*, the degradation string is computed and then
-dropped: no `ChatEvent` carries it, and the user is not told the grounding was
-thinner than usual.
+When a source fails but the others still return passages, the answer stands and
+the reader is told it stood on less. `GroundingResult.Degradations` is carried
+onto `ChatEvent.Completed` and **persisted** on the message as jsonb, alongside
+the citations.
 
-That is narrower than the invariant stated in
-[CLAUDE.md](CLAUDE.md) — "a knowledge source that fails is left out of that one
-answer and named in the reply". The isolation and the deadline both work
-correctly; it is only the *reporting* on the partial-success path that is
-missing. Closing it would mean adding a degradation field to
-`ChatEvent.Completed` (or a new event) and surfacing it in the assistant UI.
+Persisted rather than streamed and forgotten, for the same reason citations are:
+reopening the conversation tomorrow has to say the same thing. An answer given
+while the repository source was unreachable was grounded in less than usual, and
+that is a property of the answer, not of the moment it was given.
+
+The UI renders it above the answer rather than below — that a source was missing
+changes how the answer should be read, so it cannot be a footnote.
+
+Only if *every* source fails does the refusal path take over, and the refusal
+carries the same list.
 
 ---
 

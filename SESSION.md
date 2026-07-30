@@ -23,8 +23,10 @@ Plus, after phase 6: the repository source address is editable from the UI, an
 activity trail backs the dashboard feed, and roadmap phase language has been
 removed from every screen.
 
-**Phase 7 — the real MCP client — is the only roadmap item left, and it is NOT done.**
-See "Next steps" for exactly what remains.
+**Phase 7 — the real MCP client — is built.** `McpRepositoryKnowledgeSource`
+speaks MCP over the official SDK, `RepositoryProvider: "mcp"` switches it on, and
+citations can now resolve outside the hub. What is *not* done is running it
+against the org's actual server — see "Blockers".
 
 ---
 
@@ -36,10 +38,17 @@ Nothing. Working tree clean, everything pushed.
 
 ## Blockers
 
-- **Phase 7 needs an MCP server to point at.** Everything else it depends on
-  exists. The org's server is reachable only from inside the org network, which
-  is the shape the stub was built for: the Mac keeps `RepositoryProvider: "none"`,
-  the IIS box gets the real one, and config decides.
+- **The MCP client has never spoken to the org's server.** It is tested against
+  a real MCP server hosted in-process, so the protocol path is exercised, but
+  three things can only be settled against theirs:
+  - **The tool contract is our convention**, not theirs: `query` / `maxResults`
+    returning `{ results: [ { path, lines, text, url, score } ] }`. Ask for the
+    tool list and schema — that, not the address, is what unblocks the mapping.
+  - **No authentication.** HTTP with no credentials. The SDK transport exposes
+    `AdditionalHeaders` and `OAuth`; neither is wired. A server behind a bearer
+    token will not connect.
+  - **HTTP transport only.** A stdio server would need a different transport.
+  The Mac keeps `RepositoryProvider: "none"`; the IIS box gets `"mcp"`.
 - **Nothing blocks anything else.**
 
 ---
@@ -102,41 +111,30 @@ Two settings there are load-bearing and easy to miss: `Authentication__KeyPath`
 (without it every recycle signs everyone out) and the app pool's
 `loadUserProfile`.
 
-### 2. Phase 7 — the real MCP client
+### 2. Point the MCP client at the org's server
 
-What exists: the `IKnowledgeSource` contract, the composite with deadlines and
-failure isolation, an inactive stub, and a UI-editable address with a
-reachability probe.
+The client is written and tested; what remains is configuration and one round of
+reality.
 
-What does **not** exist: any code that speaks MCP. `NullRepositoryKnowledgeSource`
-returns `KnowledgeSearchResult.Empty`, and `RepositoryProvider: "mcp"` is still
-rejected at startup. Setting an address in the UI stores it and changes nothing
-at question time.
-
-Remaining work, in order:
-
-1. **Decide the citation target for a non-document source.** `KnowledgeResult` is
-   document-shaped because a persisted `Citation` deep-links to
-   `/docs/:id?chunk=n`; a file at a commit has no document id. Plan: thread an
-   optional `SourceName` + `Url` through `KnowledgeResult` → `RetrievedPassage`
-   → `Citation` → `CitationViewModel` → `citation-text.ts`, rendering an external
-   link when `Url` is set. Citations are `jsonb`, so **no migration is needed**,
-   and historical answers keep working because theirs carry no `Url`.
-2. **Implement `McpKnowledgeSource`** in Integrations. It takes its address from
-   `IRepositorySourceSettings`, not `IOptions`, so an admin changing it takes
-   effect on the next question. The servers are open on the org network, so no
-   credential handling is needed.
-3. **Allow `"mcp"`** in `KnowledgeSourceOptions` validation and register the
-   client in place of the stub.
-4. **Add an MCP health check** alongside the embedding and LLM ones, and have
-   `CheckStatusAsync` return `Unavailable` with a reason.
+1. **Get the tool contract**, not just the address. If the server's search tool
+   does not take `query` / `maxResults` and return
+   `{ results: [ { path, lines, text, url, score } ] }`, adjust `ReadResults` in
+   `McpRepositoryKnowledgeSource` — it already accepts structured content, that
+   JSON in a text block, or plain prose.
+2. **Confirm it returns verbatim source text**, not summaries. The assistant
+   cites what it is handed, so a summarising server would have it quoting text
+   that exists nowhere. This cannot be detected from our side.
+3. **Set `KnowledgeSources__RepositoryProvider` to `mcp`** on the IIS box and put
+   the address in from the **Knowledge sources** screen, or in
+   `KnowledgeSources__RepositoryEndpoint`. Name the tool in
+   `KnowledgeSources__RepositoryToolName` once known — discovery picks the first
+   tool with "search" in its name, which is a guess.
+4. **Add authentication if the server needs it.** `HttpClientTransportOptions`
+   takes `AdditionalHeaders` and `OAuth`; a bearer token is a small change plus
+   somewhere to keep the secret.
 5. **Verify from the IIS box**, since the Mac cannot reach the server — a real
-   outage is the first genuine test of the failure isolation.
-
-MCP is a standard protocol (JSON-RPC 2.0, `initialize` / `tools/list` /
-`tools/call`), so most of this can be written against the spec. What cannot be
-guessed is which tool means "search" on that server and what its results look
-like.
+   outage is the first genuine test of the failure isolation, which now names the
+   missing source on the answer itself.
 
 ### 3. Smaller, whenever
 
@@ -177,11 +175,12 @@ the row action menu clipped on the last list item.
 > Read `CLAUDE.md` then `SESSION.md` at the repo root before doing anything else.
 > This is DocHub — an ASP.NET Core + Angular documentation hub with local-Ollama
 > RAG. **v1 is complete**: roadmap phases 1–6 are done, tested and pushed to
-> `main` — do not re-analyse or rebuild them. All 143 tests pass. `CLAUDE.md`
+> `main` — do not re-analyse or rebuild them. All 156 tests pass. `CLAUDE.md`
 > holds the architecture, design decisions, conventions and workflow and is
-> authoritative; `SESSION.md` holds current state. The only roadmap item left is
-> **phase 7, the real MCP client, which is not built** — no code speaks MCP yet,
-> despite the address being UI-editable. Follow "Next steps" in `SESSION.md`.
+> authoritative; `SESSION.md` holds current state. **Phase 7, the real MCP
+> client, is built and tested against an in-process MCP server** — what remains
+> is pointing it at the org's server, whose tool schema and auth are unknown.
+> Follow "Next steps" in `SESSION.md`.
 > Respect the grounding, security and layering rules in `CLAUDE.md`. Build and
 > test before each commit, and commit + push each finished chunk to `main`
 > without asking.

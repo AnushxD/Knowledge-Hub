@@ -233,7 +233,7 @@ This is the single most important design decision for your stated constraint ("w
 | **4. MCP abstraction** | Build `IKnowledgeSource`/`CompositeKnowledgeSource`, ship with a stub repository source; hybrid ranking across sources. |
 | **5. Auth & security hardening** | Real auth (Identity → Azure AD), roles, rate limiting, secrets management. |
 | **6. Deployment pipeline** | Dockerize everything, GitHub Actions CI/CD, deploy to a real environment, add monitoring. |
-| **7. Real MCP integration + scale** | Swap in the real MCP client when available; revisit vector store choice if volume demands it. |
+| **7. Real MCP integration + scale** | ✅ MCP client built on the official SDK, behind `RepositoryProvider: mcp`; citations resolve outside the hub. Remaining: point it at the org server, and revisit vector store choice if volume demands it. |
 
 ---
 

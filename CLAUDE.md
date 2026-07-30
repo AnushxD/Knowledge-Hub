@@ -131,6 +131,7 @@ server/
   Dockerfile
 .github/workflows/{ci,publish}.yml
 docker-compose.yml                        # postgres+pgvector, azurite, ollama
+documenthub-schema.sql                    # idempotent DB setup; ships in the publish output
 docker-compose.app.yml                    # the built stack on that infrastructure
 CLAUDE.md · SESSION.md · README.md · architecture-blueprint.md · chat-pipeline.md
 ```
@@ -144,6 +145,7 @@ CLAUDE.md · SESSION.md · README.md · architecture-blueprint.md · chat-pipeli
 | `Services/Chat/ChatService.cs` | RAG orchestrator: retrieve → refuse-or-generate → verify → persist |
 | `Services/Search/SearchService.cs` | Hybrid search + RRF; `RankAsync` shared by search and retrieval |
 | `Services/Knowledge/CompositeKnowledgeSource.cs` | Fan-out, per-source deadlines, failure isolation, rank fusion, dedupe |
+| `Integrations/Knowledge/McpRepositoryKnowledgeSource.cs` | The MCP client: tool resolution and the three response shapes it accepts. The tool contract it expects is documented on the class |
 | `Services/Ingestion/IngestionService.cs` | extract → chunk → embed → index; permanent vs transient failure split |
 | `DataAccess/DocHubDbContext.cs` | Schema; `EmbeddingDimensions=768`, tsvector, HNSW, jsonb citations |
 | `DataAccess/Repositories/ChunkRepository.cs` | Both search branches |
@@ -208,8 +210,14 @@ Recorded so they are not re-litigated. Each is a trade already reasoned through.
 **The assistant**
 - Citations are stored as `jsonb` on the message, denormalising title and
   heading, so a historical answer stays truthful after renames and deletes.
+- A citation carries a `kind`: a `document` one resolves to `/docs/:id?chunk=n`,
+  an `external` one to a URL, or to no link at all when the source gave none.
+  That is what lets a repository passage, which has no document id, be cited.
 - `IsRefusal` is stored explicitly, not inferred from empty citations — a
   refusal and a failure to cite render differently.
+- Sources that could not be searched are stored on the message too, for the same
+  reason as citations: an answer grounded in less than usual has to still say so
+  when the conversation is reopened.
 - SSE for chat, with the first event pulled *before* headers are written so
   validation and 404s still return problem details.
 - Ollama for both embeddings and generation; a hashing embedding provider and a
@@ -219,7 +227,8 @@ Recorded so they are not re-litigated. Each is a trade already reasoned through.
 - Sources merge by **rank, never by score** — each scores in its own units.
 - Sources fan out concurrently, each under its own deadline. Failure isolation
   covers a source that throws; the deadline covers one that never replies.
-- A failing source degrades one answer and is named in the reply; only if every
+- A failing source degrades one answer and is named *on that answer* — carried
+  on `ChatEvent.Completed` and persisted, not logged and forgotten. Only if every
   source fails does the refusal path take over.
 - At most one source may touch the request-scoped `DbContext` — the document
   source. A second database-backed source must run sequentially with it.
