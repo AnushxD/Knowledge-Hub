@@ -863,6 +863,11 @@ export class MockKnowledgeGateway extends KnowledgeGateway {
     return null;
   }
 
+  /** Null for the same reason — there is no file here to save. */
+  documentDownloadUrl(): string | null {
+    return null;
+  }
+
   stats(): Observable<LibraryStats> {
     return this.read((db) => ({
       documents: db.documents.length,

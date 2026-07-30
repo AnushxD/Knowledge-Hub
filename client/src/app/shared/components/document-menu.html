@@ -5,9 +5,17 @@
   <a [routerLink]="['/docs', doc().id]" class="dh-menu-item" role="menuitem">
     <i class="pi pi-eye text-[11px]"></i> Open
   </a>
-  <button type="button" class="dh-menu-item" role="menuitem" (click)="dismiss.emit()">
-    <i class="pi pi-download text-[11px]"></i> Download
-  </button>
+  @if (downloadUrl(); as href) {
+    <a
+      class="dh-menu-item"
+      role="menuitem"
+      [href]="href"
+      [attr.download]="doc().fileName"
+      (click)="dismiss.emit()"
+    >
+      <i class="pi pi-download text-[11px]"></i> Download
+    </a>
+  }
   <!-- Re-indexing a document that is mid-ingestion would only queue a second
        run of the job already working on it. -->
   @if (doc().status !== 'indexing') {

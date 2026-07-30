@@ -190,6 +190,12 @@ export class HttpKnowledgeGateway extends KnowledgeGateway {
     return `${this.base}/documents/${id}/content?inline=true`;
   }
 
+  documentDownloadUrl(id: string): string {
+    // No `inline`, so the endpoint answers with Content-Disposition: attachment
+    // and the browser saves it under the document's own file name.
+    return `${this.base}/documents/${id}/content`;
+  }
+
   stats(): Observable<LibraryStats> {
     return this.http.get<ApiStats>(`${this.base}/documents/stats`).pipe(
       map((stats) => ({

@@ -131,6 +131,12 @@ export class DocumentDetailPage {
     return document ? this.gateway.documentContentUrl(document.id) : null;
   });
 
+  /** Null when the gateway has no stored file to hand over. */
+  protected readonly downloadUrl = computed(() => {
+    const document = this.doc();
+    return document ? this.gateway.documentDownloadUrl(document.id) : null;
+  });
+
   /**
    * The document view is the default where we can render the file, because it
    * is what the reader came to read. The extracted view stays one click away —

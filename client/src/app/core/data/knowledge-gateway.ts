@@ -79,6 +79,22 @@ export abstract class KnowledgeGateway {
   abstract documentContentUrl(id: string): string | null;
 
   /**
+   * A URL that saves the stored file rather than displaying it.
+   *
+   * Separate from `documentContentUrl` because the two want opposite
+   * dispositions from the same endpoint, and a caller should not have to know
+   * which query parameter produces which.
+   *
+   * Given to an anchor rather than fetched: the browser streams straight to
+   * disk, which costs no memory on a large file, shows native download
+   * progress, and takes the file name from the server's Content-Disposition.
+   *
+   * Null when the implementation has no real file behind the document, so the
+   * control can be left out rather than offered and doing nothing.
+   */
+  abstract documentDownloadUrl(id: string): string | null;
+
+  /**
    * Hybrid keyword + semantic search over indexed chunks. Distinct from
    * `documents()`, which filters the library by metadata — this searches
    * inside the content.

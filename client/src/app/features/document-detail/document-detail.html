@@ -61,10 +61,21 @@
               [class]="document.starred ? 'pi-star-fill text-amber-400' : 'pi-star'"
             ></i>
           </button>
-          <button type="button" class="dh-btn-ghost">
-            <i class="pi pi-download text-[12px]"></i>
-            <span class="hidden sm:inline">Download</span>
-          </button>
+          <!-- An anchor, not a button: the browser streams the file straight to
+               disk, so a large document costs no memory here and gets native
+               download progress. Left out entirely when there is no file behind
+               the document, rather than offered and doing nothing. -->
+          @if (downloadUrl(); as href) {
+            <a
+              class="dh-btn-ghost"
+              [href]="href"
+              [attr.download]="document.fileName"
+              [dhTooltip]="'Download ' + document.fileName"
+            >
+              <i class="pi pi-download text-[12px]"></i>
+              <span class="hidden sm:inline">Download</span>
+            </a>
+          }
         </div>
       </div>
 

@@ -1,5 +1,6 @@
-import { ChangeDetectionStrategy, Component, input, output } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, input, output } from '@angular/core';
 import { RouterLink } from '@angular/router';
+import { KnowledgeGateway } from '../../core/data/knowledge-gateway';
 import { DocumentSummary } from '../../core/models/knowledge.models';
 
 /**
@@ -25,7 +26,21 @@ import { DocumentSummary } from '../../core/models/knowledge.models';
   templateUrl: './document-menu.html',
 })
 export class DocumentMenu {
+  private readonly gateway = inject(KnowledgeGateway);
+
   readonly doc = input.required<DocumentSummary>();
+
+  /**
+   * Null when the gateway has no stored file, which drops the item rather than
+   * showing one that does nothing.
+   *
+   * The gateway is injected here rather than passed in: the URL is the client's
+   * one sanctioned way to reach the API, and threading it through every caller
+   * would put that knowledge in the list screens instead.
+   */
+  protected readonly downloadUrl = computed(() =>
+    this.gateway.documentDownloadUrl(this.doc().id),
+  );
 
   readonly reindex = output<void>();
   readonly remove = output<void>();
