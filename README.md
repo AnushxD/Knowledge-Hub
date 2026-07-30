@@ -566,8 +566,9 @@ the two are same-origin and the session cookie needs no CORS or `SameSite=None`.
 
 ### Hosting on the org Windows machine (IIS)
 
-The complete first-time setup for the machine the app will actually run on.
-Follow it top to bottom; every step is configuration, not a code change.
+First-time setup for the machine the app runs on. The site itself is created
+through **IIS Manager**, so there are no `appcmd` scripts here — the only command
+line you need is the one that creates the database.
 
 **What this machine needs — and what it does not.** The artefact you deploy is
 already compiled: .NET assemblies plus the built Angular bundle as plain JS and
@@ -575,304 +576,198 @@ CSS. Nothing is built on the server.
 
 | Needed | Not needed |
 |---|---|
-| .NET 10 **Hosting Bundle** (runtime + the IIS module) | .NET **SDK** — only if you choose to run migrations here, and step 4 gives an alternative that avoids it |
-| **Docker Engine**, managed through Portainer, for Postgres and Azurite | **Node.js / npm** — the Angular app arrives pre-built |
-| Ollama, for the two local models | **Angular CLI** — same reason |
-| | **Git** — you paste one file into Portainer, you do not clone the repository |
-| | **A `docker` CLI** — Portainer deploys and manages the stack for you |
+| .NET 10 **Hosting Bundle** (runtime + the IIS module) | .NET **SDK** — the schema comes from a script shipped in the artefact |
+| **Docker**, managed through Portainer, for PostgreSQL | **Node.js / npm** — the Angular app arrives pre-built |
+| `psql`, to run that script once | **Angular CLI** — same reason |
+| Ollama, for the two local models | **Git** — you paste one file into Portainer, you do not clone the repository |
 
-**What runs where.** Only the application goes in IIS. The infrastructure runs
-as containers, from the same `docker-compose.yml` a developer uses:
+**What runs where.** Only the application goes in IIS:
 
-| Piece | Where | Why |
-|---|---|---|
-| API + client | **IIS**, one site | The API serves the client from `wwwroot`, so they are same-origin and the session cookie needs no CORS |
-| PostgreSQL + pgvector | **Portainer stack**, on this machine | pgvector has no supported Windows installer; the `pgvector/pgvector:pg17` image is the reliable route |
-| Blob storage | **Portainer stack** (Azurite), or real Azure | Azurite is an emulator — see step 2 |
-| Ollama | **Native Windows install**, or the same stack | Native gets the GPU if this box has one; containerised is fine on CPU and keeps everything in one place |
-
-These instructions assume Docker runs on **this same machine**, so the
-containers publish their ports to `localhost` and every connection string below
-says so. If you ever move the containers to another host, the only change is
-swapping `localhost` for that host's address in step 3 — and Azurite needs its
-long-form connection string, because `UseDevelopmentStorage=true` resolves to
-`127.0.0.1` and cannot express a remote host.
+| Piece | Where |
+|---|---|
+| API + client | **IIS**, one site — the API serves the client from `wwwroot`, so they are same-origin and the session cookie needs no CORS |
+| PostgreSQL + pgvector | **Portainer stack** on this machine — pgvector has no supported Windows installer, so the `pgvector/pgvector:pg17` image is the reliable route |
+| Blob storage | The **Azurite this machine already runs** — see step 2 |
+| Ollama | Native Windows install, or the same stack |
 
 #### 1. Install the prerequisites
 
-In PowerShell **as Administrator**:
-
-```powershell
-Enable-WindowsOptionalFeature -Online -FeatureName IIS-WebServerRole, IIS-WebServer, IIS-CommonHttpFeatures, IIS-StaticContent, IIS-DefaultDocument, IIS-HttpErrors, IIS-HttpLogging, IIS-RequestFiltering, IIS-Security -All
-```
-
-On Windows Server, use Server Manager → *Add Roles and Features* → **Web Server (IIS)**.
+Enable IIS through *Server Manager → Add Roles and Features → Web Server (IIS)*,
+or *Turn Windows features on or off* on a desktop edition.
 
 Then install, in this order:
 
 1. The **.NET 10 Hosting Bundle** — not the SDK, not the plain runtime — from
    <https://dotnet.microsoft.com/download/dotnet/10.0>.
-2. **Ollama for Windows** from <https://ollama.com/download/windows> — unless
-   you would rather run it as part of the stack, see step 2.
-
-Nothing else installs here. The containers are deployed through Portainer, so
-this machine needs no Docker CLI and no Docker Desktop licence. If the org
-already runs a PostgreSQL you can use, point `Database__ConnectionString` at it
-in step 3 and skip the Postgres container entirely — provided the `vector`
-extension can be enabled on it.
+2. **Ollama for Windows** from <https://ollama.com/download/windows>.
 
 > **Order matters.** The Hosting Bundle registers `AspNetCoreModuleV2` with IIS.
 > Installed *before* IIS, that registration is missing and every request returns
 > **500.19** — re-run the installer with `/repair` if that happens.
 
-```powershell
-iisreset
-C:\Windows\System32\inetsrv\appcmd.exe list modules
-```
+After installing, restart IIS and confirm the module is there: in **IIS Manager**,
+select the server node and open **Modules**. `AspNetCoreModuleV2` should be listed.
 
-The second command should list `AspNetCoreModuleV2`.
+#### 2. Deploy PostgreSQL, and add a container to Azurite
 
-#### 2. Deploy the infrastructure as a Portainer stack
-
-In Portainer: **Stacks → Add stack**, name it `documenthub`, and paste the contents of
-the repository's `docker-compose.yml` into the web editor. Then **Deploy the
+**PostgreSQL.** In Portainer: **Stacks → Add stack**, name it `documenthub`, and
+paste the `postgres` service from the repository's `docker-compose.yml` into the
+web editor — just that service and its `volumes:` entry. Then **Deploy the
 stack**.
 
 Two adjustments before deploying:
 
-- **Remove the `ollama` service** if you installed Ollama natively in step 1,
-  which is the recommended route: a native install picks up an NVIDIA GPU if the
-  machine has one, whereas reaching a GPU from a container on Windows needs the
-  WSL 2 backend and the NVIDIA container toolkit. Keep the service instead if
-  this box is CPU-only and you would rather manage everything in one stack.
+- **Leave out `azurite` and `ollama`.** This machine already runs Azurite, and
+  Ollama is installed natively in step 1.
 - **Change the Postgres password** from the compose default, and use the same
-  value in step 3.
+  value in step 4.
 
-The stack publishes Postgres on `5432` and Azurite on `10000`, reachable from
-this machine as `localhost`. Nothing needs opening in the firewall — the API and
-the containers are on the same host.
-
-Wait for the containers to report *healthy* in Portainer before continuing; the
-compose file defines health checks, so Portainer shows the real state rather
+Wait for the container to report *healthy* in Portainer before continuing — the
+compose file defines a health check, so Portainer shows the real state rather
 than just "running".
 
-Then pull the two models, once, a few GB in total:
+**Azurite.** Nothing to install; it is already running. It does need somewhere to
+put the files:
 
-- **Ollama on Windows** — from PowerShell here:
+> **Create a blob container named `documents`** in the existing Azurite. Azure
+> Storage Explorer is the easiest route — connect to the local emulator, then
+> *Blob Containers → Create Blob Container*. The name has to match
+> `FileStorage__ContainerName` in step 4, which defaults to `documents`.
+>
+> Uploads fail until this container exists, and `/healthz` reports
+> `blob-storage` as degraded with the container named.
 
-  ```powershell
-  ollama pull nomic-embed-text
-  ```
-  ```powershell
-  ollama pull llama3.2:3b
-  ```
-
-- **Ollama in the stack** — in Portainer open the `ollama` container, choose
-  **Console → Connect** (`/bin/sh`), and run the same two `ollama pull` commands
-  there.
-
-> **Azurite is an emulator.** Fine for a pilot, and its data survives restarts in
-> a Docker volume, but it is not a supported production store. If the org has
-> Azure, create a Storage Account and use its connection string in step 3
-> instead — `IFileStorage` already speaks the real Blob API, so nothing else
-> changes.
-
-#### 3. Create the application pool and its configuration
-
-Configuration reaches the app as **environment variables**, where a `:` in a
-config key becomes `__`. Scoping them to the pool is tighter than machine-wide,
-where any process on the box could read them.
+**The models.** Pull them once, a few GB in total, from PowerShell here:
 
 ```powershell
-$appcmd = "C:\Windows\System32\inetsrv\appcmd.exe"
-& $appcmd add apppool /name:DocumentHub /managedRuntimeVersion:""
+ollama pull nomic-embed-text
+```
+```powershell
+ollama pull llama3.2:3b
 ```
 
-`managedRuntimeVersion:""` means **No Managed Code** — the .NET runtime lives in
-the published app, not in IIS.
+#### 3. Create the database
+
+The artefact ships `documenthub-schema.sql` beside the binaries. It creates every
+table and index and seeds the administrator account, and it is **idempotent** —
+running it again applies only what is missing, so it is also how you apply
+changes on a later upgrade.
+
+Run it once against the container from step 2:
 
 ```powershell
-function Set-PoolEnv($name, $value) {
-  & $appcmd set config -section:system.applicationHost/applicationPools `
-    "/+[name='DocumentHub'].environmentVariables.[name='$name',value='$value']" /commit:apphost
-}
-
-```powershell
-Set-PoolEnv "ASPNETCORE_ENVIRONMENT"        "Production"
-Set-PoolEnv "Database__ConnectionString"    "Host=localhost;Port=5432;Database=documenthub;Username=documenthub;Password=<the password you set in step 2>"
-Set-PoolEnv "FileStorage__ConnectionString" "UseDevelopmentStorage=true"
-Set-PoolEnv "FileStorage__ContainerName"    "documents"
-# Only when uploads fail with "InvalidHeaderValue" — see the troubleshooting
-# entry. Harmless to leave unset against real Azure.
-Set-PoolEnv "FileStorage__ServiceVersion"   "2025-11-05"
-Set-PoolEnv "Embeddings__BaseUrl"           "http://localhost:11434"
-Set-PoolEnv "Llm__BaseUrl"                  "http://localhost:11434"
-Set-PoolEnv "Authentication__KeyPath"       "C:\inetpub\documenthub-keys"
+psql -h localhost -p 5432 -U documenthub -d documenthub -f D:\Knowledge-Hub-main\documenthub-schema.sql
 ```
 
-`Authentication__KeyPath` is where the keys that encrypt the session cookie are
-kept. Without it they live in the application pool's user profile, and **every
-recycle or deploy signs everybody out** — which looks like an intermittent bug
-rather than a setting. Create the folder now; step 5 grants access to it.
+Point `-f` at wherever you extracted the artefact. There is no `dotnet ef` step
+and no SDK needed — this script *is* the migration. It enables the `vector`
+extension itself, so an empty database is all it needs.
+
+> If `psql` is not installed, open the `postgres` container in Portainer,
+> **Console → Connect** (`/bin/sh`), and paste the script into
+> `psql -U documenthub -d documenthub`. Workable, but the file is long; the
+> command above is better.
+
+#### 4. Create the application pool and site in IIS Manager
+
+**Application pool.** *Application Pools → Add Application Pool*:
+
+| Setting | Value |
+|---|---|
+| Name | `DocumentHub` |
+| .NET CLR version | **No Managed Code** — the runtime lives in the published app, not in IIS |
+| Managed pipeline mode | Integrated |
+
+Then select the pool → **Advanced Settings**:
+
+| Setting | Value | Why |
+|---|---|---|
+| Load User Profile | **True** | Data Protection keys are not persisted without it, so every recycle signs everybody out — an intermittent-looking bug that is really a setting |
+| Idle Time-out (minutes) | **0** | Hangfire runs in-process; a sleeping pool stops ingesting |
+| Start Mode | **AlwaysRunning** | Same reason |
+
+**Configuration.** Settings reach the app as environment variables, where a `:`
+in a config key becomes `__`. In IIS Manager, select the **server node** →
+**Configuration Editor** → section
+`system.applicationHost/applicationPools` → your pool → `environmentVariables`,
+and add:
+
+| Name | Value |
+|---|---|
+| `ASPNETCORE_ENVIRONMENT` | `Production` |
+| `Database__ConnectionString` | `Host=localhost;Port=5432;Database=documenthub;Username=documenthub;Password=<the password from step 2>` |
+| `FileStorage__ConnectionString` | `UseDevelopmentStorage=true` |
+| `FileStorage__ContainerName` | `documents` |
+| `Embeddings__BaseUrl` | `http://localhost:11434` |
+| `Llm__BaseUrl` | `http://localhost:11434` |
+| `Authentication__KeyPath` | `C:\inetpub\documenthub-keys` |
 
 `UseDevelopmentStorage=true` is the Azure SDK's shorthand for Azurite on
-`127.0.0.1` — correct here, and the reason moving the containers elsewhere later
-would need the long-form connection string instead.
+`127.0.0.1`. If Azurite ever moves to another host, this becomes the long-form
+connection string — the shorthand cannot express a remote address.
+
+`Authentication__KeyPath` points **outside** the site folder on purpose, so
+replacing the published folder on the next deploy does not take the session keys
+with it. Create `C:\inetpub\documenthub-keys` now, and in its *Properties →
+Security* give `IIS AppPool\DocumentHub` **Modify**.
 
 Optional settings worth knowing:
 
 | Variable | Notes |
 |---|---|
+| `FileStorage__ServiceVersion` | Only when uploads fail with `InvalidHeaderValue` — see [Azurite rejects the API version](#azurite-rejects-the-api-version) |
 | `Authentication__SessionHours` | Session lifetime, default 8 |
 | `RateLimits__ChatRequests` | Questions per user per window, default 10 |
 | `Llm__Model` | `llama3.1:8b` or `qwen2.5:7b` follow the citation format better than the 3B default, at the cost of speed |
 | `Llm__ContextTokens` | Lower it on a constrained box — but lower `Chat__PassageCount` to match, rather than letting the prompt overflow |
-| `KnowledgeSources__RepositoryProvider` | Leave at `none` — an administrator can set the MCP address from **Knowledge sources** in the UI instead, which overrides this |
+| `KnowledgeSources__RepositoryProvider` | `mcp` to search a repository over MCP; the address is editable from **Knowledge sources** in the UI |
 
-For Google sign-in:
+For Google sign-in, add `Authentication__Google__Enabled` (`true`),
+`__ClientId`, `__ClientSecret` and `__AllowedDomains__0`. The redirect URI
+registered in the Google Cloud console must be `https://<your-host>/signin-google`
+exactly. An **empty** allow-list admits nobody by design.
 
-```powershell
-Set-PoolEnv "Authentication__Google__Enabled"          "true"
-Set-PoolEnv "Authentication__Google__ClientId"         "….apps.googleusercontent.com"
-Set-PoolEnv "Authentication__Google__ClientSecret"     "…"
-Set-PoolEnv "Authentication__Google__AllowedDomains__0" "your-company.com"
-```
+**The site.** Get the artefact from the **Publish (IIS artefact)** workflow in
+GitHub Actions and download `documenthub-iis-*` — the published API with the
+built Angular app already inside `wwwroot`. Extract it to `C:\inetpub\documenthub`.
 
-The redirect URI registered in the Google Cloud console must be
-`https://<your-host>/signin-google` exactly. An **empty** allow-list admits
-nobody by design — the app refuses to start rather than letting every Google
-account in the world sign in.
+In IIS Manager: *Sites → Add Website*:
 
-#### 4. Create the database schema
+| Setting | Value |
+|---|---|
+| Site name | `DocumentHub` |
+| Application pool | `DocumentHub` (use *Select…* — it does not default to it) |
+| Physical path | `C:\inetpub\documenthub` |
+| Binding | `http`, port `8080` |
 
-Provisioning is never automatic; the app will not migrate a database on startup.
+Then on the site folder, *Properties → Security*, give
+`IIS AppPool\DocumentHub` **Read & execute**, and **Modify** on the `logs`
+subfolder.
 
-With the .NET SDK on the machine:
+#### 5. Verify
 
-```powershell
-dotnet ef database update --project server\src\DocHub.DataAccess --startup-project server\src\DocHub.Api
-```
-
-Without it — preferable on a server — generate an idempotent script on a
-development machine:
-
-```bash
-dotnet ef migrations script --idempotent --project server/src/DocHub.DataAccess --startup-project server/src/DocHub.Api --output documenthub-schema.sql
-```
-
-The script is safe to re-run and applies only the migrations that are missing.
-Portainer gives you no `docker compose exec`, so apply it one of these ways:
-
-- **With `psql` on this machine**, against the published port — the cleanest
-  route if you have the client installed:
-
-  ```powershell
-  psql -h localhost -p 5432 -U documenthub -d documenthub -f documenthub-schema.sql
-  ```
-- **Through Portainer**, with no client to install — open the `postgres`
-  container, **Console → Connect** (`/bin/sh`), run `psql -U documenthub -d documenthub`,
-  and paste the script in. Fine once; awkward for a long script.
-
-#### 5. Deploy the site
-
-Get the artefact from the **Publish (IIS artefact)** workflow in GitHub Actions
-and download `documenthub-iis-*`. It is the published API with the built Angular app
-already inside `wwwroot` — compiled output only, which is why this machine needs
-no build tooling.
-
-If you would rather build it yourself, do so **on a development machine** — the
-one place Node and the .NET SDK are needed — and copy the result across:
-
-```bash
-cd client && npm ci && npm run build && cd ..
-dotnet publish server/src/DocHub.Api/DocHub.Api.csproj -c Release -r win-x64 --self-contained false -o publish
-mkdir -p publish/wwwroot && cp -r client/dist/client/browser/. publish/wwwroot/
-```
-
-Extract to `C:\inetpub\documenthub`, then:
-
-```powershell
-& $appcmd add site /name:DocumentHub /physicalPath:"C:\inetpub\documenthub" /bindings:"http/*:8080:"
-& $appcmd set app "DocumentHub/" /applicationPool:DocumentHub
-```
-
-**Load the user profile — do not skip this:**
-
-```powershell
-& $appcmd set config -section:system.applicationHost/applicationPools `
-  "/[name='DocumentHub'].processModel.loadUserProfile:true" /commit:apphost
-```
-
-ASP.NET Core encrypts the session cookie with Data Protection keys. With no user
-profile loaded those keys are not persisted, so **every application pool recycle
-signs everybody out** — and it presents as an intermittent bug rather than a
-configuration problem.
-
-Permissions — read and execute on the folder, write only to `logs\`:
-
-```powershell
-icacls "C:\inetpub\documenthub" /grant "IIS AppPool\DocumentHub:(OI)(CI)RX"
-icacls "C:\inetpub\documenthub\logs" /grant "IIS AppPool\DocumentHub:(OI)(CI)M"
-
-# The Data Protection keys from step 3 — the pool has to be able to write here.
-New-Item -ItemType Directory -Force -Path "C:\inetpub\documenthub-keys" | Out-Null
-icacls "C:\inetpub\documenthub-keys" /grant "IIS AppPool\DocumentHub:(OI)(CI)M"
-```
-
-The key folder sits **outside** the site directory on purpose: replacing the
-published folder on the next deploy must not take the keys with it.
-
-#### 6. Provision storage and the administrator
-
-These are one-shot commands against the same binary IIS runs. The pool's
-environment variables do **not** reach a command prompt, so set what they need
-in the shell first:
-
-```powershell
-cd C:\inetpub\documenthub
-# Pool variables do not reach a command prompt, so repeat the two these need.
-$env:ASPNETCORE_ENVIRONMENT = "Production"
-$env:Database__ConnectionString = "Host=localhost;Port=5432;Database=documenthub;Username=documenthub;Password=<the password you set in step 2>"
-$env:FileStorage__ConnectionString = "UseDevelopmentStorage=true"
-
-.\DocHub.Api.exe init-storage
-```
-
-Then set the administrator password — type it in rather than storing it:
-
-```powershell
-$env:Authentication__SeedAdminPassword = "<a real password, 7+ characters>"
-.\DocHub.Api.exe seed-admin
-```
-
-It prints `Password set for dev@dochub.local (Admin).` That account is the only
-way in; re-running the command resets the password if it is ever forgotten.
-Close the shell afterwards.
-
-#### 7. Start and verify
-
-```powershell
-& $appcmd start site /site.name:DocumentHub
-```
-
-In order:
+Browse to the site from IIS Manager, then check in order:
 
 1. `http://localhost:8080/healthz` → `"status": "Healthy"`, with `postgres`,
    `blob-storage`, `embeddings` and `assistant-model` all healthy. Anything
    `Degraded` names the command that fixes it.
 2. `http://localhost:8080/` → the sign-in screen.
-3. Sign in as `dev@dochub.local`.
+3. Sign in as **`admin@documenthub.local`**. The initial password is the one set
+   by `documenthub-schema.sql` — it is written in a comment at the bottom of that
+   file. **Change it immediately** from the People screen; it is a known,
+   committed credential and is meant to be rotated on first use.
+
+   The People screen also lists `dev@dochub.local`, seeded by an early migration
+   with no password. Nobody can sign in as it, but disable it here so the account
+   list says only what it should.
 4. Upload a Markdown file and watch it reach **Indexed**.
 5. Ask the assistant about it — the answer should stream in word by word. All at
    once means response buffering; see below.
 
-Open it to the network:
+To open it to the network, add an inbound rule for TCP 8080 in *Windows Defender
+Firewall with Advanced Security*.
 
-```powershell
-New-NetFirewallRule -DisplayName "Document Hub" -Direction Inbound -LocalPort 8080 -Protocol TCP -Action Allow
-```
-
-For HTTPS, add a binding with the org certificate. The session cookie is
+For HTTPS, add an `https` binding with the org certificate. The session cookie is
 `SecurePolicy = SameAsRequest`, so it works over plain HTTP inside the network
 and becomes `Secure` automatically once the site is served over HTTPS — no
 configuration change either way.
@@ -881,22 +776,22 @@ configuration change either way.
 
 | Symptom | Cause |
 |---|---|
-| **500.19** on every request | Hosting Bundle installed before IIS. Re-run its installer with `/repair`, then `iisreset` |
+| **500.19** on every request | Hosting Bundle installed before IIS. Re-run its installer with `/repair`, then restart IIS |
 | **500.30** on startup | The app threw while starting, nearly always configuration. Set `stdoutLogEnabled="true"` in `web.config`, reproduce, read `logs\stdout_*.log`, then turn it back off |
-| **Everyone signed out** after a recycle or deploy | `Authentication__KeyPath` is unset, or the pool cannot write to it. Check step 3 and the `icacls` grant in step 5 |
+| **Everyone signed out** after a recycle or deploy | `Authentication__KeyPath` is unset, or the pool cannot write to it. Check step 4 and the folder permission |
 | Answer **arrives in one lump** instead of streaming | Response buffering. `web.config` sets `responseBufferLimit` to `0`; check it survived the deploy, and that nothing in front of IIS buffers too |
 | File of 25–28 MB rejected with a bare **404.13** | IIS checked its own limit first. `web.config` sets `maxAllowedContentLength` to match the app's 25 MB |
-| `/healthz` reports **postgres** or **blob-storage** degraded | Check the stack is running and healthy in Portainer, and that the password in `Database__ConnectionString` matches the one the stack was deployed with |
+| `/healthz` reports **blob-storage** degraded | The `documents` container does not exist in Azurite — see step 2 |
+| `/healthz` reports **postgres** degraded | Check the container is healthy in Portainer, and that the password in `Database__ConnectionString` matches the one the stack was deployed with |
 | Health check says the **assistant model** is missing | Ollama runs in the signed-in user's session by default. Confirm `http://localhost:11434` answers from the server itself, or set it to run as a service |
-| **Ingestion stalls** when nobody uses the app | Hangfire runs in-process. Set the pool's *Idle Time-out* to `0` and *Start Mode* to `AlwaysRunning` |
+| **Ingestion stalls** when nobody uses the app | The pool went idle. Check *Idle Time-out* is `0` and *Start Mode* is `AlwaysRunning` in step 4 |
 
 #### Upgrading later
 
 1. Download the new artefact.
-2. Apply new migrations (step 4) — **before** swapping files, not after.
-3. Stop the site, replace the folder contents, start the site.
-4. `init-storage` only if storage configuration changed. `seed-admin` is not
-   needed again.
+2. Run its `documenthub-schema.sql` (step 3) — **before** swapping files, not
+   after. It only applies what is missing.
+3. Stop the site in IIS Manager, replace the folder contents, start it again.
 
 #### Why one site rather than two
 

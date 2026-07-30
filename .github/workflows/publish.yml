@@ -72,6 +72,17 @@ jobs:
           fi
           echo "No developer settings in the artefact."
 
+      # The server has no .NET SDK to generate this with, so the artefact is the
+      # only place it can come from. Losing it would strand whoever is doing the
+      # install with no way to create the schema.
+      - name: Assert the database script was published
+        run: |
+          if [ ! -s publish/documenthub-schema.sql ]; then
+            echo "documenthub-schema.sql is missing from the artefact — the server cannot create its schema without it."
+            exit 1
+          fi
+          echo "Database script is in the artefact."
+
       - name: Upload the artefact
         uses: actions/upload-artifact@v4
         with:

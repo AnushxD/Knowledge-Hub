@@ -33,6 +33,18 @@
          containing a credential at all. Still copied for `dotnet run`, which
          reads it from the project directory. -->
     <Content Update="appsettings.Development.json" CopyToPublishDirectory="Never" />
+
+    <!-- The database setup script travels with the artefact.
+         Whoever installs on the server needs it and has no .NET SDK to generate
+         it with, so shipping it inside the published folder means the schema is
+         always the one that matches these binaries — rather than a file someone
+         has to remember to copy across, and later to keep in step.
+         Link, because the script lives at the repository root: it is a
+         deployment artefact, not something this project owns. -->
+    <Content Include="..\..\..\documenthub-schema.sql"
+             Link="documenthub-schema.sql"
+             CopyToOutputDirectory="PreserveNewest"
+             CopyToPublishDirectory="Always" />
   </ItemGroup>
 
   <ItemGroup>
