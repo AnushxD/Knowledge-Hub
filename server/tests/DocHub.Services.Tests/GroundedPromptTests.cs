@@ -12,7 +12,16 @@ namespace DocHub.Services.Tests;
 public sealed class GroundedPromptTests
 {
     private static RetrievedPassage Passage(string title, string heading, int chunkId = 0) =>
-        new(Guid.NewGuid(), title, chunkId, heading, $"Body of {heading}.", 0.5, "both");
+        new(
+            PassageKind.Document,
+            title,
+            chunkId,
+            heading,
+            $"Body of {heading}.",
+            0.5,
+            "both",
+            DocumentId: Guid.NewGuid(),
+            SourceName: "documents");
 
     private static readonly IReadOnlyList<RetrievedPassage> ThreeSources =
     [

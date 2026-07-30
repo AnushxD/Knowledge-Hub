@@ -82,10 +82,13 @@ internal sealed class ChatService(
         yield return new ChatEvent.SourcesRetrieved(
             [.. passages.Select((passage, index) => new CitationViewModel(
                 index + 1,
-                passage.DocumentId,
-                passage.DocumentTitle,
+                passage.Kind.ToString().ToLowerInvariant(),
+                passage.Title,
                 passage.ChunkId,
-                passage.Heading))]);
+                passage.Heading,
+                passage.DocumentId,
+                passage.Url,
+                passage.SourceName))]);
 
         // Nothing retrieved means there is nothing to ground an answer in, so
         // the model is never called. Asking it to answer with no sources is
@@ -327,10 +330,15 @@ internal sealed class ChatService(
     private static CitationViewModel ToViewModel(Citation citation) =>
         new(
             citation.Marker,
+            citation.Kind.ToString().ToLowerInvariant(),
+            citation.Title,
+            // Zero for an external citation, which the client never uses because
+            // it routes on Kind rather than on the presence of an id.
+            citation.ChunkId ?? 0,
+            citation.Heading,
             citation.DocumentId,
-            citation.DocumentTitle,
-            citation.ChunkId,
-            citation.Heading);
+            citation.Url,
+            citation.SourceName);
 
     private static ChatSessionViewModel ToViewModel(ChatSessionDto session) =>
         new(session.Id, session.Title, session.MessageCount, session.CreatedAt, session.UpdatedAt);

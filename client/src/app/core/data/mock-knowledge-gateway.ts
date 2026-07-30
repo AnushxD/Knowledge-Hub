@@ -969,10 +969,12 @@ export class MockKnowledgeGateway extends KnowledgeGateway {
   ask(request: AskRequest): Observable<ChatEvent> {
     const sources: Citation[] = HERO_SECTIONS.slice(0, 3).map((section, index) => ({
       marker: index + 1,
-      documentId: 'd-1',
-      documentTitle: 'Dev Environment Setup',
-      chunkId: section.chunkId,
+      kind: 'document',
+      title: 'Dev Environment Setup',
       heading: section.heading,
+      documentId: 'd-1',
+      chunkId: section.chunkId,
+      sourceName: 'documents',
     }));
 
     const answer =

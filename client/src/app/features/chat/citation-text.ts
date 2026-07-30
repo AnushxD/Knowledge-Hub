@@ -24,12 +24,23 @@ interface Part {
   imports: [RouterLink, TooltipDirective],
   template: `<p
     class="text-[13.5px] leading-[1.7] whitespace-pre-wrap text-ink"
-  >@for (part of parts(); track $index) {@if (part.citation; as citation) {<a
+  >@for (part of parts(); track $index) {@if (part.citation; as citation) {@if (citation.kind === 'document') {<a
         class="dh-citation"
         [routerLink]="['/docs', citation.documentId]"
         [queryParams]="{ chunk: citation.chunkId }"
-        [dhTooltip]="citation.documentTitle + ' · ' + citation.heading"
-      >{{ citation.marker }}</a>} @else {{{ part.text }}}}</p>`,
+        [dhTooltip]="citation.title + ' · ' + citation.heading"
+      >{{ citation.marker }}</a>} @else if (citation.url) {<a
+        class="dh-citation"
+        [href]="citation.url"
+        target="_blank"
+        rel="noopener noreferrer"
+        [dhTooltip]="citation.title + ' · ' + citation.heading"
+      >{{ citation.marker }}</a>} @else {<!-- Cited, but the source gave no link.
+        Shown as a marker with the reference in the tooltip rather than a link
+        that goes nowhere. --><span
+        class="dh-citation"
+        [dhTooltip]="citation.title + ' · ' + citation.heading"
+      >{{ citation.marker }}</span>}} @else {{{ part.text }}}}</p>`,
 })
 export class CitationText {
   readonly content = input.required<string>();

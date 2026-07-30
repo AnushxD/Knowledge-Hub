@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using DocHub.DataAccess.Entities;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
@@ -317,7 +318,14 @@ public sealed class DocHubDbContext(DbContextOptions<DocHubDbContext> options)
         });
     }
 
-    private static readonly JsonSerializerOptions CitationJson = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions CitationJson = new(JsonSerializerDefaults.Web)
+    {
+        // CitationKind as "document"/"external", never 0/1 — the same reasoning
+        // as HasConversion<string>() on the column enums. A number in stored
+        // jsonb would be remapped by anyone reordering the enum, silently
+        // rewriting what old answers claim to have cited.
+        Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) },
+    };
 
     /// <summary>
     /// Citations round-trip through jsonb. Explicit rather than relying on

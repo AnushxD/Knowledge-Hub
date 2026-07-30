@@ -1,6 +1,8 @@
+using DocHub.DataAccess.Entities;
 using DocHub.Integrations.Knowledge;
 using DocHub.Services.Chat;
 using DocHub.Services.Knowledge;
+using DocHub.Services.Search;
 using DocHub.Services.ViewModels;
 
 namespace DocHub.Services.Tests;
@@ -43,7 +45,15 @@ public sealed class KnowledgeSourceTests(StackFixture fixture)
         new() { Query = "How do I restart the ingestion worker?", FolderId = folderId, Take = 5 };
 
     private static KnowledgeResult ResultFrom(Guid documentId, int chunkId, string text) =>
-        new(documentId, "Scripted source", chunkId, "Section 1", text, 1.0, "keyword");
+        new(
+            KnowledgeResultKind.Document,
+            "Scripted source",
+            "Section 1",
+            text,
+            1.0,
+            "keyword",
+            DocumentId: documentId,
+            ChunkId: chunkId);
 
     [Fact]
     public async Task Every_source_is_searched_for_one_question()
@@ -107,6 +117,87 @@ public sealed class KnowledgeSourceTests(StackFixture fixture)
     }
 
     [Fact]
+    public async Task A_source_outside_the_hub_contributes_a_passage_with_no_document_id()
+    {
+        var repository = new FakeKnowledgeSource("repositories",
+        [
+            new KnowledgeResult(
+                KnowledgeResultKind.External,
+                "src/Worker/IngestionWorker.cs",
+                "lines 40-58",
+                "The worker is restarted by supervisor policy on a non-zero exit.",
+                1.0,
+                "keyword",
+                Url: "https://git.example.org/hub/blob/abc123/src/Worker/IngestionWorker.cs#L40-L58",
+                // Its own stable ordinal — not a document chunk. Deduplication
+                // keys on it, so a source without ordinals must still vary it.
+                ChunkId: 4071),
+        ]);
+
+        await using var scope = fixture.NewScope(repository);
+        var folderId = await IndexAsync(scope, "external");
+
+        var retrieval = await scope.Knowledge.RetrieveAsync(Ask(folderId));
+
+        var passage = Assert.Single(
+            retrieval.Passages,
+            candidate => candidate.Kind == PassageKind.External);
+
+        // The whole point of widening the model: a citation that resolves
+        // somewhere other than /docs/:id, with nothing pretending to be a
+        // document id.
+        Assert.Null(passage.DocumentId);
+        Assert.Equal("src/Worker/IngestionWorker.cs", passage.Title);
+        Assert.StartsWith("https://git.example.org/", passage.Url);
+
+        // Attributed by the composite, so a source cannot claim another's name.
+        Assert.Equal("repositories", passage.SourceName);
+
+        // Documents still come back alongside it — adding a source adds to the
+        // grounding rather than replacing it.
+        Assert.Contains(retrieval.Passages, candidate => candidate.Kind == PassageKind.Document);
+    }
+
+    [Fact]
+    public async Task An_external_passage_is_cited_without_being_mistaken_for_a_document()
+    {
+        var repository = new FakeKnowledgeSource("repositories",
+        [
+            new KnowledgeResult(
+                KnowledgeResultKind.External,
+                "README.md",
+                "Getting started",
+                "Run docker compose up before starting the API.",
+                1.0,
+                "keyword",
+                ChunkId: 7),
+        ]);
+
+        await using var scope = fixture.NewScope(repository);
+        var folderId = await IndexAsync(scope, "externalcite");
+
+        var retrieval = await scope.Knowledge.RetrieveAsync(Ask(folderId));
+
+        // The marker is the passage's 1-based position, exactly as the prompt
+        // numbers them — so the citation this resolves to is the one the model
+        // would have been pointing at.
+        var marker = retrieval.Passages
+            .Select((passage, index) => (passage, index))
+            .First(entry => entry.passage.Kind == PassageKind.External)
+            .index + 1;
+
+        var citations = GroundedPrompt.VerifyCitations($"Start it first [{marker}].", retrieval.Passages);
+
+        var citation = Assert.Single(citations);
+        Assert.Equal(CitationKind.External, citation.Kind);
+        Assert.Null(citation.DocumentId);
+        // Null rather than 0: an external passage's ordinal is a dedupe key, and
+        // persisting it as a chunk would invite the UI to build a /docs link.
+        Assert.Null(citation.ChunkId);
+        Assert.Equal("README.md", citation.Title);
+    }
+
+    [Fact]
     public async Task The_same_passage_from_two_sources_is_offered_once()
     {
         await using var probe = fixture.NewScope();
@@ -117,7 +208,7 @@ public sealed class KnowledgeSourceTests(StackFixture fixture)
 
         // A second source that indexes the same file and returns the same chunk.
         var mirror = new FakeKnowledgeSource("mirror",
-            [ResultFrom(original.DocumentId, original.ChunkId, original.Text)]);
+            [ResultFrom(original.DocumentId!.Value, original.ChunkId, original.Text)]);
 
         await using var scope = fixture.NewScope(mirror);
         var retrieval = await scope.Knowledge.RetrieveAsync(Ask(folderId));

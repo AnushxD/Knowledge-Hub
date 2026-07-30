@@ -191,15 +191,27 @@ export interface SearchQuery {
 
 // ---- assistant --------------------------------------------------------------
 
-/** A source backing an answer, resolvable to the exact passage. */
+/**
+ * A source backing an answer, resolvable to the exact passage.
+ *
+ * `kind` decides how it resolves, and is read rather than inferred from which
+ * fields happen to be set: a document links into the hub, anything external
+ * links out — or nowhere at all, when the source could not supply a URL.
+ */
 export interface Citation {
   /** The bracketed number used in the answer text. */
   marker: number;
-  documentId: string;
-  documentTitle: string;
-  /** Chunk position — links to `/docs/:documentId?chunk=:chunkId`. */
-  chunkId: number;
+  kind: 'document' | 'external';
+  /** Document title, or a repository file path. */
+  title: string;
   heading: string;
+  /** Set for `kind: 'document'` — links to `/docs/:documentId?chunk=:chunkId`. */
+  documentId?: string | null;
+  chunkId: number;
+  /** Set for `kind: 'external'` when the source supplied a link. */
+  url?: string | null;
+  /** Which knowledge source produced this, e.g. `documents`, `repositories`. */
+  sourceName?: string | null;
 }
 
 export interface ChatSession {

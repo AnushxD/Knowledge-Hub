@@ -53,13 +53,14 @@ internal sealed class DocumentKnowledgeSource(ISearchService search) : IKnowledg
 
         return new KnowledgeSearchResult(
             [.. retrieval.Passages.Select(passage => new KnowledgeResult(
-                passage.DocumentId,
-                passage.DocumentTitle,
-                passage.ChunkId,
+                KnowledgeResultKind.Document,
+                passage.Title,
                 passage.Heading,
                 passage.Text,
                 passage.Score,
-                passage.MatchedBy))],
+                passage.MatchedBy,
+                DocumentId: passage.DocumentId,
+                ChunkId: passage.ChunkId))],
             // A vector branch that is down is a degradation, not a failure: the
             // keyword half is still worth answering from, and the user is told
             // the grounding is thinner than usual.

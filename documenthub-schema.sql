@@ -19,6 +19,7 @@
 -- below (everything from "-- Default administrator" to the end) after
 -- regenerating, or keep a copy of it to paste back in.
 
+
 CREATE TABLE IF NOT EXISTS __ef_migrations_history (
     "MigrationId" character varying(150) NOT NULL,
     "ProductVersion" character varying(32) NOT NULL,
@@ -569,6 +570,49 @@ BEGIN
     END IF;
 END $EF$;
 COMMIT;
+
+START TRANSACTION;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM __ef_migrations_history WHERE "MigrationId" = '20260730143344_WidenCitations') THEN
+    UPDATE chat_messages
+    SET "Citations" = (
+        SELECT COALESCE(
+            jsonb_agg(
+                jsonb_build_object(
+                    'marker', element -> 'marker',
+                    'kind', 'document',
+                    'title', element -> 'documentTitle',
+                    'heading', element -> 'heading',
+                    'documentId', element -> 'documentId',
+                    'chunkId', element -> 'chunkId',
+                    'url', NULL,
+                    'sourceName', 'documents'
+                )
+                ORDER BY (element ->> 'marker')::int
+            ),
+            '[]'::jsonb)
+        FROM jsonb_array_elements("Citations") AS element
+    )
+    WHERE jsonb_typeof("Citations") = 'array'
+      AND EXISTS (
+          SELECT 1
+          FROM jsonb_array_elements("Citations") AS probe
+          WHERE probe ? 'documentTitle'
+      );
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM __ef_migrations_history WHERE "MigrationId" = '20260730143344_WidenCitations') THEN
+    INSERT INTO __ef_migrations_history ("MigrationId", "ProductVersion")
+    VALUES ('20260730143344_WidenCitations', '10.0.10');
+    END IF;
+END $EF$;
+COMMIT;
+
 
 -- Default administrator for a fresh deployment.
 --

@@ -225,14 +225,14 @@ internal sealed class CompositeKnowledgeSource(
     /// </summary>
     private static List<FusedPassage> Fuse(IReadOnlyList<SourceOutcome> outcomes)
     {
-        var scores = new Dictionary<(Guid DocumentId, int ChunkId), FusedPassage>();
+        var scores = new Dictionary<(string Identity, int ChunkId), FusedPassage>();
 
         foreach (var outcome in outcomes)
         {
             for (var rank = 0; rank < outcome.Results.Count; rank++)
             {
                 var result = outcome.Results[rank];
-                var key = (result.DocumentId, result.ChunkId);
+                var key = KeyFor(outcome, result);
                 var contribution = 1 / (RankFusionConstant + rank + 1);
 
                 if (scores.TryGetValue(key, out var existing))
@@ -241,7 +241,7 @@ internal sealed class CompositeKnowledgeSource(
                 }
                 else
                 {
-                    scores[key] = new FusedPassage(ToPassage(result), contribution);
+                    scores[key] = new FusedPassage(ToPassage(outcome, result), contribution);
                 }
             }
         }
@@ -249,15 +249,39 @@ internal sealed class CompositeKnowledgeSource(
         return [.. scores.Values.OrderByDescending(passage => passage.Score)];
     }
 
-    private static RetrievedPassage ToPassage(KnowledgeResult result) =>
+    /// <summary>
+    /// What makes two results "the same passage".
+    ///
+    /// A document is identified by its id, deliberately without the source name:
+    /// two sources returning the same document *should* collapse to one
+    /// citation, which is the whole reason this deduplicates. An external
+    /// passage has no id we control, so a URL identifies it across sources and,
+    /// failing that, the source's own name is folded in — otherwise two sources
+    /// that each happen to return "README.md" would be merged into one citation
+    /// pointing at whichever arrived first.
+    /// </summary>
+    private static (string Identity, int ChunkId) KeyFor(
+        SourceOutcome outcome,
+        KnowledgeResult result) =>
+        result is { Kind: KnowledgeResultKind.Document, DocumentId: { } documentId }
+            ? (documentId.ToString(), result.ChunkId)
+            : (result.Url ?? $"{outcome.Name}:{result.Title}", result.ChunkId);
+
+    private static RetrievedPassage ToPassage(SourceOutcome outcome, KnowledgeResult result) =>
         new(
-            result.DocumentId,
-            result.DocumentTitle,
+            result.Kind == KnowledgeResultKind.Document ? PassageKind.Document : PassageKind.External,
+            result.Title,
             result.ChunkId,
             result.Heading,
             result.Text,
             result.Score,
-            result.MatchedBy);
+            result.MatchedBy,
+            DocumentId: result.DocumentId,
+            Url: result.Url,
+            // Attached here rather than by each source: the name is the
+            // composite's own identifier for that source, so a source cannot
+            // misattribute its passages to another.
+            SourceName: outcome.Name);
 
     /// <param name="Degradation">Null when the source answered fully.</param>
     private sealed record SourceOutcome(

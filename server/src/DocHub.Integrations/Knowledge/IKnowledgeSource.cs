@@ -35,29 +35,61 @@ public sealed record KnowledgeSourceStatus(KnowledgeSourceState State, string De
 public sealed record KnowledgeQuery(string Text, Guid? FolderId, int Take);
 
 /// <summary>
+/// What a passage points at, and therefore how a citation to it resolves.
+///
+/// The document case carries an id into our own store; the external case
+/// carries at most a URL. Keeping them one type rather than two means the
+/// orchestrator, the prompt builder and the citation verifier stay unaware of
+/// the difference — only rendering cares.
+/// </summary>
+public enum KnowledgeResultKind
+{
+    /// <summary>A document in this hub, addressable by id and chunk.</summary>
+    Document = 0,
+
+    /// <summary>Something outside the hub, such as a repository file.</summary>
+    External = 1,
+}
+
+/// <summary>
 /// One passage a source offers as grounding.
 ///
-/// Deliberately document-shaped: a citation has to resolve to
-/// <c>/docs/:id?chunk=n</c>, and the persisted citation carries a document id.
-/// A real repository source (phase 7) cites a file at a commit, which needs a
-/// citation target that is not a document id — that is the one part of this
-/// contract expected to change, and the reason nothing else here mentions
-/// documents.
+/// No longer document-shaped: a repository source cites a file at a commit,
+/// which has no document id and no chunk ordinal. <see cref="Kind"/> says which
+/// of the optional members mean anything.
 /// </summary>
+/// <param name="Title">
+/// What to call this in an answer — a document title, or a repository file path.
+/// </param>
+/// <param name="Heading">Where within it: a heading, a page, a line range.</param>
 /// <param name="Text">The passage in full, not a display snippet.</param>
 /// <param name="Score">
 /// The source's own relevance score. Comparable within a source and meaningless
 /// across sources, so callers merging several sources must fuse on rank.
 /// </param>
 /// <param name="MatchedBy">How this was found — "keyword", "vector", "both".</param>
+/// <param name="DocumentId">Set for <see cref="KnowledgeResultKind.Document"/> only.</param>
+/// <param name="ChunkId">
+/// Chunk ordinal for a document. For an external passage this still has to be
+/// *something* stable, because deduplication and citation identity key on it —
+/// a source without ordinals should pass a hash of its own locator rather than
+/// zero for everything, or two different files will look like one passage.
+/// </param>
+/// <param name="Url">
+/// Where a reader can go, when the source can say. Null is a normal answer, not
+/// a gap: the citation still names the passage, and the UI shows it without a
+/// link rather than fabricating one.
+/// </param>
 public sealed record KnowledgeResult(
-    Guid DocumentId,
-    string DocumentTitle,
-    int ChunkId,
+    KnowledgeResultKind Kind,
+    string Title,
     string Heading,
     string Text,
     double Score,
-    string MatchedBy);
+    string MatchedBy,
+    Guid? DocumentId = null,
+    int ChunkId = 0,
+    string? Url = null);
 
 /// <summary>What one source returned for one query.</summary>
 /// <param name="Results">Best first. Empty is a normal answer, not a failure.</param>

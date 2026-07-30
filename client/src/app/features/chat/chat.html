@@ -103,15 +103,31 @@
                 @if (turn.streaming && pendingSources().length) {
                   <div class="mb-2.5 flex flex-wrap items-center gap-1.5">
                     <span class="text-[11px] text-subtle">Reading</span>
-                    @for (source of readingDocuments(); track source.documentId) {
-                      <a
-                        class="dh-source-chip"
-                        [routerLink]="['/docs', source.documentId]"
-                        [queryParams]="{ chunk: source.chunkId }"
-                        [dhTooltip]="source.heading"
-                      >
-                        {{ source.documentTitle }}
-                      </a>
+                    @for (source of readingSources(); track source.marker) {
+                      @if (source.kind === 'document') {
+                        <a
+                          class="dh-source-chip"
+                          [routerLink]="['/docs', source.documentId]"
+                          [queryParams]="{ chunk: source.chunkId }"
+                          [dhTooltip]="source.heading"
+                        >
+                          {{ source.title }}
+                        </a>
+                      } @else if (source.url) {
+                        <a
+                          class="dh-source-chip"
+                          [href]="source.url"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          [dhTooltip]="source.heading"
+                        >
+                          {{ source.title }}
+                        </a>
+                      } @else {
+                        <span class="dh-source-chip" [dhTooltip]="source.heading">
+                          {{ source.title }}
+                        </span>
+                      }
                     }
                   </div>
                 }
@@ -159,20 +175,49 @@
                       <p class="mb-1.5 text-[11px] text-subtle">Sources</p>
                       <div class="flex flex-col gap-1">
                         @for (citation of turn.citations; track citation.marker) {
-                          <a
-                            class="group flex items-center gap-2 text-[12px] text-muted transition hover:text-ink"
-                            [routerLink]="['/docs', citation.documentId]"
-                            [queryParams]="{ chunk: citation.chunkId }"
-                          >
-                            <span class="dh-citation shrink-0">{{ citation.marker }}</span>
-                            <span class="truncate">
-                              {{ citation.documentTitle }}
-                              <span class="text-subtle">· {{ citation.heading }}</span>
+                          <!-- Three shapes, because a citation resolves three
+                               ways: into the hub, out to a link, or nowhere at
+                               all when the source could not give one. -->
+                          @if (citation.kind === 'document') {
+                            <a
+                              class="group flex items-center gap-2 text-[12px] text-muted transition hover:text-ink"
+                              [routerLink]="['/docs', citation.documentId]"
+                              [queryParams]="{ chunk: citation.chunkId }"
+                            >
+                              <span class="dh-citation shrink-0">{{ citation.marker }}</span>
+                              <span class="truncate">
+                                {{ citation.title }}
+                                <span class="text-subtle">· {{ citation.heading }}</span>
+                              </span>
+                              <i
+                                class="pi pi-angle-right ml-auto shrink-0 text-[10px] text-subtle opacity-0 transition group-hover:opacity-100"
+                              ></i>
+                            </a>
+                          } @else if (citation.url) {
+                            <a
+                              class="group flex items-center gap-2 text-[12px] text-muted transition hover:text-ink"
+                              [href]="citation.url"
+                              target="_blank"
+                              rel="noopener noreferrer"
+                            >
+                              <span class="dh-citation shrink-0">{{ citation.marker }}</span>
+                              <span class="truncate">
+                                {{ citation.title }}
+                                <span class="text-subtle">· {{ citation.heading }}</span>
+                              </span>
+                              <i
+                                class="pi pi-external-link ml-auto shrink-0 text-[10px] text-subtle opacity-0 transition group-hover:opacity-100"
+                              ></i>
+                            </a>
+                          } @else {
+                            <span class="flex items-center gap-2 text-[12px] text-muted">
+                              <span class="dh-citation shrink-0">{{ citation.marker }}</span>
+                              <span class="truncate">
+                                {{ citation.title }}
+                                <span class="text-subtle">· {{ citation.heading }}</span>
+                              </span>
                             </span>
-                            <i
-                              class="pi pi-angle-right ml-auto shrink-0 text-[10px] text-subtle opacity-0 transition group-hover:opacity-100"
-                            ></i>
-                          </a>
+                          }
                         }
                       </div>
                     </div>

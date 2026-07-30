@@ -29,16 +29,42 @@ public interface ISearchService
         CancellationToken ct = default);
 }
 
-/// <summary>One passage offered to the model as grounding.</summary>
+/// <summary>Where a retrieved passage lives. Mirrors the Integrations enum.</summary>
+public enum PassageKind
+{
+    /// <summary>A document in this hub, addressable by id and chunk.</summary>
+    Document = 0,
+
+    /// <summary>Something outside the hub, such as a repository file.</summary>
+    External = 1,
+}
+
+/// <summary>
+/// One passage offered to the model as grounding.
+///
+/// Repeated rather than reusing the Integrations record, matching how every
+/// other contract crosses this boundary: Services owns its own shapes so a
+/// change to an external contract cannot ripple into the orchestrator by
+/// accident.
+/// </summary>
 /// <param name="Text">The chunk in full, not a snippet.</param>
+/// <param name="DocumentId">Set for <see cref="PassageKind.Document"/> only.</param>
+/// <param name="Url">A link for an external passage, when one exists.</param>
+/// <param name="SourceName">
+/// Which knowledge source produced this, carried through so it can be persisted
+/// with the citation.
+/// </param>
 public sealed record RetrievedPassage(
-    Guid DocumentId,
-    string DocumentTitle,
+    PassageKind Kind,
+    string Title,
     int ChunkId,
     string Heading,
     string Text,
     double Score,
-    string MatchedBy);
+    string MatchedBy,
+    Guid? DocumentId = null,
+    string? Url = null,
+    string? SourceName = null);
 
 /// <param name="VectorSearchError">
 /// Set when the vector branch was unavailable. Retrieval still returns keyword

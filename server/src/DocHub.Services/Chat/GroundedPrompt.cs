@@ -80,7 +80,7 @@ internal static partial class GroundedPrompt
             var passage = passages[i];
 
             prompt.AppendLine();
-            prompt.AppendLine($"[{i + 1}] {passage.DocumentTitle} — {passage.Heading}");
+            prompt.AppendLine($"[{i + 1}] {passage.Title} — {passage.Heading}");
             prompt.AppendLine("---");
             prompt.AppendLine(passage.Text.Trim());
             prompt.AppendLine("---");
@@ -126,10 +126,15 @@ internal static partial class GroundedPrompt
 
             cited.Add(new Citation(
                 marker,
-                passage.DocumentId,
-                passage.DocumentTitle,
-                passage.ChunkId,
-                passage.Heading));
+                passage.Kind == PassageKind.Document ? CitationKind.Document : CitationKind.External,
+                passage.Title,
+                passage.Heading,
+                DocumentId: passage.DocumentId,
+                // Only meaningful for a document; an external passage's ordinal
+                // is a dedupe key, not something a reader can navigate to.
+                ChunkId: passage.Kind == PassageKind.Document ? passage.ChunkId : null,
+                Url: passage.Url,
+                SourceName: passage.SourceName));
         }
 
         return [.. cited.OrderBy(citation => citation.Marker)];

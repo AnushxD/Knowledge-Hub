@@ -265,12 +265,23 @@ public record RepositoryProbeViewModel(bool IsReachable, string Detail);
 
 /// <summary>A source backing an answer, resolvable to the exact passage.</summary>
 /// <param name="Marker">The bracketed number used in the answer text.</param>
+/// <param name="Kind">
+/// "document" or "external". The client links a document citation into the hub
+/// and an external one out to <paramref name="Url"/>, so it has to be told
+/// which it is rather than guessing from a null id.
+/// </param>
+/// <param name="DocumentId">Null for an external citation.</param>
+/// <param name="Url">Null when the source could not supply a link.</param>
+/// <param name="SourceName">Which knowledge source this came from.</param>
 public record CitationViewModel(
     int Marker,
-    Guid DocumentId,
-    string DocumentTitle,
+    string Kind,
+    string Title,
     int ChunkId,
-    string Heading);
+    string Heading,
+    Guid? DocumentId = null,
+    string? Url = null,
+    string? SourceName = null);
 
 public record ChatSessionViewModel(
     Guid Id,

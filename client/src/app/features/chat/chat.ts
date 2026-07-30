@@ -61,10 +61,18 @@ export class ChatPage {
    * returns several passages from the same file, and repeating its name four
    * times says less than naming four different documents would.
    */
-  protected readonly readingDocuments = computed(() => {
+  /**
+   * One chip per source being read, not one per passage.
+   *
+   * Keyed on whatever identifies it to a reader: a document id collapses
+   * several chunks of one file into one chip, and an external passage — which
+   * has no document id — falls back to its link, then its title.
+   */
+  protected readonly readingSources = computed(() => {
     const seen = new Map<string, Citation>();
     for (const source of this.pendingSources()) {
-      if (!seen.has(source.documentId)) seen.set(source.documentId, source);
+      const key = source.documentId ?? source.url ?? source.title;
+      if (!seen.has(key)) seen.set(key, source);
     }
     return [...seen.values()];
   });

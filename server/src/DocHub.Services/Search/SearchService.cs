@@ -68,14 +68,15 @@ internal sealed class SearchService(
         var passages = Fuse(keyword, vector)
             .Take(take)
             .Select(match => new RetrievedPassage(
-                match.Chunk.DocumentId,
+                PassageKind.Document,
                 match.Chunk.DocumentTitle,
                 match.Chunk.Ordinal,
                 match.Chunk.SectionRef ?? $"Section {match.Chunk.Ordinal + 1}",
                 // Full text, not a snippet — this is what the model reasons over.
                 match.Chunk.Text,
                 Math.Round(match.Score, 6),
-                Describe(match)))
+                Describe(match),
+                DocumentId: match.Chunk.DocumentId))
             .ToList();
 
         return new RetrievalResult(passages, vectorError);
