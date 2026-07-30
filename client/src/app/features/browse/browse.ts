@@ -14,6 +14,7 @@ import { Avatar } from '../../shared/components/avatar';
 import { EmptyState } from '../../shared/components/empty-state';
 import { RowSkeleton } from '../../shared/components/row-skeleton';
 import { CardSkeleton } from '../../shared/components/card-skeleton';
+import { DocumentMenu } from '../../shared/components/document-menu';
 import { FileSizePipe, TimeAgoPipe } from '../../shared/pipes/format.pipes';
 import { UploadDialog } from './upload-dialog';
 
@@ -29,11 +30,19 @@ import { UploadDialog } from './upload-dialog';
     EmptyState,
     RowSkeleton,
     CardSkeleton,
+    DocumentMenu,
     UploadDialog,
     FileSizePipe,
     TimeAgoPipe,
   ],
-  host: { class: 'block' },
+  host: {
+    class: 'block',
+    // An open menu overlays neighbouring cards, so leaving one stuck open is
+    // worse here than in a list. The toggle stops propagation, so this only
+    // ever fires for a click that landed somewhere else.
+    '(document:click)': 'menuFor.set(null)',
+    '(document:keydown.escape)': 'menuFor.set(null)',
+  },
   templateUrl: './browse.html',
 })
 export class Browse {
@@ -104,10 +113,15 @@ export class Browse {
     if (name?.trim()) this.store.createFolder(this.store.folderId(), name.trim());
   }
 
-  protected star(event: Event, id: string): void {
-    event.preventDefault();
+  /**
+   * Opens this document's menu and closes any other.
+   *
+   * Stops propagation so the document-level dismiss handler does not treat the
+   * opening click as a click outside and close it again immediately.
+   */
+  protected toggleMenu(event: Event, id: string): void {
     event.stopPropagation();
-    this.store.star(id);
+    this.menuFor.set(this.menuFor() === id ? null : id);
   }
 
   protected reindex(id: string): void {

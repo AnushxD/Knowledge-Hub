@@ -1,0 +1,27 @@
+<div
+  class="dh-rise absolute top-full right-0 z-50 mt-1 w-44 overflow-hidden rounded-dh border border-hairline bg-surface-1 py-1 shadow-dh-lg"
+  role="menu"
+>
+  <a [routerLink]="['/docs', doc().id]" class="dh-menu-item" role="menuitem">
+    <i class="pi pi-eye text-[11px]"></i> Open
+  </a>
+  <button type="button" class="dh-menu-item" role="menuitem" (click)="dismiss.emit()">
+    <i class="pi pi-download text-[11px]"></i> Download
+  </button>
+  <!-- Re-indexing a document that is mid-ingestion would only queue a second
+       run of the job already working on it. -->
+  @if (doc().status !== 'indexing') {
+    <button type="button" class="dh-menu-item" role="menuitem" (click)="reindex.emit()">
+      <i class="pi pi-refresh text-[11px]"></i> Re-index
+    </button>
+  }
+  <div class="my-1 h-px bg-hairline"></div>
+  <button
+    type="button"
+    class="dh-menu-item text-status-failed"
+    role="menuitem"
+    (click)="remove.emit()"
+  >
+    <i class="pi pi-trash text-[11px]"></i> Delete
+  </button>
+</div>

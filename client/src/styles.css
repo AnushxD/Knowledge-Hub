@@ -486,6 +486,13 @@
     background: var(--dh-surface-3);
     color: var(--dh-text);
   }
+  /* A touch device never hovers, which left these invisible but still
+     tappable — the worst of both. Reveal them where hover cannot. */
+  @media (hover: none) {
+    .dh-row-action {
+      opacity: 1;
+    }
+  }
 
   .dh-menu-item {
     display: flex;
