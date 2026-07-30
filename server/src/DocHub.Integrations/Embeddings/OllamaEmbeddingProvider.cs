@@ -87,7 +87,7 @@ internal sealed class OllamaEmbeddingProvider(
         CancellationToken ct)
     {
         var response = await http.PostAsJsonAsync(
-            "/api/embed", new OllamaEmbedRequest(options.Model, inputs), ct);
+            "/api/embed", new OllamaEmbedRequest(options.Model, inputs, options.KeepAlive), ct);
 
         if (!response.IsSuccessStatusCode)
         {
@@ -127,7 +127,8 @@ internal sealed class OllamaEmbeddingProvider(
 
     private sealed record OllamaEmbedRequest(
         [property: JsonPropertyName("model")] string Model,
-        [property: JsonPropertyName("input")] string[] Input);
+        [property: JsonPropertyName("input")] string[] Input,
+        [property: JsonPropertyName("keep_alive")] string KeepAlive);
 
     private sealed record OllamaEmbedResponse(
         [property: JsonPropertyName("embeddings")] IReadOnlyList<float[]>? Embeddings);

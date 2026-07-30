@@ -38,6 +38,17 @@ public sealed class EmbeddingOptions
     public int TimeoutSeconds { get; set; } = 120;
 
     /// <summary>
+    /// How long Ollama keeps the embedding model resident. See
+    /// <c>LlmOptions.KeepAlive</c> — the same reasoning, and this model is small
+    /// enough that keeping it loaded costs little.
+    ///
+    /// It matters on every question, not just ingestion: the query is embedded
+    /// before retrieval can run, so an evicted model delays the answer before
+    /// the assistant has even been asked.
+    /// </summary>
+    public string KeepAlive { get; set; } = "30m";
+
+    /// <summary>
     /// Task prefix for stored passages. Retrieval models such as
     /// nomic-embed-text are trained with these and lose accuracy without them;
     /// set both to empty for a model that does not use them.

@@ -400,6 +400,8 @@ Key settings, one strongly-typed Options class per external dependency:
 | `Llm:Model` | Answer model (default `llama3.2:3b`) |
 | `Llm:Temperature` | Low by default (0.1); sampling variety is how a model starts inventing |
 | `Llm:ContextTokens` | Context window offered to the model (default 8192). Ollama's own default is 2048 and it discards the overflow silently — too low and the assistant answers without seeing the passages it was told to cite |
+| `Llm:KeepAlive` | How long Ollama keeps the answer model in memory (default `30m`, `-1` for always). Ollama's own default is 5 minutes, so the first question after a quiet spell pays a full reload first |
+| `Embeddings:KeepAlive` | The same for the embedding model, which every question needs before retrieval can run |
 | `Chat:PassageCount` | Passages retrieved per question (default 6) |
 | `Chat:HistoryTurns` | Prior turns replayed for follow-ups (default 4) |
 | `KnowledgeSources:RepositoryProvider` | `none` (default) registers the stub that contributes nothing; `mcp` searches a real MCP server |
@@ -982,6 +984,42 @@ says which one:
 - `container does not exist` → run step 5
 - `the 'nomic-embed-text' model is not installed` → run step 6
 - `the 'llama3.2:3b' model is not installed` → run step 6
+
+### Answers take tens of seconds
+
+Almost always the model, not retrieval. Retrieval is well under a second; the
+rest is Ollama reading the prompt and writing the answer. The log line after
+every answer says which:
+
+```
+Answered with ollama/llama3.2:3b: load 3030ms, prompt 862 tokens in 5056ms (170 tok/s), generated 85 tokens in 4604ms
+```
+
+Read it in this order:
+
+- **`load` is non-zero** — the model was evicted and reloaded before answering.
+  Ollama's default is to unload after 5 minutes idle, so the first question
+  after a quiet spell pays it. `Llm:KeepAlive` and `Embeddings:KeepAlive`
+  default to `30m` to avoid this; raise them, or `-1` to keep models loaded.
+- **`prompt … tok/s` is low (roughly 100–200)** — inference is on the CPU. This
+  is the big one, and it is hardware, not configuration:
+
+  | Where Ollama runs | GPU |
+  |---|---|
+  | **Docker on macOS** | **Never** — Docker cannot reach Metal, so it is always CPU |
+  | Docker on Linux/Windows | Only with the NVIDIA container toolkit |
+  | Native install | Yes — Metal on a Mac, CUDA on an NVIDIA box |
+
+  On a Mac, moving Ollama out of `docker-compose.yml` and installing it natively
+  is by far the largest single win available. Point `Llm:BaseUrl` and
+  `Embeddings:BaseUrl` at `http://localhost:11434` either way.
+- **`prompt` token count is high** — prompt reading is linear in tokens, so
+  fewer or smaller passages cost proportionally less time. `Chat:PassageCount`
+  (default 6) is the lever, and it is also the main *quality* lever: too few and
+  the answer is missing context that exists. Measured on a CPU-only M5, dropping
+  6 → 4 cut prompt reading from about 15.7s to 11.0s.
+- **`generated … tokens` dominates** — the answer itself is long. `Llm:Model` is
+  the lever; a smaller model is faster but follows the citation format worse.
 
 ### Azurite rejects the API version
 

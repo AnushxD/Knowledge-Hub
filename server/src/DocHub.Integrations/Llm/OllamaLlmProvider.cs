@@ -41,7 +41,8 @@ internal sealed class OllamaLlmProvider(
             ],
             Stream: true,
             new OllamaChatOptions(
-                options.Temperature, options.MaxOutputTokens, options.ContextTokens));
+                options.Temperature, options.MaxOutputTokens, options.ContextTokens),
+            options.KeepAlive);
 
         using var content = JsonContent.Create(request, options: Json);
         using var message = new HttpRequestMessage(HttpMethod.Post, "/api/chat")
@@ -91,8 +92,44 @@ internal sealed class OllamaLlmProvider(
             if (chunk?.Message?.Content is { Length: > 0 } fragment)
                 yield return fragment;
 
-            if (chunk?.Done == true) yield break;
+            if (chunk?.Done == true)
+            {
+                LogTimings(chunk);
+                yield break;
+            }
         }
+    }
+
+    /// <summary>
+    /// Records where an answer's time actually went.
+    ///
+    /// Without this the only observable fact is that answering took a while.
+    /// Reading the prompt and writing the answer have completely different
+    /// remedies — fewer passages for one, a smaller model or faster hardware for
+    /// the other — and on a box we cannot attach a profiler to, this log is the
+    /// only way to tell them apart.
+    /// </summary>
+    private void LogTimings(OllamaChatResponse done)
+    {
+        static double Ms(long nanoseconds) => nanoseconds / 1_000_000d;
+
+        // Rate rather than raw duration: tokens per second is comparable across
+        // questions of different sizes, which a millisecond total is not.
+        var promptRate = done.PromptEvalDuration > 0
+            ? done.PromptEvalCount / (done.PromptEvalDuration / 1_000_000_000d)
+            : 0;
+
+        logger.LogInformation(
+            "Answered with {Provider}: load {LoadMs:F0}ms, prompt {PromptTokens} tokens in "
+            + "{PromptMs:F0}ms ({PromptRate:F0} tok/s), generated {OutputTokens} tokens in "
+            + "{OutputMs:F0}ms",
+            Name,
+            Ms(done.LoadDuration),
+            done.PromptEvalCount,
+            Ms(done.PromptEvalDuration),
+            promptRate,
+            done.EvalCount,
+            Ms(done.EvalDuration));
     }
 
     public async Task<LlmAvailability> CheckAvailabilityAsync(CancellationToken ct = default)
@@ -132,7 +169,8 @@ internal sealed class OllamaLlmProvider(
         [property: JsonPropertyName("model")] string Model,
         [property: JsonPropertyName("messages")] IReadOnlyList<OllamaChatMessage> Messages,
         [property: JsonPropertyName("stream")] bool Stream,
-        [property: JsonPropertyName("options")] OllamaChatOptions Options);
+        [property: JsonPropertyName("options")] OllamaChatOptions Options,
+        [property: JsonPropertyName("keep_alive")] string KeepAlive);
 
     private sealed record OllamaChatMessage(
         [property: JsonPropertyName("role")] string Role,
@@ -152,9 +190,21 @@ internal sealed class OllamaLlmProvider(
         [property: JsonPropertyName("num_predict")] int NumPredict,
         [property: JsonPropertyName("num_ctx")] int NumCtx);
 
+    /// <param name="LoadDuration">
+    /// Nanoseconds. Ollama reports these only on the final fragment, and they
+    /// are the difference between "the assistant is slow" and knowing *which*
+    /// part is slow — loading the model, reading the prompt, or writing the
+    /// answer. Prompt evaluation is usually the largest and is the one that
+    /// grows with <c>Chat:PassageCount</c>.
+    /// </param>
     private sealed record OllamaChatResponse(
         [property: JsonPropertyName("message")] OllamaChatMessage? Message,
-        [property: JsonPropertyName("done")] bool Done);
+        [property: JsonPropertyName("done")] bool Done,
+        [property: JsonPropertyName("load_duration")] long LoadDuration = 0,
+        [property: JsonPropertyName("prompt_eval_count")] int PromptEvalCount = 0,
+        [property: JsonPropertyName("prompt_eval_duration")] long PromptEvalDuration = 0,
+        [property: JsonPropertyName("eval_count")] int EvalCount = 0,
+        [property: JsonPropertyName("eval_duration")] long EvalDuration = 0);
 
     private sealed record OllamaTagsResponse(
         [property: JsonPropertyName("models")] IReadOnlyList<OllamaModel>? Models);

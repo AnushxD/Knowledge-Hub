@@ -56,4 +56,20 @@ public sealed class LlmOptions
     /// perfectly good question.
     /// </summary>
     public int TimeoutSeconds { get; set; } = 180;
+
+    /// <summary>
+    /// How long Ollama keeps the model in memory after a request, in its own
+    /// duration format — "30m", "1h", or "-1" to keep it loaded indefinitely.
+    ///
+    /// Ollama's own default is five minutes, which is shorter than the gaps
+    /// between questions on an internal tool. Every gap longer than that costs
+    /// a full reload before the answer even starts — measured at roughly three
+    /// seconds for a 3B model, and worse for a larger one. That delay lands on
+    /// whoever asks the first question after a quiet spell, which is exactly
+    /// when the app feels slowest.
+    ///
+    /// The cost is memory: the model stays resident. On a box doing nothing
+    /// else, that is what the memory is for.
+    /// </summary>
+    public string KeepAlive { get; set; } = "30m";
 }
