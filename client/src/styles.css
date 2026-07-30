@@ -462,6 +462,16 @@
     background: var(--dh-surface-3);
     color: var(--dh-text);
   }
+  /* Text variant. The base .dh-seg is a fixed-width icon target, which a word
+     overflows — and because it is a grid cell, the overflow lands on top of the
+     next segment rather than pushing it along. */
+  .dh-seg-label {
+    width: auto;
+    padding: 0 10px;
+    font-size: 12px;
+    font-weight: 500;
+    white-space: nowrap;
+  }
 
   /* Row actions stay hidden until the row is hovered or focused, so lists
      read as content rather than as a wall of buttons. */
@@ -507,6 +517,186 @@
   }
   .dh-menu-item:hover {
     background: var(--dh-surface-2);
+  }
+
+  /* ---------------------------------------------------------------------------
+     Rendered document content.
+     Descendant selectors rather than utility classes on each element: the HTML
+     comes from a Markdown parser, so we never get to put classes on it. Every
+     value is a --dh-* token, so both themes follow for free.
+  ------------------------------------------------------------------------- */
+  .dh-prose {
+    font-size: 13.5px;
+    line-height: 1.75;
+    color: var(--dh-text-muted);
+    /* Long-form reading measure. Wider than this and the eye loses the line. */
+    max-width: 74ch;
+  }
+  .dh-prose > :first-child {
+    margin-top: 0;
+  }
+  .dh-prose > :last-child {
+    margin-bottom: 0;
+  }
+
+  .dh-prose h1,
+  .dh-prose h2,
+  .dh-prose h3,
+  .dh-prose h4 {
+    color: var(--dh-text);
+    font-weight: 600;
+    line-height: 1.3;
+    margin: 1.6em 0 0.6em;
+    text-wrap: balance;
+  }
+  .dh-prose h1 {
+    font-size: 21px;
+    letter-spacing: -0.01em;
+  }
+  .dh-prose h2 {
+    font-size: 17px;
+    /* A rule under h2 only: it marks the major joints of a document without
+       striping every minor heading. */
+    padding-bottom: 0.3em;
+    border-bottom: 1px solid var(--dh-border);
+  }
+  .dh-prose h3 {
+    font-size: 15px;
+  }
+  .dh-prose h4 {
+    font-size: 13.5px;
+    color: var(--dh-text-muted);
+  }
+
+  .dh-prose p,
+  .dh-prose ul,
+  .dh-prose ol,
+  .dh-prose blockquote,
+  .dh-prose pre,
+  .dh-prose table {
+    margin: 0.85em 0;
+  }
+
+  .dh-prose ul,
+  .dh-prose ol {
+    padding-left: 1.4em;
+  }
+  .dh-prose ul {
+    list-style: disc;
+  }
+  .dh-prose ol {
+    list-style: decimal;
+  }
+  .dh-prose li {
+    margin: 0.3em 0;
+  }
+  .dh-prose li::marker {
+    color: var(--dh-text-subtle);
+  }
+  .dh-prose input[type='checkbox'] {
+    margin-right: 0.45em;
+  }
+
+  .dh-prose strong {
+    color: var(--dh-text);
+    font-weight: 600;
+  }
+  .dh-prose a {
+    color: var(--dh-brand-400);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+
+  .dh-prose blockquote {
+    padding: 0.1em 0 0.1em 1em;
+    border-left: 3px solid var(--dh-border-strong);
+    color: var(--dh-text-subtle);
+  }
+
+  /* Inline code, then the override for code inside a fence — otherwise the
+     inline chrome repeats on every line of a code block. */
+  .dh-prose code {
+    font-family: ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, monospace;
+    font-size: 0.88em;
+    padding: 0.14em 0.4em;
+    border-radius: var(--dh-radius-sm);
+    background: var(--dh-surface-3);
+    color: var(--dh-text);
+  }
+  .dh-prose pre {
+    padding: 12px 14px;
+    border: 1px solid var(--dh-border);
+    border-radius: var(--dh-radius);
+    background: var(--dh-surface-inset);
+    overflow-x: auto;
+  }
+  .dh-prose pre code {
+    padding: 0;
+    background: none;
+    border-radius: 0;
+    font-size: 12.5px;
+    line-height: 1.6;
+  }
+
+  .dh-prose table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12.5px;
+    /* Wide tables scroll themselves rather than widening the page. */
+    display: block;
+    overflow-x: auto;
+  }
+  .dh-prose th,
+  .dh-prose td {
+    padding: 6px 10px;
+    border: 1px solid var(--dh-border);
+    text-align: left;
+  }
+  .dh-prose th {
+    background: var(--dh-surface-inset);
+    color: var(--dh-text);
+    font-weight: 600;
+  }
+
+  .dh-prose hr {
+    margin: 1.8em 0;
+    border: 0;
+    border-top: 1px solid var(--dh-border);
+  }
+  .dh-prose img {
+    max-width: 100%;
+    border-radius: var(--dh-radius);
+  }
+
+  /* ---- Source text with a line-number gutter ---------------------------- */
+  .dh-code {
+    font-family: ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, monospace;
+    font-size: 12.5px;
+    line-height: 1.65;
+    overflow-x: auto;
+  }
+  .dh-code-line {
+    display: flex;
+    gap: 14px;
+  }
+  .dh-code-line:hover {
+    background: var(--dh-surface-2);
+  }
+  .dh-code-gutter {
+    flex: none;
+    width: 3ch;
+    text-align: right;
+    color: var(--dh-text-subtle);
+    /* Numbers must not be selectable, or copying the file copies the gutter. */
+    user-select: none;
+    font-variant-numeric: tabular-nums;
+  }
+  .dh-code code {
+    /* pre-wrap, not pre: a long SQL line should wrap rather than force the
+       whole pane sideways. */
+    white-space: pre-wrap;
+    word-break: break-word;
+    color: var(--dh-text);
   }
 }
 

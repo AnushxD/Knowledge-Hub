@@ -62,18 +62,75 @@ public sealed class DocumentsController(
     public async Task<DocumentDetailViewModel> Get(Guid id, CancellationToken ct) =>
         await documents.GetAsync(id, ct);
 
-    /// <summary>Streams the stored file back.</summary>
+    /// <summary>
+    /// Streams the stored file back.
+    /// </summary>
+    /// <param name="inline">
+    /// Serve for display rather than download. Passing a file name to
+    /// <c>File(...)</c> sets <c>Content-Disposition: attachment</c>, which makes
+    /// the browser save the file instead of showing it — the opposite of what an
+    /// embedded preview needs, so inline omits the name.
+    ///
+    /// Honoured only for the types in <see cref="InlineContentTypes"/>. Anything
+    /// else falls back to a download **on purpose**: this endpoint is
+    /// same-origin with the session cookie, so displaying arbitrary uploaded
+    /// content here would let an uploaded SVG or HTML file run script against a
+    /// signed-in reader's session.
+    /// </param>
     [HttpGet("{id:guid}/content")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> Download(Guid id, CancellationToken ct)
+    public async Task<IActionResult> Download(
+        Guid id,
+        [FromQuery] bool inline,
+        CancellationToken ct)
     {
         var file = await documents.DownloadAsync(id, ct);
 
-        // enableRangeProcessing lets the browser seek within a PDF preview
-        // instead of refetching the whole file.
-        return File(file.Content, file.ContentType, file.FileName, enableRangeProcessing: true);
+        if (!inline || !InlineContentTypes.Contains(file.ContentType))
+        {
+            // enableRangeProcessing lets the browser seek within a PDF preview
+            // instead of refetching the whole file.
+            return File(file.Content, file.ContentType, file.FileName, enableRangeProcessing: true);
+        }
+
+        // What actually makes this safe is the allow-list above — inert formats
+        // only, no SVG and no HTML — together with nosniff, so the browser
+        // cannot be talked into treating a PDF as a document that scripts.
+        //
+        // Note for anyone tempted to add `Content-Security-Policy: sandbox`
+        // here: it does not harden this response, it disables it. A sandboxed
+        // PDF cannot be shown by the browser's built-in viewer, so Chrome
+        // silently falls back to downloading the file and the preview goes
+        // blank. Origin isolation comes from CORP instead.
+        Response.Headers.XContentTypeOptions = "nosniff";
+        Response.Headers["Cross-Origin-Resource-Policy"] = "same-origin";
+
+        // Stated rather than implied. Omitting Content-Disposition happens to
+        // default to inline today, but saying so leaves nothing to a heuristic.
+        Response.Headers.ContentDisposition = "inline";
+
+        return File(file.Content, file.ContentType, enableRangeProcessing: true);
     }
+
+    /// <summary>
+    /// Types safe to render in the browser on our own origin.
+    ///
+    /// Deliberately a short allow-list of inert formats. <c>image/svg+xml</c> is
+    /// absent because an SVG is a script host, and no <c>text/*</c> type appears
+    /// because the client fetches text over XHR and renders it itself rather
+    /// than pointing a frame at this endpoint.
+    /// </summary>
+    private static readonly HashSet<string> InlineContentTypes =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            "application/pdf",
+            "image/png",
+            "image/jpeg",
+            "image/gif",
+            "image/webp",
+            "image/bmp",
+        };
 
     /// <summary>Uploads a new document into a folder.</summary>
     [Authorize(Policy = Policies.Contribute)]

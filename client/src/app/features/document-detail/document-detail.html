@@ -124,48 +124,173 @@
         @case ('preview') {
           <article class="dh-card overflow-hidden">
             <div
-              class="flex items-center justify-between border-b border-hairline bg-surface-inset px-4 py-2"
+              class="flex flex-wrap items-center justify-between gap-2 border-b border-hairline bg-surface-inset px-4 py-2"
             >
-              <span class="text-[11.5px] text-subtle">
-                Extracted text preview · {{ document.sections.length }} sections
-              </span>
-              @if (highlightChunk()) {
-                <button
-                  type="button"
-                  class="text-[11.5px] font-medium text-brand-400 hover:underline"
-                  (click)="clearHighlight()"
+              @if (canRender()) {
+                <!-- Two ways to read the same file: as the author wrote it, or
+                     as the assistant sees it. Both are legitimate, so this is a
+                     switch rather than one replacing the other. -->
+                <div
+                  class="flex h-8 items-center rounded-dh border border-hairline bg-surface-1 p-0.5"
                 >
-                  Clear highlight
-                </button>
+                  <button
+                    type="button"
+                    class="dh-seg dh-seg-label"
+                    [class.dh-seg-active]="!showExtracted()"
+                    (click)="viewDocument()"
+                  >
+                    Document
+                  </button>
+                  <button
+                    type="button"
+                    class="dh-seg dh-seg-label"
+                    [class.dh-seg-active]="showExtracted()"
+                    (click)="showExtracted.set(true)"
+                  >
+                    Extracted
+                  </button>
+                </div>
+              } @else {
+                <span class="text-[11.5px] text-subtle">
+                  Extracted text · {{ document.sections.length }} sections
+                </span>
               }
+
+              <div class="flex items-center gap-3">
+                @if (showExtracted()) {
+                  <span class="text-[11.5px] text-subtle">
+                    {{ document.sections.length }} sections, as chunked for search
+                  </span>
+                }
+                @if (highlightChunk()) {
+                  <button
+                    type="button"
+                    class="text-[11.5px] font-medium text-brand-400 hover:underline"
+                    (click)="clearHighlight()"
+                  >
+                    Clear highlight
+                  </button>
+                }
+              </div>
             </div>
 
-            <div class="space-y-6 px-6 py-6 lg:px-8">
-              @for (section of document.sections; track section.chunkId) {
-                <section
-                  [id]="'chunk-' + section.chunkId"
-                  class="scroll-mt-40 rounded-dh px-3 py-2.5 transition-colors duration-500"
-                  [class]="highlightChunk() === section.chunkId ? 'dh-cited' : ''"
-                >
-                  <div class="mb-1.5 flex items-baseline gap-2">
-                    <h2 class="text-[14px] font-semibold text-ink">{{ section.heading }}</h2>
-                    <span class="text-[11px] text-subtle">~{{ section.tokenCount }} tokens</span>
-                    @if (highlightChunk() === section.chunkId) {
-                      <span
-                        class="rounded-full px-2 py-px text-[10px] font-medium"
-                        style="
-                          background: color-mix(in oklab, var(--dh-ai-from) 20%, transparent);
-                          color: var(--dh-brand-400);
-                        "
-                      >
-                        cited passage
-                      </span>
-                    }
+            @if (canRender() && !showExtracted()) {
+              @switch (renderer()) {
+                @case ('markdown') {
+                  @if (textBody(); as body) {
+                    <div class="px-6 py-6 lg:px-8"><dh-markdown-view [source]="body" /></div>
+                  } @else if (textError(); as message) {
+                    <p class="px-6 py-6 text-[12.5px] text-status-failed lg:px-8">{{ message }}</p>
+                  } @else {
+                    <p class="px-6 py-8 text-center text-[12.5px] text-subtle lg:px-8">
+                      Loading the document…
+                    </p>
+                  }
+                }
+
+                @case ('code') {
+                  @if (textBody(); as body) {
+                    <div class="px-4 py-4 lg:px-6"><dh-code-view [source]="body" /></div>
+                  } @else if (textError(); as message) {
+                    <p class="px-6 py-6 text-[12.5px] text-status-failed lg:px-8">{{ message }}</p>
+                  } @else {
+                    <p class="px-6 py-8 text-center text-[12.5px] text-subtle lg:px-8">
+                      Loading the document…
+                    </p>
+                  }
+                }
+
+                @case ('pdf') {
+                  <!-- The browser's own PDF viewer: it already does paging,
+                       search, zoom and text selection better than anything we
+                       would embed, and it costs no bundle. -->
+                  <iframe
+                    [src]="pdfUrl()"
+                    class="block h-[78vh] w-full border-0 bg-surface-inset"
+                    [title]="document.title + ' (PDF preview)'"
+                  ></iframe>
+                  <!-- Not every browser will display a PDF in a frame — some
+                       have the viewer disabled, and some hand PDFs straight to
+                       the OS. There is no reliable way to detect that from
+                       script, so the way out is always offered rather than
+                       shown only once the frame has already failed. -->
+                  <p
+                    class="flex flex-wrap items-center gap-1.5 border-t border-hairline px-4 py-2 text-[11.5px] text-subtle"
+                  >
+                    Not showing the PDF?
+                    <a
+                      [href]="contentUrl()"
+                      target="_blank"
+                      rel="noopener"
+                      class="font-medium text-brand-400 hover:underline"
+                    >
+                      Open it in a new tab
+                    </a>
+                    or switch to Extracted to read the indexed text.
+                  </p>
+                }
+
+                @case ('image') {
+                  <div class="grid place-items-center bg-surface-inset px-6 py-6">
+                    <img
+                      [src]="contentUrl()"
+                      [alt]="document.title"
+                      class="max-h-[74vh] max-w-full rounded-dh"
+                    />
                   </div>
-                  <p class="text-[13.5px] leading-[1.75] text-muted">{{ section.body }}</p>
-                </section>
+                }
               }
-            </div>
+            } @else {
+              @if (!canRender() && renderer() === 'none') {
+                <!-- Said plainly rather than left to look broken: this file type
+                     has no faithful in-browser rendering. -->
+                <p
+                  class="border-b border-hairline px-6 py-2.5 text-[12px] text-subtle lg:px-8"
+                >
+                  {{ kindLabel(document.kind) }} files are shown as the text ingestion extracted.
+                  Download the original to see its formatting.
+                </p>
+              }
+
+              @if (document.sections.length) {
+                <div class="space-y-6 px-6 py-6 lg:px-8">
+                  @for (section of document.sections; track section.chunkId) {
+                    <section
+                      [id]="'chunk-' + section.chunkId"
+                      class="scroll-mt-40 rounded-dh px-3 py-2.5 transition-colors duration-500"
+                      [class]="highlightChunk() === section.chunkId ? 'dh-cited' : ''"
+                    >
+                      <div class="mb-1.5 flex items-baseline gap-2">
+                        <h2 class="text-[14px] font-semibold text-ink">{{ section.heading }}</h2>
+                        <span class="text-[11px] text-subtle">~{{ section.tokenCount }} tokens</span>
+                        @if (highlightChunk() === section.chunkId) {
+                          <span
+                            class="rounded-full px-2 py-px text-[10px] font-medium"
+                            style="
+                              background: color-mix(in oklab, var(--dh-ai-from) 20%, transparent);
+                              color: var(--dh-brand-400);
+                            "
+                          >
+                            cited passage
+                          </span>
+                        }
+                      </div>
+                      <p class="text-[13.5px] leading-[1.75] text-muted">{{ section.body }}</p>
+                    </section>
+                  }
+                </div>
+              } @else {
+                <!-- Nothing extracted yet. Which of the two reasons it is
+                     matters, so they read differently. -->
+                <p class="px-6 py-8 text-center text-[12.5px] text-subtle lg:px-8">
+                  @if (document.status === 'failed') {
+                    Ingestion failed, so no text was extracted from this file.
+                  } @else {
+                    This document has not finished ingestion, so it has no extracted text yet.
+                  }
+                </p>
+              }
+            }
           </article>
         }
 

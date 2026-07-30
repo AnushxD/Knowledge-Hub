@@ -838,6 +838,31 @@ export class MockKnowledgeGateway extends KnowledgeGateway {
     });
   }
 
+  /**
+   * The seeded sections stitched back into one Markdown document, so the
+   * rendered preview has something structural to show.
+   */
+  documentText(id: string): Observable<string> {
+    return this.read((db) => {
+      const doc = db.documents.find((d) => d.id === id);
+      if (!doc) return '';
+
+      const seed = SEEDS.find((s) => s.id === id)!;
+
+      return sectionsFor(seed)
+        .map((section) => `## ${section.heading}\n\n${section.body}`)
+        .join('\n\n');
+    });
+  }
+
+  /**
+   * Null on purpose: there is no stored file behind a seeded document, and the
+   * preview says so rather than pointing a frame at nothing.
+   */
+  documentContentUrl(): string | null {
+    return null;
+  }
+
   stats(): Observable<LibraryStats> {
     return this.read((db) => ({
       documents: db.documents.length,

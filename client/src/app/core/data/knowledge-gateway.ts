@@ -64,6 +64,21 @@ export abstract class KnowledgeGateway {
   abstract stats(): Observable<LibraryStats>;
 
   /**
+   * The stored file decoded as text, for previewing Markdown, code and plain
+   * text as themselves rather than as extracted chunks.
+   */
+  abstract documentText(id: string): Observable<string>;
+
+  /**
+   * A URL a frame or `<img>` can point at to display the stored file, for the
+   * types the browser renders better than we could — PDFs and raster images.
+   *
+   * Null when the implementation has no real file behind the document, which
+   * the preview reports rather than rendering an empty frame.
+   */
+  abstract documentContentUrl(id: string): string | null;
+
+  /**
    * Hybrid keyword + semantic search over indexed chunks. Distinct from
    * `documents()`, which filters the library by metadata — this searches
    * inside the content.

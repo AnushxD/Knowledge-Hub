@@ -178,6 +178,18 @@ export class HttpKnowledgeGateway extends KnowledgeGateway {
     );
   }
 
+  documentText(id: string): Observable<string> {
+    // responseType 'text' so HttpClient hands back the body verbatim instead of
+    // trying to parse a Markdown or SQL file as JSON.
+    return this.http.get(`${this.base}/documents/${id}/content`, { responseType: 'text' });
+  }
+
+  documentContentUrl(id: string): string {
+    // Same-origin, so the session cookie rides along and no token has to be put
+    // in the URL. `inline` is what stops the browser downloading it instead.
+    return `${this.base}/documents/${id}/content?inline=true`;
+  }
+
   stats(): Observable<LibraryStats> {
     return this.http.get<ApiStats>(`${this.base}/documents/stats`).pipe(
       map((stats) => ({

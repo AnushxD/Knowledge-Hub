@@ -942,6 +942,7 @@ and no deployable artefact should contain a credential.
 | Sign-in, roles, admin account management, Google sign-in, rate limiting | Done |
 | Container images, GitHub Actions CI, IIS artefact and single-site hosting | Done |
 | Activity trail behind the dashboard feed | Done |
+| Document previews rendered as themselves (Markdown, source, PDF, images) | Done |
 
 **v1 is complete.** Upload a Markdown, PDF or Word file and it is
 extracted, chunked, embedded and searchable within seconds. Ask a question and
@@ -954,6 +955,20 @@ and named in the reply rather than failing the whole question, and `/sources`
 shows which are contributing. A repository source is registered locally as an
 inactive stub — the real MCP client is phase 7, and having a second source
 present from the start means the fan-out is exercised before then.
+
+A document's Preview tab shows the file as itself: Markdown rendered, source
+files with a line-number gutter, PDFs in the browser's own viewer, images inline.
+An **Extracted** toggle switches to the chunked text the assistant actually
+retrieves, and a citation link (`?chunk=N`) opens straight to it with the passage
+highlighted — the rendered view has no chunks to point at. File types with no
+faithful in-browser rendering, such as Word and PowerPoint, say so and offer the
+download rather than showing an approximation.
+
+Rendered Markdown is bound through Angular's HTML sanitizer, never
+`bypassSecurityTrustHtml`: documents are uploaded by contributors, so their
+content is untrusted input. For the same reason `?inline=true` is honoured only
+for PDFs and raster images — an uploaded SVG or HTML file displayed on our own
+origin could script against a reader's session.
 
 Access is a session cookie issued by ASP.NET Core Identity. Every endpoint
 requires one unless it opts out, content changes need Editor or Admin, and
@@ -989,7 +1004,7 @@ requests are same-origin and CORS never applies.
 | `DELETE` | `/api/folders/{id}` | Delete a folder, its subtree and its files |
 | `GET` | `/api/documents` | List/filter documents (folder, text, tag, status, owner, sort, paging) |
 | `GET` | `/api/documents/{id}` | Document with breadcrumb and version history |
-| `GET` | `/api/documents/{id}/content` | Download the current file |
+| `GET` | `/api/documents/{id}/content` | The current file. Downloads by default; `?inline=true` serves it for display, honoured only for PDFs and raster images |
 | `POST` | `/api/documents?folderId=…` | Upload a document (multipart `file`) |
 | `POST` | `/api/documents/{id}/versions` | Upload a replacement as a new version |
 | `PATCH` | `/api/documents/{id}` | Update title, description, tags, starred |
