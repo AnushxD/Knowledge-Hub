@@ -28,3 +28,28 @@
   background: color-mix(in oklab, var(--dh-ai-from) 11%, transparent);
   box-shadow: inset 3px 0 0 var(--dh-brand-500);
 }
+
+/* The PDF pane.
+   Sized against the space it actually sits in, not the viewport. The page
+   scrolls inside <main>, which is already shorter than the viewport by the top
+   bar (60px), and this screen then puts a sticky header (~268px) and its own
+   padding inside that — plus <main> reserves 96px at the bottom for the
+   floating assistant button. A viewport-relative height ignores all of it: the
+   78vh this used to be overshot the available space by 220-340px at every
+   realistic window size, so the outer container had to scroll a few hundred
+   pixels purely to reveal the bottom of a frame that already had its own
+   scrollbar. Two scrollbars, and the wheel doing different things depending on
+   whether the pointer was over the PDF.
+   34rem is that chrome added up. The clamp keeps it usable when the sticky
+   header is taller than usual (long title, tags, a failure banner) and stops it
+   growing absurdly on a tall monitor.
+   overscroll-behavior keeps any scrolling that does happen here from chaining
+   out into <main>. */
+.dh-pdf-frame {
+  display: block;
+  width: 100%;
+  height: clamp(320px, calc(100dvh - 34rem), 900px);
+  border: 0;
+  background: var(--dh-surface-inset);
+  overscroll-behavior: contain;
+}
