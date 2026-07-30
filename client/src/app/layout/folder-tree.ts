@@ -2,20 +2,26 @@ import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@a
 import { NgTemplateOutlet } from '@angular/common';
 import { Router } from '@angular/router';
 import { LibraryStore } from '../core/state/library-store';
+import { AuthStore } from '../core/state/auth-store';
 import { Folder } from '../core/models/knowledge.models';
 import { formatBytes } from '../core/utils/file-kind';
+import { ConfirmDialog } from '../shared/components/confirm-dialog';
 
 @Component({
   selector: 'dh-folder-tree',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [NgTemplateOutlet],
+  imports: [NgTemplateOutlet, ConfirmDialog],
   host: { class: 'flex min-h-0 flex-col' },
   templateUrl: './folder-tree.html',
   styleUrl: './folder-tree.css',
 })
 export class FolderTree {
   protected readonly store = inject(LibraryStore);
+  protected readonly auth = inject(AuthStore);
   private readonly router = inject(Router);
+
+  /** The folder awaiting a delete confirmation, if any. */
+  protected readonly pendingDelete = signal<Folder | null>(null);
 
   protected readonly expanded = signal(new Set<string>(['f-eng', 'f-onb']));
 
@@ -92,5 +98,46 @@ export class FolderTree {
     if (!name?.trim()) return;
     this.store.createFolder(parentId, name.trim());
     if (parentId) this.expanded.update((set) => new Set(set).add(parentId));
+  }
+
+  /**
+   * What the confirmation spells out.
+   *
+   * `documentCount` is recursive, so it already covers the subtree — which is
+   * the number that matters, because the whole subtree goes.
+   */
+  protected deleteMessage(folder: Folder): string {
+    const subfolders = this.descendantCount(folder.id);
+    const documents = folder.documentCount;
+
+    const parts = [
+      documents === 1 ? '1 document' : `${documents} documents`,
+      subfolders === 1 ? '1 subfolder' : `${subfolders} subfolders`,
+    ];
+
+    return subfolders > 0
+      ? `“${folder.name}” holds ${parts[0]} across ${parts[1]}.`
+      : `“${folder.name}” holds ${parts[0]}.`;
+  }
+
+  private descendantCount(id: string): number {
+    const children = this.childrenOf(id);
+    return children.length + children.reduce((sum, c) => sum + this.descendantCount(c.id), 0);
+  }
+
+  protected confirmDelete(): void {
+    const folder = this.pendingDelete();
+    if (!folder) return;
+
+    this.store.deleteFolder(folder.id);
+    this.pendingDelete.set(null);
+
+    // The subtree is gone; leaving its ids expanded would keep stale rows open
+    // if a folder with the same id ever came back.
+    this.expanded.update((set) => {
+      const next = new Set(set);
+      next.delete(folder.id);
+      return next;
+    });
   }
 }

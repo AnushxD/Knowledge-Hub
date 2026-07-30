@@ -1,0 +1,41 @@
+<div
+  class="fixed inset-0 z-50 flex items-center justify-center px-4"
+  role="alertdialog"
+  aria-modal="true"
+  [attr.aria-label]="heading()"
+>
+  <div class="absolute inset-0 bg-black/45 backdrop-blur-[2px]" (click)="cancel.emit()"></div>
+
+  <div
+    class="dh-rise relative flex w-full max-w-md flex-col overflow-hidden rounded-dh-xl border border-hairline bg-surface-1 shadow-dh-lg"
+  >
+    <div class="flex items-start gap-3.5 px-5 pt-5">
+      <span
+        class="grid size-9 shrink-0 place-items-center rounded-dh"
+        style="background: color-mix(in oklab, var(--dh-status-failed) 14%, transparent)"
+      >
+        <i class="pi pi-exclamation-triangle text-[14px] text-status-failed"></i>
+      </span>
+      <div class="min-w-0 flex-1">
+        <h2 class="text-[14px] font-semibold text-ink">{{ heading() }}</h2>
+        <p class="mt-1 text-[12.5px] leading-relaxed text-muted">{{ message() }}</p>
+        @if (detail()) {
+          <p class="mt-2 text-[12.5px] leading-relaxed text-status-failed">{{ detail() }}</p>
+        }
+      </div>
+    </div>
+
+    <div class="mt-5 flex justify-end gap-2 border-t border-hairline px-5 py-3.5">
+      <!-- Autofocused, so the safe option is the one under Enter. -->
+      <button type="button" class="dh-btn-ghost" (click)="cancel.emit()" autofocus>Cancel</button>
+      <button
+        type="button"
+        class="flex h-8.5 items-center gap-2 rounded-dh px-3.5 text-[12.5px] font-medium text-white transition hover:brightness-110"
+        style="background: var(--dh-status-failed)"
+        (click)="confirm.emit()"
+      >
+        {{ confirmLabel() }}
+      </button>
+    </div>
+  </div>
+</div>

@@ -191,6 +191,34 @@ export class LibraryStore {
   }
 
   /**
+   * Deletes a folder, everything under it, and every file those documents own.
+   *
+   * Moves the view out of the subtree *before* the request, not after: if the
+   * folder currently being browsed is inside what is about to disappear, the
+   * list would otherwise re-query a folder the server no longer has and answer
+   * with nothing — which reads as "your documents are gone" rather than "you
+   * deleted this folder".
+   */
+  deleteFolder(id: string): void {
+    if (this.isInSubtree(this.folderId(), id)) this.openFolder(null);
+
+    this.gateway.deleteFolder(id).subscribe(() => this.bump());
+  }
+
+  /** Whether `folderId` is `ancestorId` or sits somewhere beneath it. */
+  private isInSubtree(folderId: string | null, ancestorId: string): boolean {
+    const folders = this.folders() ?? [];
+    let cursor = folderId;
+
+    while (cursor) {
+      if (cursor === ancestorId) return true;
+      cursor = folders.find((folder) => folder.id === cursor)?.parentId ?? null;
+    }
+
+    return false;
+  }
+
+  /**
    * Invalidate the derived reads (folders, stats, activity) after a mutation.
    * The document list refreshes on its own because the gateway streams it.
    */
