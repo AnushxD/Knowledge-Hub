@@ -48,7 +48,7 @@
 .dh-pdf-frame {
   display: block;
   width: 100%;
-  height: clamp(320px, calc(100dvh - 34rem), 900px);
+  height: clamp(320px, calc(100dvh - 23rem), 900px);
   border: 0;
   background: var(--dh-surface-inset);
   overscroll-behavior: contain;
