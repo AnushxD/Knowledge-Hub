@@ -1,0 +1,77 @@
+<div
+  class="fixed inset-0 z-50 flex items-center justify-center px-4"
+  role="dialog"
+  aria-modal="true"
+  aria-label="New folder"
+>
+  <div class="absolute inset-0 bg-black/45 backdrop-blur-[2px]" (click)="cancel.emit()"></div>
+
+  <div
+    class="dh-rise relative flex w-full max-w-md flex-col overflow-hidden rounded-dh-xl border border-hairline bg-surface-1 shadow-dh-lg"
+  >
+    <header class="flex items-start gap-3 border-b border-hairline px-5 py-3.5">
+      <span
+        class="grid size-9 shrink-0 place-items-center rounded-dh"
+        style="background: color-mix(in oklab, var(--dh-brand-500) 14%, transparent)"
+      >
+        <i class="pi pi-folder-plus text-[14px] text-brand-400"></i>
+      </span>
+      <div class="min-w-0 flex-1">
+        <h2 class="text-[14px] font-semibold text-ink">New folder</h2>
+        <p class="mt-0.5 truncate text-[12px] text-muted">
+          @if (parentName()) {
+            Inside <span class="text-ink">{{ parentName() }}</span>
+          } @else {
+            At the top level
+          }
+        </p>
+      </div>
+      <button
+        type="button"
+        class="grid size-8 shrink-0 place-items-center rounded-lg text-subtle transition hover:bg-surface-2 hover:text-ink"
+        (click)="cancel.emit()"
+        aria-label="Close"
+      >
+        <i class="pi pi-times text-[13px]"></i>
+      </button>
+    </header>
+
+    <div class="px-5 py-4">
+      <label class="dh-eyebrow mb-1.5 block" for="folder-name">Name</label>
+      <input
+        #field
+        id="folder-name"
+        type="text"
+        class="h-9.5 w-full rounded-dh border border-hairline bg-surface-inset px-3 text-[13px] text-ink outline-none transition focus:border-brand-500"
+        placeholder="Onboarding"
+        autocomplete="off"
+        [value]="name()"
+        (input)="onInput($event)"
+        (keydown.enter)="submit()"
+        [attr.aria-invalid]="error() ? 'true' : null"
+      />
+      <!-- The row is always present so the panel does not jump when a message
+           appears under the field. -->
+      <p class="mt-1.5 min-h-4 text-[11.5px]" [class.text-status-failed]="error()">
+        @if (error()) {
+          {{ error() }}
+        } @else {
+          <span class="text-subtle">Enter to create, Escape to cancel.</span>
+        }
+      </p>
+    </div>
+
+    <div class="flex justify-end gap-2 border-t border-hairline px-5 py-3.5">
+      <button type="button" class="dh-btn-ghost" (click)="cancel.emit()">Cancel</button>
+      <button
+        type="button"
+        class="flex h-8.5 items-center gap-2 rounded-dh px-3.5 text-[12.5px] font-medium text-white transition enabled:hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-45"
+        style="background: linear-gradient(135deg, var(--dh-brand-600), var(--dh-brand-500))"
+        [disabled]="!canSubmit()"
+        (click)="submit()"
+      >
+        Create folder
+      </button>
+    </div>
+  </div>
+</div>

@@ -31,7 +31,7 @@
 
       @if (auth.canContribute()) {
         <div class="flex items-center gap-2">
-          <button type="button" class="dh-btn-ghost" (click)="newFolder()">
+          <button type="button" class="dh-btn-ghost" (click)="namingFolder.set(true)">
             <i class="pi pi-folder-plus text-[12px]"></i>
             <span class="hidden sm:inline">New folder</span>
           </button>
@@ -249,7 +249,7 @@
               <i class="pi pi-upload text-[12px]"></i>
               Upload documents
             </button>
-            <button type="button" class="dh-btn-ghost" (click)="newFolder()">
+            <button type="button" class="dh-btn-ghost" (click)="namingFolder.set(true)">
               <i class="pi pi-folder-plus text-[12px]"></i>
               New folder
             </button>
@@ -459,5 +459,13 @@
     [folderId]="store.folderId()"
     [seedFiles]="droppedFiles()"
     (close)="closeUpload()"
+  />
+}
+
+@if (namingFolder()) {
+  <dh-folder-dialog
+    [parentName]="newFolderParentName()"
+    (create)="createFolder($event)"
+    (cancel)="namingFolder.set(false)"
   />
 }

@@ -6,11 +6,12 @@ import { AuthStore } from '../core/state/auth-store';
 import { Folder } from '../core/models/knowledge.models';
 import { formatBytes } from '../core/utils/file-kind';
 import { ConfirmDialog } from '../shared/components/confirm-dialog';
+import { FolderDialog } from '../shared/components/folder-dialog';
 
 @Component({
   selector: 'dh-folder-tree',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [NgTemplateOutlet, ConfirmDialog],
+  imports: [NgTemplateOutlet, ConfirmDialog, FolderDialog],
   host: { class: 'flex min-h-0 flex-col' },
   templateUrl: './folder-tree.html',
   styleUrl: './folder-tree.css',
@@ -93,10 +94,27 @@ export class FolderTree {
     this.router.navigate(['/browse']);
   }
 
-  protected createFolder(parentId: string | null): void {
-    const name = prompt('Folder name');
-    if (!name?.trim()) return;
-    this.store.createFolder(parentId, name.trim());
+  /**
+   * The parent a new folder is being named for.
+   *
+   * Three states, which is why it is not a boolean: closed, open for a top-level
+   * folder (null parent), and open for a child. `undefined` is closed.
+   */
+  protected readonly pendingParent = signal<string | null | undefined>(undefined);
+
+  protected readonly pendingParentName = computed(() => {
+    const parentId = this.pendingParent();
+    if (!parentId) return '';
+    return (this.store.folders() ?? []).find((folder) => folder.id === parentId)?.name ?? '';
+  });
+
+  protected confirmCreate(name: string): void {
+    const parentId = this.pendingParent() ?? null;
+
+    this.store.createFolder(parentId, name);
+    this.pendingParent.set(undefined);
+
+    // Open the parent, or the folder just created is added out of sight.
     if (parentId) this.expanded.update((set) => new Set(set).add(parentId));
   }
 

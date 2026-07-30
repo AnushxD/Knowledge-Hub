@@ -35,7 +35,7 @@
     <button
       type="button"
       class="grid size-5 place-items-center rounded-md text-subtle transition hover:bg-surface-2 hover:text-ink"
-      (click)="createFolder(null)"
+      (click)="pendingParent.set(null)"
       aria-label="New top-level folder"
     >
       <i class="pi pi-plus text-[10px]"></i>
@@ -114,7 +114,7 @@
             <button
               type="button"
               class="grid size-5 place-items-center rounded-md text-subtle transition hover:bg-surface-3 hover:text-ink"
-              (click)="createFolder(node.id); $event.stopPropagation()"
+              (click)="pendingParent.set(node.id); $event.stopPropagation()"
               [attr.aria-label]="'New folder inside ' + node.name"
             >
               <i class="pi pi-plus text-[10px]"></i>
@@ -149,5 +149,13 @@
     confirmLabel="Delete folder"
     (confirm)="confirmDelete()"
     (cancel)="pendingDelete.set(null)"
+  />
+}
+
+@if (pendingParent() !== undefined) {
+  <dh-folder-dialog
+    [parentName]="pendingParentName()"
+    (create)="confirmCreate($event)"
+    (cancel)="pendingParent.set(undefined)"
   />
 }

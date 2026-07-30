@@ -14,6 +14,7 @@ import { Avatar } from '../../shared/components/avatar';
 import { EmptyState } from '../../shared/components/empty-state';
 import { RowSkeleton } from '../../shared/components/row-skeleton';
 import { CardSkeleton } from '../../shared/components/card-skeleton';
+import { FolderDialog } from '../../shared/components/folder-dialog';
 import { DocumentMenu } from '../../shared/components/document-menu';
 import { FileSizePipe, TimeAgoPipe } from '../../shared/pipes/format.pipes';
 import { UploadDialog } from './upload-dialog';
@@ -31,6 +32,7 @@ import { UploadDialog } from './upload-dialog';
     RowSkeleton,
     CardSkeleton,
     DocumentMenu,
+    FolderDialog,
     UploadDialog,
     FileSizePipe,
     TimeAgoPipe,
@@ -108,9 +110,15 @@ export class Browse {
     this.store.ownerId.set(this.store.ownerId() === id ? undefined : id);
   }
 
-  protected newFolder(): void {
-    const name = prompt('Folder name');
-    if (name?.trim()) this.store.createFolder(this.store.folderId(), name.trim());
+  /** Open while a new folder is being named. */
+  protected readonly namingFolder = signal(false);
+
+  /** New folders land in the folder being viewed, or at the top level. */
+  protected readonly newFolderParentName = computed(() => this.store.currentFolder()?.name ?? '');
+
+  protected createFolder(name: string): void {
+    this.store.createFolder(this.store.folderId(), name);
+    this.namingFolder.set(false);
   }
 
   /**
