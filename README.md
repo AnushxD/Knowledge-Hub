@@ -390,6 +390,7 @@ Key settings, one strongly-typed Options class per external dependency:
 | `Database:ConnectionString` | Postgres connection — also backs the Hangfire job store |
 | `FileStorage:ConnectionString` | `UseDevelopmentStorage=true` locally; a real Azure connection string in production |
 | `FileStorage:ContainerName` | Blob container for document files (default `documents`) |
+| `FileStorage:ServiceVersion` | Storage REST API version, e.g. `2025-11-05`. Empty uses the SDK default. Only needed against an Azurite older than the SDK — see [Azurite rejects the API version](#azurite-rejects-the-api-version) |
 | `Embeddings:Provider` | `ollama` (default) or `hashing` — see below |
 | `Embeddings:BaseUrl` | Ollama endpoint (default `http://localhost:11434`) |
 | `Embeddings:Model` | Embedding model (default `nomic-embed-text`) |
@@ -700,6 +701,9 @@ Set-PoolEnv "ASPNETCORE_ENVIRONMENT"        "Production"
 Set-PoolEnv "Database__ConnectionString"    "Host=localhost;Port=5432;Database=documenthub;Username=documenthub;Password=<the password you set in step 2>"
 Set-PoolEnv "FileStorage__ConnectionString" "UseDevelopmentStorage=true"
 Set-PoolEnv "FileStorage__ContainerName"    "documents"
+# Only when uploads fail with "InvalidHeaderValue" — see the troubleshooting
+# entry. Harmless to leave unset against real Azure.
+Set-PoolEnv "FileStorage__ServiceVersion"   "2025-11-05"
 Set-PoolEnv "Embeddings__BaseUrl"           "http://localhost:11434"
 Set-PoolEnv "Llm__BaseUrl"                  "http://localhost:11434"
 Set-PoolEnv "Authentication__KeyPath"       "C:\inetpub\documenthub-keys"
@@ -1066,6 +1070,45 @@ says which one:
 - `container does not exist` → run step 5
 - `the 'nomic-embed-text' model is not installed` → run step 6
 - `the 'llama3.2:3b' model is not installed` → run step 6
+
+### Azurite rejects the API version
+
+Uploads fail and the log shows:
+
+```
+Azure.RequestFailedException: The API version 2026-06-06 is not supported by Azurite.
+Status: 400   ErrorCode: InvalidHeaderValue
+```
+
+The `Azure.Storage.Blobs` SDK asks for the newest storage REST API version it
+knows, and Azurite implements one specific version and rejects anything newer.
+The SDK ships ahead of the emulator, so this happens **even on the latest
+Azurite** — as of Azurite 3.36 the newest accepted version is `2025-11-05`,
+while the SDK asks for `2026-06-06`. Upgrading Azurite does not fix it.
+
+Three ways out, in order of preference:
+
+1. **Pin the version the client asks for.** No code or package change:
+
+   ```
+   FileStorage__ServiceVersion=2025-11-05
+   ```
+
+   Set it as an app-pool environment variable on IIS. Leave it unset against
+   real Azure, which always supports the newest version.
+
+2. **Start Azurite with `--skipApiVersionCheck`**, which is what
+   `docker-compose.yml` does locally. Best when the emulator's launch arguments
+   are yours to change; useless when it is installed as a service or bundled
+   with Visual Studio.
+
+3. Downgrading the `Azure.Storage.Blobs` package also works, but it is the
+   worst of the three: it gives up the SDK's fixes for everyone, including
+   deployments talking to real Azure, to satisfy one emulator.
+
+To find the newest version your Azurite accepts, try values from newest down —
+`2026-02-06`, `2025-11-05`, `2025-07-05` — until `dotnet run -- init-storage`
+stops failing.
 
 **Documents never leave Pending** — the background worker is not processing
 them. Check the [jobs dashboard](http://localhost:5080/jobs) for failed jobs

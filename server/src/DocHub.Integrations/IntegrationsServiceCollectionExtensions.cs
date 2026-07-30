@@ -27,6 +27,13 @@ public static class IntegrationsServiceCollectionExtensions
             .Validate(
                 options => !string.IsNullOrWhiteSpace(options.ConnectionString),
                 "FileStorage:ConnectionString must be configured.")
+            // Caught at startup rather than on the first upload: a typo here
+            // would otherwise look like a storage outage half a screen into the
+            // app, long after the person who set it has moved on.
+            .Validate(
+                options => TryParseServiceVersion(options.ServiceVersion, out _),
+                "FileStorage:ServiceVersion must be a storage REST API version such as "
+                + "'2024-08-04', or empty to use the SDK default.")
             .ValidateOnStart();
 
         // Registered as a singleton: BlobServiceClient is thread-safe and holds
@@ -34,7 +41,12 @@ public static class IntegrationsServiceCollectionExtensions
         services.AddSingleton(provider =>
         {
             var options = provider.GetRequiredService<IOptions<FileStorageOptions>>().Value;
-            return new BlobServiceClient(options.ConnectionString);
+
+            TryParseServiceVersion(options.ServiceVersion, out var version);
+
+            return version is null
+                ? new BlobServiceClient(options.ConnectionString)
+                : new BlobServiceClient(options.ConnectionString, new BlobClientOptions(version.Value));
         });
 
         // Singleton to match BlobServiceClient's lifetime; the implementation
@@ -139,6 +151,38 @@ public static class IntegrationsServiceCollectionExtensions
             .AddCheck<LlmProviderHealthCheck>("assistant-model", tags: ["ready", "ai"]);
 
         return services;
+    }
+
+    /// <summary>
+    /// Turns a configured storage API version into the SDK's enum.
+    /// </summary>
+    /// <param name="configured">
+    /// A version as a date, <c>2024-08-04</c>, which is how Azure documents them
+    /// and how Azurite names them in its error. The SDK spells the same thing
+    /// <c>V2024_08_04</c>, so the two forms are bridged here rather than making
+    /// whoever edits configuration know the C# identifier. Empty is valid and
+    /// means "leave the SDK on its default".
+    /// </param>
+    /// <param name="version">The parsed version, or null when none was configured.</param>
+    /// <returns>False only when a value was given and could not be understood.</returns>
+    private static bool TryParseServiceVersion(
+        string? configured,
+        out BlobClientOptions.ServiceVersion? version)
+    {
+        version = null;
+
+        if (string.IsNullOrWhiteSpace(configured)) return true;
+
+        var name = configured.Trim();
+
+        // Accept the C# spelling too, so a value copied from IntelliSense works.
+        if (!name.StartsWith('V')) name = "V" + name;
+        name = name.Replace('-', '_');
+
+        if (!Enum.TryParse<BlobClientOptions.ServiceVersion>(name, out var parsed)) return false;
+
+        version = parsed;
+        return true;
     }
 
     /// <summary>
