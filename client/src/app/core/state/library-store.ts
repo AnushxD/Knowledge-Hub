@@ -58,6 +58,17 @@ export class LibraryStore {
   // ---- data ---------------------------------------------------------------
   private readonly refresh = signal(0);
 
+  /**
+   * Bumped after every mutation made through this store.
+   *
+   * Exposed so a screen that fetches its own data — the document detail page
+   * reads one document rather than the list — can re-read after a change it
+   * made here. Without it such a screen sends the change and then keeps
+   * rendering the state from before, which looks exactly like the action
+   * having done nothing.
+   */
+  readonly revision = this.refresh.asReadonly();
+
   readonly folders = toSignal<Folder[] | undefined>(
     toObservable(this.refresh).pipe(switchMap(() => this.gateway.folders())),
     { initialValue: undefined },

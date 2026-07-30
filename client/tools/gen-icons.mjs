@@ -93,7 +93,22 @@ for (const [name, icon] of Object.entries(MAP)) {
     missing.push(`${name} -> ${icon}`);
     continue;
   }
-  if (FILLED.has(name)) svg = svg.replace('<svg', '<svg fill="currentColor"');
+  // Replace the existing fill rather than prepending another one. Lucide's
+  // source already carries fill="none", and inserting a second fill attribute
+  // produced <svg fill="currentColor" ... fill="none">. A data-URI SVG used as
+  // a mask is parsed as XML, where a duplicate attribute is fatal rather than
+  // merely ignored — the image fails to decode and the icon renders as nothing
+  // at all. That is why the filled star was invisible.
+  if (FILLED.has(name)) {
+    if (!/\sfill="none"/.test(svg)) {
+      throw new Error(
+        `Expected fill="none" on ${icon}.svg to swap for a filled variant. ` +
+          'Lucide changed its markup; update this replacement rather than adding a second fill.',
+      );
+    }
+
+    svg = svg.replace(/\sfill="none"/, ' fill="currentColor"');
+  }
   rules.push(`.pi-${name} { --pi: url("data:image/svg+xml,${encode(svg)}"); }`);
 }
 

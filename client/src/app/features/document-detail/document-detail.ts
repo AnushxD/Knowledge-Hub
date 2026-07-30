@@ -10,7 +10,7 @@ import {
 import { DomSanitizer } from '@angular/platform-browser';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { catchError, map, of, startWith, switchMap } from 'rxjs';
+import { catchError, combineLatest, map, of, startWith, switchMap } from 'rxjs';
 import { TooltipDirective } from '../../shared/directives/tooltip.directive';
 import { KnowledgeGateway } from '../../core/data/knowledge-gateway';
 import { LibraryStore } from '../../core/state/library-store';
@@ -106,11 +106,20 @@ export class DocumentDetailPage {
     { id: 'chunks', label: 'Chunks' },
   ];
 
+  /**
+   * Re-reads on navigation *and* after any mutation through the store, so
+   * starring from this screen shows the new state instead of silently
+   * succeeding server-side.
+   *
+   * No `startWith(undefined)` on the refetch: keeping the previous document
+   * on screen while the new one arrives avoids flashing the skeleton over an
+   * already-loaded page for what is usually a single changed flag.
+   */
   private readonly result = toSignal(
-    this.route.paramMap.pipe(
-      map((params) => params.get('id') ?? ''),
-      switchMap((id) => this.gateway.document(id)),
-    ),
+    combineLatest([
+      this.route.paramMap.pipe(map((params) => params.get('id') ?? '')),
+      toObservable(this.store.revision),
+    ]).pipe(switchMap(([id]) => this.gateway.document(id))),
     { initialValue: undefined },
   );
 
