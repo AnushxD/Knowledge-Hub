@@ -9,14 +9,13 @@ in indexed content and always cites its sources.
 > questions from them — citing the exact passage behind every claim, and
 > saying "I don't know" when the answer isn't there. The assistant now retrieves
 > through an `IKnowledgeSource` abstraction, so a repository source over MCP
-> joins document search without the assistant changing; the repository source
-> ships as an inactive stub until phase 7. Everything sits behind a sign-in with
+> joins document search without the assistant changing; that MCP client now
+> exists and is switched on with one configuration key, falling back to a stub
+> that contributes nothing. Everything sits behind a sign-in with
 > Admin / Editor / Viewer roles, and Google sign-in can be switched on for
 > company addresses. It ships as container images or as a single-site IIS
 > artefact, both from one CI pipeline, with an activity trail recording who did
-> what. The only roadmap item left is phase 7, the real MCP client, which is
-> blocked on an MCP server to point at — the abstraction and its stub are
-> already in place. See [Current state](#current-state).
+> what. See [Current state](#current-state).
 
 ---
 
@@ -403,8 +402,10 @@ Key settings, one strongly-typed Options class per external dependency:
 | `Llm:ContextTokens` | Context window offered to the model (default 8192). Ollama's own default is 2048 and it discards the overflow silently — too low and the assistant answers without seeing the passages it was told to cite |
 | `Chat:PassageCount` | Passages retrieved per question (default 6) |
 | `Chat:HistoryTurns` | Prior turns replayed for follow-ups (default 4) |
-| `KnowledgeSources:RepositoryProvider` | `none` (default) registers the inactive stub; `mcp` arrives in phase 7 and is rejected at startup until then |
-| `KnowledgeSources:RepositoryEndpoint` | The MCP server's address; unused while the provider is `none` |
+| `KnowledgeSources:RepositoryProvider` | `none` (default) registers the stub that contributes nothing; `mcp` searches a real MCP server |
+| `KnowledgeSources:RepositoryEndpoint` | The MCP server's address; unused while the provider is `none`. An override saved on `/sources` wins over this |
+| `KnowledgeSources:RepositoryToolName` | Which tool to search with. Empty discovers the first tool with `search` in its name — a guess, so name it once known |
+| `KnowledgeSources:RepositoryMaxResults` | Passages to ask the tool for (default 8) |
 | `Authentication:SessionHours` | Session lifetime, sliding (default 8) |
 | `Authentication:KeyPath` | Directory for the Data Protection keys that encrypt the session cookie. **Set it on IIS**, or every application pool recycle signs everyone out. Leave unset in containers |
 | `Knowledge:SourceTimeoutSeconds` | How long one knowledge source may take before the answer goes ahead without it (default 10) |
@@ -947,6 +948,8 @@ and no deployable artefact should contain a credential.
 | Container images, GitHub Actions CI, IIS artefact and single-site hosting | Done |
 | Activity trail behind the dashboard feed | Done |
 | Document previews rendered as themselves (Markdown, source, PDF, images) | Done |
+| Citations that resolve outside the hub, not just to documents | Done |
+| Real MCP repository client behind `RepositoryProvider: mcp` | Done |
 
 **v1 is complete.** Upload a Markdown, PDF or Word file and it is
 extracted, chunked, embedded and searchable within seconds. Ask a question and
@@ -956,9 +959,24 @@ passage behind it, and declines when the answer isn't there.
 Retrieval runs through `IKnowledgeSource`: every configured source is searched
 concurrently and merged by rank, a source that fails is left out of that answer
 and named in the reply rather than failing the whole question, and `/sources`
-shows which are contributing. A repository source is registered locally as an
-inactive stub — the real MCP client is phase 7, and having a second source
-present from the start means the fan-out is exercised before then.
+shows which are contributing. The repository source is a real MCP client: set
+`KnowledgeSources:RepositoryProvider` to `mcp` and give it an address, and its
+passages join document search and are cited alongside documents. Left at `none`
+it is a stub that contributes nothing, which is what keeps the fan-out exercised
+on a machine with no MCP server.
+
+A citation carries a `kind`. A `document` citation resolves into the hub at
+`/docs/:id?chunk=n`; an `external` one links out to wherever the source said the
+passage lives, or renders without a link when the source could not say. That is
+why a repository passage can be cited at all — it has no document id to point at.
+
+The MCP tool is expected to take `query` and `maxResults`, and to return either
+structured content or a text block shaped
+`{ "results": [ { "path", "lines", "text", "url", "score" } ] }`. Anything else
+is treated as one passage of prose per text block. Whatever the shape, `text`
+must be the source **verbatim**: the assistant cites what it is handed, so a
+server returning summaries would have it quoting text that exists nowhere. That
+cannot be detected from this side, so it is a contract the server has to meet.
 
 A document's Preview tab shows the file as itself: Markdown rendered, source
 files with a line-number gutter, PDFs in the browser's own viewer, images inline.
@@ -980,9 +998,8 @@ requires one unless it opts out, content changes need Editor or Admin, and
 on, the allowed-domain check runs on the server against the address Google
 verified, and an empty allow-list admits nobody.
 
-Not yet built, by design: the real MCP client (phase 7 — the `IKnowledgeSource`
-seam and its inactive stub are in place, waiting on a server to point at); Entra
-ID single sign-on; pushing images to a registry, and any automated deploy step —
+Not yet built, by design: Entra ID single sign-on; pushing images to a registry,
+and any automated deploy step —
 CI builds the images and the IIS artefact, but a human still puts them
 somewhere. OCR for scanned PDFs and client-side unit tests are also deferred. OCR for scanned documents is also deferred, so
 image-only PDFs are reported as failed rather than silently indexed as empty.
@@ -1048,8 +1065,8 @@ Search, once something is indexed:
 curl -G http://localhost:5080/api/search --data-urlencode 'query=how do I connect remotely'
 ```
 
-Roadmap phases (search, AI assistant, MCP, auth, deployment) are listed in
-[CLAUDE.md](CLAUDE.md#roadmap--build-in-this-order-dont-jump-ahead).
+What is built and what is deliberately left out is in
+[Current state](#current-state).
 
 ---
 

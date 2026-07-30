@@ -27,4 +27,22 @@ public sealed class KnowledgeSourceOptions
 
     /// <summary>The MCP server's address. Unused while the provider is "none".</summary>
     public string? RepositoryEndpoint { get; set; }
+
+    /// <summary>
+    /// Which of the server's tools to search with. Empty means "discover it":
+    /// the first tool whose name contains "search" is used.
+    ///
+    /// Discovery is a convenience for getting started, not the intended
+    /// long-term setting. An MCP server is free to expose several tools, and
+    /// picking one by substring is a guess — naming it here is how a deployment
+    /// stops guessing.
+    /// </summary>
+    public string RepositoryToolName { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Passages to ask the tool for. Sent as the tool's <c>maxResults</c>
+    /// argument, and capped again on the way back, because a server is free to
+    /// ignore it.
+    /// </summary>
+    public int RepositoryMaxResults { get; set; } = 8;
 }

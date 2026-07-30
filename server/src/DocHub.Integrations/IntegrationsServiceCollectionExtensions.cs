@@ -115,26 +115,43 @@ public static class IntegrationsServiceCollectionExtensions
                 client.Timeout = TimeSpan.FromSeconds(llmOptions.TimeoutSeconds);
             });
 
+        var knowledgeOptions =
+            configuration.GetSection(KnowledgeSourceOptions.SectionName).Get<KnowledgeSourceOptions>()
+            ?? new KnowledgeSourceOptions();
+
         services
             .AddOptions<KnowledgeSourceOptions>()
             .Bind(configuration.GetSection(KnowledgeSourceOptions.SectionName))
             .Validate(
-                options => options.RepositoryProvider == KnowledgeSourceOptions.NoneProvider,
+                options => options.RepositoryProvider is KnowledgeSourceOptions.NoneProvider
+                    or KnowledgeSourceOptions.McpProvider,
                 $"KnowledgeSources:RepositoryProvider must be "
-                + $"'{KnowledgeSourceOptions.NoneProvider}'. The "
-                + $"'{KnowledgeSourceOptions.McpProvider}' provider arrives with the real MCP "
-                + "client in phase 7 — failing at startup is better than a source that silently "
-                + "contributes nothing while claiming to be connected.")
+                + $"'{KnowledgeSourceOptions.NoneProvider}' or "
+                + $"'{KnowledgeSourceOptions.McpProvider}'.")
+            .Validate(
+                options => options.RepositoryMaxResults > 0,
+                "KnowledgeSources:RepositoryMaxResults must be greater than zero.")
             .ValidateOnStart();
 
         // Registered as a source among others rather than special-cased: the
         // composite must see more than one source locally, or the fan-out is
         // only ever exercised in production.
         //
-        // Scoped, not singleton: it reads the administrator's current setting
-        // per request, so a change in the UI takes effect on the next question
-        // rather than on the next application pool recycle.
-        services.AddScoped<IKnowledgeSource, NullRepositoryKnowledgeSource>();
+        // Scoped, not singleton: both implementations read the administrator's
+        // current setting per request, so a change in the UI takes effect on the
+        // next question rather than on the next application pool recycle.
+        //
+        // Which one is a deployment decision taken at startup, deliberately not
+        // probed per question: what an answer was grounded in must not vary with
+        // whether a server happened to be reachable at that moment.
+        if (knowledgeOptions.RepositoryProvider == KnowledgeSourceOptions.McpProvider)
+        {
+            services.AddScoped<IKnowledgeSource, McpRepositoryKnowledgeSource>();
+        }
+        else
+        {
+            services.AddScoped<IKnowledgeSource, NullRepositoryKnowledgeSource>();
+        }
 
         // Short timeout: this backs a "test this address" button, where a
         // person is waiting and a quick "could not connect" beats a long wait

@@ -92,7 +92,7 @@ That rule produced the knowledge-source layout:
 
 - `IKnowledgeSource`, `KnowledgeQuery/Result/SearchResult`, `IRepositorySourceSettings`
   → **Integrations** (the contracts an MCP client implements or consumes)
-- `NullRepositoryKnowledgeSource`, and the real MCP client → **Integrations** (external systems)
+- `NullRepositoryKnowledgeSource` and `McpRepositoryKnowledgeSource` → **Integrations** (external systems)
 - `DocumentKnowledgeSource` → **Services** (wraps `ISearchService`; nothing external)
 - `CompositeKnowledgeSource`, `RepositorySourceSettings` → **Services** (fan-out, merge
   and reconciliation are policy, i.e. business logic)
