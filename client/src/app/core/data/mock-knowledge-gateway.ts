@@ -1078,14 +1078,19 @@ export class MockKnowledgeGateway extends KnowledgeGateway {
       endpoint: 'http://mcp-cs.internal:8080',
       isEnabled: true,
       isFromConfiguration: true,
+      configuredEndpoint: 'http://mcp-cs.internal:8080',
       updatedAt: null,
     },
     {
+      // Declared but with no address, so clearing an override here switches it
+      // off instead of restoring one — both halves of "Use configuration" are
+      // reachable without a backend.
       name: 'implementations',
       displayName: 'Implementations',
       endpoint: null,
       isEnabled: false,
       isFromConfiguration: true,
+      configuredEndpoint: null,
       updatedAt: null,
     },
   ];
@@ -1109,10 +1114,13 @@ export class MockKnowledgeGateway extends KnowledgeGateway {
   }
 
   resetRepositorySource(name: string): Observable<RepositorySource> {
+    // Restores the configured address, matching the API. Returning null here
+    // instead made the mock say clearing an override destroys the address,
+    // which is the opposite of what the button does.
     return this.replaceSource(name, (source) => ({
       ...source,
-      endpoint: null,
-      isEnabled: false,
+      endpoint: source.configuredEndpoint,
+      isEnabled: source.configuredEndpoint !== null,
       isFromConfiguration: true,
       updatedAt: null,
     }));

@@ -183,7 +183,12 @@ public sealed class McpRepositorySourceTests
         return new McpRepositoryKnowledgeSource(
             declared,
             new StubSettings(new RepositorySourceState(
-                SourceName, "Repositories", endpoint, isEnabled, IsFromConfiguration: true)),
+                SourceName,
+                "Repositories",
+                endpoint,
+                isEnabled,
+                IsFromConfiguration: true,
+                ConfiguredEndpoint: endpoint)),
             Options.Create(new KnowledgeSourceOptions
             {
                 RepositoryProvider = KnowledgeSourceOptions.McpProvider,

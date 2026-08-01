@@ -357,6 +357,12 @@ export interface RepositorySource {
   isEnabled: boolean;
   /** True when no override is stored and the deployment's configuration applies. */
   isFromConfiguration: boolean;
+  /**
+   * What clearing the override would fall back to. Null means clearing switches
+   * the source off rather than restoring an address — which is the difference
+   * between "Use configuration" being a revert and being a delete.
+   */
+  configuredEndpoint: string | null;
   updatedAt: string | null;
 }
 

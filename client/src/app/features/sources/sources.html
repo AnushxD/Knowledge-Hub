@@ -194,6 +194,21 @@
                 </div>
               }
 
+              <!-- Says what the button does before it is pressed: with nothing
+                   configured behind it, "Use configuration" switches the source
+                   off, which otherwise reads as the address being destroyed. -->
+              @if (!source.isFromConfiguration) {
+                <p class="mt-3 text-[11.5px] text-subtle">
+                  @if (source.configuredEndpoint) {
+                    <strong class="font-medium">Use configuration</strong> restores
+                    {{ source.configuredEndpoint }}.
+                  } @else {
+                    <strong class="font-medium">Use configuration</strong> switches this source off
+                    — the deployment declares no address for it.
+                  }
+                </p>
+              }
+
               <div class="mt-4 flex flex-wrap justify-end gap-2">
                 @if (!source.isFromConfiguration) {
                   <button

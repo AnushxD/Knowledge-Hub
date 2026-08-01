@@ -136,6 +136,7 @@ internal sealed class RepositorySourceAdmin(
             state.Endpoint,
             state.IsEnabled,
             state.IsFromConfiguration,
+            state.ConfiguredEndpoint,
             updatedAt);
 
     /// <summary>

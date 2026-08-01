@@ -64,6 +64,15 @@ internal sealed class RepositorySourceSettings(
         RepositorySourceOptions declared,
         RepositorySourceSetting? stored)
     {
+        // Configuration only counts as an address when the provider is actually
+        // set to one — leaving addresses behind after switching the provider
+        // back to "none" must not quietly re-enable them.
+        var configuredEndpoint =
+            options.RepositoryProvider == KnowledgeSourceOptions.McpProvider
+            && !string.IsNullOrWhiteSpace(declared.Endpoint)
+                ? declared.Endpoint!.Trim()
+                : null;
+
         if (stored is not null)
         {
             return new RepositorySourceState(
@@ -71,20 +80,16 @@ internal sealed class RepositorySourceSettings(
                 declared.ResolvedDisplayName,
                 stored.Endpoint,
                 stored.IsEnabled,
-                IsFromConfiguration: false);
+                IsFromConfiguration: false,
+                configuredEndpoint);
         }
-
-        // No override. Configuration only counts as an address when the
-        // provider is actually set to one — leaving addresses behind after
-        // switching the provider back to "none" must not quietly re-enable them.
-        var configured = options.RepositoryProvider == KnowledgeSourceOptions.McpProvider
-            && !string.IsNullOrWhiteSpace(declared.Endpoint);
 
         return new RepositorySourceState(
             declared.Name,
             declared.ResolvedDisplayName,
-            configured ? declared.Endpoint!.Trim() : null,
-            IsEnabled: configured,
-            IsFromConfiguration: true);
+            configuredEndpoint,
+            IsEnabled: configuredEndpoint is not null,
+            IsFromConfiguration: true,
+            configuredEndpoint);
     }
 }

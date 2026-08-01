@@ -249,12 +249,18 @@ public record KnowledgeSourceViewModel(
 /// effect. The screen says so, because an administrator editing a field that
 /// configuration is supplying otherwise has no way to tell why nothing changed.
 /// </param>
+/// <param name="ConfiguredEndpoint">
+/// The address clearing the override would fall back to, or null when clearing
+/// would leave the source with none. The screen says which, so "Use
+/// configuration" does not read as "delete this address".
+/// </param>
 public record RepositorySourceViewModel(
     string Name,
     string DisplayName,
     string? Endpoint,
     bool IsEnabled,
     bool IsFromConfiguration,
+    string? ConfiguredEndpoint,
     DateTimeOffset? UpdatedAt);
 
 public record UpdateRepositorySourceRequest

@@ -1,5 +1,7 @@
 using DocHub.Integrations.Knowledge;
 using DocHub.Services.Knowledge;
+using DocHub.Services.ViewModels;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
 namespace DocHub.Services.Tests;
@@ -223,6 +225,80 @@ public sealed class RepositorySourceSettingsTests(StackFixture fixture)
         Assert.DoesNotContain(await settings.ListAsync(), state => state.Name == "retired");
 
         await scope.SourceSettings.ClearAsync("retired");
+    }
+
+    /// <summary>
+    /// The admin service as the API composes it, with the network probe stubbed
+    /// — these tests are about what the buttons do to stored state, not about
+    /// whether an address answers.
+    /// </summary>
+    private static RepositorySourceAdmin Administering(
+        StackFixture.Scope scope,
+        KnowledgeSourceOptions configured) =>
+        new(
+            scope.SourceSettings,
+            Reading(scope, configured),
+            new UnusedProbe(),
+            scope.User,
+            NullLogger<RepositorySourceAdmin>.Instance);
+
+    [Fact]
+    public async Task Use_configuration_restores_the_configured_address_rather_than_clearing_it()
+    {
+        await using var scope = fixture.NewScope();
+        await ClearOverridesAsync(scope);
+
+        var configured = Declaring(
+            KnowledgeSourceOptions.McpProvider,
+            primaryEndpoint: "http://cs.internal:9999",
+            secondaryEndpoint: "http://impl.internal:9999");
+
+        var admin = Administering(scope, configured);
+
+        await admin.SaveAsync(
+            Primary, new UpdateRepositorySourceRequest
+            {
+                Endpoint = "http://typed-by-hand:8080",
+                IsEnabled = true,
+            });
+
+        var reset = await admin.ResetAsync(Primary);
+
+        // The button says "Use configuration", so it has to hand back the
+        // configured address — not wipe the field and leave the source off.
+        Assert.Equal("http://cs.internal:9999", reset.Endpoint);
+        Assert.True(reset.IsEnabled);
+        Assert.True(reset.IsFromConfiguration);
+
+        // And only that source. Resetting one must not disturb its neighbour.
+        var other = await admin.GetAsync(Secondary);
+        Assert.Equal("http://impl.internal:9999", other.Endpoint);
+    }
+
+    [Fact]
+    public async Task A_source_says_what_using_configuration_would_restore()
+    {
+        await using var scope = fixture.NewScope();
+        await ClearOverridesAsync(scope);
+
+        // Only the first has a configured address, so clearing the second's
+        // override would switch it off rather than restore anything. The screen
+        // needs to be able to say which, or the button reads as "delete".
+        var admin = Administering(scope, Declaring(
+            KnowledgeSourceOptions.McpProvider,
+            primaryEndpoint: "http://cs.internal:9999"));
+
+        Assert.Equal("http://cs.internal:9999", (await admin.GetAsync(Primary)).ConfiguredEndpoint);
+        Assert.Null((await admin.GetAsync(Secondary)).ConfiguredEndpoint);
+    }
+
+    /// <summary>Never called: no test here reaches the "test address" button.</summary>
+    private sealed class UnusedProbe : IRepositoryEndpointProbe
+    {
+        public Task<EndpointProbeResult> ProbeAsync(
+            string endpoint,
+            CancellationToken ct = default) =>
+            throw new NotSupportedException("These tests do not probe an address.");
     }
 
     [Fact]

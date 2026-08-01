@@ -44,9 +44,17 @@ public interface IRepositorySourceSettings
 /// effect — otherwise an administrator editing a field that configuration is
 /// overriding has no way to tell why nothing changed.
 /// </param>
+/// <param name="ConfiguredEndpoint">
+/// What clearing the override would fall back to, which is not always an
+/// address: null means configuration declares none, or the provider is "none",
+/// and clearing would switch the source off rather than restore anything.
+/// Carried so the UI can say which of those "Use configuration" will do instead
+/// of looking like it destroys the address either way.
+/// </param>
 public sealed record RepositorySourceState(
     string Name,
     string DisplayName,
     string? Endpoint,
     bool IsEnabled,
-    bool IsFromConfiguration);
+    bool IsFromConfiguration,
+    string? ConfiguredEndpoint);
