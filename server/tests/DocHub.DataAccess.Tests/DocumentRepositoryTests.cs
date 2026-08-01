@@ -137,6 +137,27 @@ public sealed class DocumentRepositoryTests(PostgresFixture fixture)
     }
 
     [Fact]
+    public async Task SetStatusAsync_shortens_a_failure_reason_too_long_for_its_column()
+    {
+        await using var db = fixture.CreateContext();
+        var folders = new FolderRepository(db);
+        var documents = new DocumentRepository(db);
+
+        var folder = await folders.CreateAsync(null, $"Long-{Guid.NewGuid():N}"[..20], Owner);
+        var created = await documents.CreateAsync(NewDocument(folder.Id, "Runaway"));
+
+        // Exception messages are not length-checked anywhere upstream. If this
+        // overflowed it would throw out of the handler recording the failure,
+        // replacing a reported problem with an unreported one.
+        var reason = new string('e', DocHubDbContext.FailureReasonMaxLength + 500);
+
+        var failed = await documents.SetStatusAsync(created.Id, IngestionStatus.Failed, reason);
+
+        Assert.Equal(DocHubDbContext.FailureReasonMaxLength, failed!.FailureReason!.Length);
+        Assert.EndsWith("…", failed.FailureReason);
+    }
+
+    [Fact]
     public async Task DeleteAsync_returns_every_blob_path_the_document_owned()
     {
         await using var db = fixture.CreateContext();

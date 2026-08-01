@@ -245,7 +245,14 @@ internal sealed class DocumentRepository(DocHubDbContext db) : IDocumentReposito
         if (document is null) return null;
 
         document.Status = status;
-        document.FailureReason = status == IngestionStatus.Failed ? failureReason : null;
+
+        // Clamped here rather than at the caller: this runs while handling a
+        // failure, and the reason often comes straight from an exception
+        // message, whose length nothing upstream controls. An overflow would
+        // throw out of the handler and lose the failure it was recording.
+        document.FailureReason = status == IngestionStatus.Failed
+            ? Truncate.ToFit(failureReason, DocHubDbContext.FailureReasonMaxLength)
+            : null;
         // A chunk count only means anything once ingestion has finished.
         document.ChunkCount = status == IngestionStatus.Indexed ? chunkCount : null;
         document.UpdatedAt = DateTimeOffset.UtcNow;

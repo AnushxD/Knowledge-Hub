@@ -1,3 +1,5 @@
+using System.Text;
+using DocHub.DataAccess;
 using DocHub.Services.Ingestion;
 using DocHub.Services.Ingestion.Extraction;
 using Microsoft.Extensions.Options;
@@ -164,5 +166,47 @@ public sealed class TextChunkerTests
         }).Chunk(TextOf((Paragraphs(200, 30), null)));
 
         Assert.Equal(5, chunks.Count);
+    }
+
+    [Fact]
+    public void A_section_ref_too_long_for_its_column_is_shortened_not_rejected()
+    {
+        // A sentence used as a heading. Before this was clamped the whole
+        // document failed to index, on the label rather than on the content.
+        var heading = new string('h', DocHubDbContext.SectionRefMaxLength + 200);
+
+        var chunk = Assert.Single(ChunkerWith().Chunk(TextOf((Paragraphs(1, 60), heading))));
+
+        Assert.Equal(DocHubDbContext.SectionRefMaxLength, chunk.SectionRef!.Length);
+        Assert.EndsWith("…", chunk.SectionRef);
+    }
+
+    [Fact]
+    public void A_section_ref_that_fits_is_left_exactly_as_it_was()
+    {
+        var chunk = Assert.Single(ChunkerWith().Chunk(TextOf((Paragraphs(1, 60), "Page 4"))));
+
+        // No ellipsis, no padding: the common case must round-trip untouched.
+        Assert.Equal("Page 4", chunk.SectionRef);
+    }
+
+    [Fact]
+    public void Shortening_a_section_ref_never_splits_a_surrogate_pair()
+    {
+        // An emoji is two UTF-16 units, so a cut at the column length can land
+        // between them. Half a surrogate pair is not valid UTF-16 and the
+        // driver refuses it — which would fail the document all over again.
+        var heading = string.Concat(Enumerable.Repeat("😀", DocHubDbContext.SectionRefMaxLength));
+
+        var chunk = Assert.Single(ChunkerWith().Chunk(TextOf((Paragraphs(1, 60), heading))));
+
+        Assert.True(
+            chunk.SectionRef!.Length <= DocHubDbContext.SectionRefMaxLength,
+            "the clamped ref must still fit the column");
+
+        // Encoding with throwOnInvalidBytes is the decisive check: it is exactly
+        // what the driver does on the way to Postgres, and a lone surrogate is
+        // what makes it throw.
+        new UTF8Encoding(false, throwOnInvalidBytes: true).GetBytes(chunk.SectionRef);
     }
 }

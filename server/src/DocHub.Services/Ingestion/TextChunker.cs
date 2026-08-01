@@ -1,4 +1,5 @@
 using System.Text;
+using DocHub.DataAccess;
 using DocHub.Services.Ingestion.Extraction;
 using Microsoft.Extensions.Options;
 
@@ -36,11 +37,19 @@ internal sealed class TextChunker(IOptions<IngestionOptions> options) : ITextChu
         {
             if (string.IsNullOrWhiteSpace(section.Text)) continue;
 
+            // A section ref is whatever the document called that part of
+            // itself, so its length is the author's decision, not ours: a
+            // sentence used as a heading, or a line of prose that happens to
+            // open with "# ". Clamped once here rather than in each extractor,
+            // so no extractor can produce a chunk that will not persist.
+            var sectionRef = Truncate.ToFit(
+                section.SectionRef, DocHubDbContext.SectionRefMaxLength);
+
             foreach (var body in ChunkSection(section.Text))
             {
                 if (chunks.Count >= options.MaxChunksPerDocument) return Renumber(chunks);
 
-                chunks.Add(new TextChunk(0, body, section.SectionRef, EstimateTokens(body)));
+                chunks.Add(new TextChunk(0, body, sectionRef, EstimateTokens(body)));
             }
         }
 

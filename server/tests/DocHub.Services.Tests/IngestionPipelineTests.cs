@@ -1,3 +1,4 @@
+using DocHub.DataAccess;
 using DocHub.Services.ViewModels;
 
 namespace DocHub.Services.Tests;
@@ -65,6 +66,37 @@ public sealed class IngestionPipelineTests(StackFixture fixture)
         // Markdown headings must survive all the way to the citation label.
         Assert.Contains(detail.Sections, section => section.Heading.Contains("Connecting"));
         Assert.Contains(detail.Sections, section => section.Heading.Contains("Multi-factor"));
+    }
+
+    [Fact]
+    public async Task A_document_with_an_enormous_heading_still_indexes()
+    {
+        await using var scope = fixture.NewScope();
+        var folder = await scope.Folders.CreateAsync(new CreateFolderRequest(null, Unique("H")));
+
+        // A heading far longer than the section_ref column. This used to reach
+        // Postgres unclamped and fail the insert with 22001, which failed the
+        // whole document — on its label, with its content perfectly fine.
+        var body = $"""
+            # {new string('L', 900)}
+
+            All staff working outside the office must connect through the company VPN before
+            reaching internal systems. Download the client from the IT portal and sign in.
+            """;
+
+        var created = await scope.Documents.UploadAsync(folder.Id, Upload(body, "long.md"));
+        await scope.Ingestion.IngestAsync(created.Id);
+
+        var detail = await scope.Documents.GetAsync(created.Id);
+
+        Assert.Equal("indexed", detail.Document.Status);
+        Assert.Null(detail.Document.FailureReason);
+
+        // The label is shortened rather than dropped: a citation still says
+        // which part of the document it came from.
+        var heading = Assert.Single(detail.Sections).Heading;
+        Assert.StartsWith("LLL", heading);
+        Assert.Equal(DocHubDbContext.SectionRefMaxLength, heading.Length);
     }
 
     [Fact]

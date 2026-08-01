@@ -39,6 +39,22 @@ public sealed class DocHubDbContext(DbContextOptions<DocHubDbContext> options)
     /// </summary>
     public const string SearchConfiguration = "english";
 
+    /// <summary>
+    /// Longest citation label a chunk may carry. Public because the producer
+    /// has to enforce it: a section ref comes from the document's own text — a
+    /// Markdown heading, a Word heading paragraph — so its length is decided by
+    /// whoever wrote the file, and exceeding it must not cost them the document.
+    /// </summary>
+    public const int SectionRefMaxLength = 300;
+
+    /// <summary>
+    /// Longest failure reason a document may carry. Bounded for the same reason
+    /// and with more urgency: this string is written *while handling a failure*,
+    /// often straight from an exception message, so an overflow here turns a
+    /// recorded, recoverable failure into a second unhandled one.
+    /// </summary>
+    public const int FailureReasonMaxLength = 2000;
+
     // Users is not declared here: IdentityUserContext already exposes it as
     // DbSet<User>, and re-declaring it shadowed the base property rather than
     // replacing it — two ways to reach one table, only one of which Identity's
@@ -188,7 +204,8 @@ public sealed class DocHubDbContext(DbContextOptions<DocHubDbContext> options)
             entity.Property(document => document.Extension).HasMaxLength(32).IsRequired();
             entity.Property(document => document.ContentType).HasMaxLength(200).IsRequired();
             entity.Property(document => document.StoragePath).HasMaxLength(1000).IsRequired();
-            entity.Property(document => document.FailureReason).HasMaxLength(2000);
+            entity.Property(document => document.FailureReason)
+                .HasMaxLength(FailureReasonMaxLength);
 
             // Stored as text rather than an int: a dump stays readable, and
             // reordering the enum can never silently remap existing rows.
@@ -242,7 +259,7 @@ public sealed class DocHubDbContext(DbContextOptions<DocHubDbContext> options)
             entity.ToTable("document_chunks");
             entity.HasKey(chunk => chunk.Id);
             entity.Property(chunk => chunk.Text).IsRequired();
-            entity.Property(chunk => chunk.SectionRef).HasMaxLength(300);
+            entity.Property(chunk => chunk.SectionRef).HasMaxLength(SectionRefMaxLength);
 
             entity.Property(chunk => chunk.Embedding)
                 .HasColumnType($"vector({EmbeddingDimensions})")
