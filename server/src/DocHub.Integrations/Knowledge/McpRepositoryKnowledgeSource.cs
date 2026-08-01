@@ -112,14 +112,32 @@ internal sealed class McpRepositoryKnowledgeSource(
 
         var take = Math.Clamp(Math.Min(query.Take, options.RepositoryMaxResults), 1, 100);
 
+        // Read off the tool's own schema rather than assumed. A server that
+        // calls its query "q" would otherwise be sent an argument it does not
+        // know, ignore it, search for the empty string, and hand back something
+        // useless that we would then offer the model as grounding.
+        var arguments = RepositoryToolArguments.Map(tool.ProtocolTool.InputSchema, query.Text, take);
+
+        if (arguments.QueryParameter is null)
+        {
+            logger.LogWarning(
+                "The '{Tool}' tool on {Endpoint} declares no string parameter, so the query is "
+                + "being sent as 'query' and may be ignored",
+                tool.Name, source.Endpoint);
+        }
+
+        if (arguments.UnfilledRequired.Count > 0)
+        {
+            // Not fatal — the server may default them — but it is the first
+            // thing to look at when this source returns nothing useful.
+            logger.LogWarning(
+                "The '{Tool}' tool on {Endpoint} requires {Parameters}, which nothing here can "
+                + "supply",
+                tool.Name, source.Endpoint, string.Join(", ", arguments.UnfilledRequired));
+        }
+
         var response = await client.CallToolAsync(
-            tool.Name,
-            new Dictionary<string, object?>
-            {
-                ["query"] = query.Text,
-                ["maxResults"] = take,
-            },
-            cancellationToken: ct);
+            tool.Name, arguments.Arguments, cancellationToken: ct);
 
         if (response.IsError == true)
         {

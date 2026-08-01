@@ -28,7 +28,7 @@ speaks MCP over the official SDK, `RepositoryProvider: "mcp"` switches it on, an
 citations can now resolve outside the hub. What is *not* done is running it
 against the org's actual server — see "Blockers".
 
-**Since phase 7**, four smaller pieces landed:
+**Since phase 7**, several smaller pieces landed:
 
 - Both Ollama calls send `keep_alive` (default 30m), and every answer logs
   Ollama's own load / prompt-eval / generation split — the only way to tell
@@ -77,12 +77,10 @@ Nothing. Working tree clean, everything pushed.
   a real MCP server hosted in-process, so the protocol path is exercised. The
   org runs two — `mcp-cs` and `mcp-impl`, each exposing the same 13 tools — and
   the hub now searches both as separate sources. What is still unsettled:
-  - **The tool's input schema.** `search_codebase` is the right tool (the only
-    one of the 13 with "search" in its name), but we call it with `query` and
-    `maxResults`, which is our convention. If it names them differently the call
-    fails outright. **Test address** now reports the server's whole tool list,
-    so confirming the name takes one click from the sources screen — the
-    argument names still need `tools/list` or one real attempt.
+  - ~~**The tool's input schema.**~~ Settled generically: arguments are now
+    read off the tool's own schema, so `search_codebase` is sent whatever it
+    says it takes. **Test address** reports the tool list, so confirming the
+    name is one click.
   - **Whether it returns verbatim source.** `ReadResults` already accepts three
     output shapes, so the shape is the forgiving half. The text being the file
     verbatim rather than a summary is the contract that matters, and it cannot
