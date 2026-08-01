@@ -24,8 +24,7 @@
 </button>
 
 <div class="flex shrink-0 items-center gap-1">
-
-  <div class="relative ml-1">
+  <div class="relative ml-1" #account>
     <button
       type="button"
       class="rounded-full transition hover:opacity-85"
@@ -38,10 +37,6 @@
     </button>
 
     @if (menuOpen()) {
-      <!-- Closes on any outside click; a menu that only closes on its own
-           button is one users end up clicking twice. -->
-      <div class="fixed inset-0 z-40" (click)="menuOpen.set(false)"></div>
-
       <div class="dh-card absolute right-0 z-50 mt-2 w-56 p-1.5 shadow-dh-lg" role="menu">
         <div class="px-2.5 py-2">
           <p class="truncate text-[12.5px] font-medium text-ink">{{ currentUser().name }}</p>
