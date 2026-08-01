@@ -42,6 +42,7 @@ namespace DocHub.Integrations.Knowledge;
 /// </para>
 /// </summary>
 internal sealed class McpRepositoryKnowledgeSource(
+    RepositorySourceOptions source,
     IRepositorySourceSettings settings,
     IOptions<KnowledgeSourceOptions> options,
     ILoggerFactory loggerFactory,
@@ -49,16 +50,19 @@ internal sealed class McpRepositoryKnowledgeSource(
 {
     private readonly KnowledgeSourceOptions options = options.Value;
 
-    public string Name => "repositories";
+    public string Name => source.Name;
 
-    public string DisplayName => "Repositories";
+    public string DisplayName => source.ResolvedDisplayName;
 
-    public string Description =>
-        "Source code and READMEs from the team's repositories, reached over MCP.";
+    public string Description => source.ResolvedDescription;
 
     public async Task<KnowledgeSourceStatus> CheckStatusAsync(CancellationToken ct = default)
     {
-        var state = await settings.GetAsync(ct);
+        // Null would mean this instance outlived its configuration entry, which
+        // cannot happen — the instance is built from that entry at startup.
+        var state = await settings.GetAsync(Name, ct)
+            ?? throw new InvalidOperationException(
+                $"No repository source named '{Name}' is declared.");
 
         // Off by design is not a fault, and must not render like one — the same
         // three-state reasoning the stub follows.
@@ -104,12 +108,12 @@ internal sealed class McpRepositoryKnowledgeSource(
         KnowledgeQuery query,
         CancellationToken ct = default)
     {
-        var state = await settings.GetAsync(ct);
+        var state = await settings.GetAsync(Name, ct);
 
         // Nothing configured is an empty answer, not an exception: the composite
         // reports exceptions as degradations, and "an administrator has not set
         // this up" is not a degradation of anything.
-        if (state.Endpoint is null || !state.IsEnabled) return KnowledgeSearchResult.Empty;
+        if (state?.Endpoint is null || !state.IsEnabled) return KnowledgeSearchResult.Empty;
 
         // A folder filter is a document-shaped idea. A repository has no notion
         // of it, so it is ignored rather than answered with nothing — narrowing
@@ -163,22 +167,22 @@ internal sealed class McpRepositoryKnowledgeSource(
     {
         var tools = await client.ListToolsAsync(cancellationToken: ct);
 
-        if (!string.IsNullOrWhiteSpace(options.RepositoryToolName))
+        if (!string.IsNullOrWhiteSpace(source.ToolName))
         {
             return tools.FirstOrDefault(tool =>
-                    tool.Name.Equals(options.RepositoryToolName, StringComparison.OrdinalIgnoreCase))
+                    tool.Name.Equals(source.ToolName, StringComparison.OrdinalIgnoreCase))
                 // Named explicitly and absent means the configuration is wrong,
                 // and saying which tools do exist is what makes that fixable.
                 ?? throw new InvalidOperationException(
-                    $"The server exposes no tool named '{options.RepositoryToolName}'. "
+                    $"The server exposes no tool named '{source.ToolName}'. "
                     + $"Available: {(tools.Count == 0 ? "none" : string.Join(", ", tools.Select(t => t.Name)))}.");
         }
 
         return tools.FirstOrDefault(tool =>
                 tool.Name.Contains("search", StringComparison.OrdinalIgnoreCase))
             ?? throw new InvalidOperationException(
-                "The server exposes no tool with 'search' in its name. Set "
-                + "KnowledgeSources:RepositoryToolName to choose one explicitly. "
+                "The server exposes no tool with 'search' in its name. Set this source's "
+                + "ToolName to choose one explicitly. "
                 + $"Available: {(tools.Count == 0 ? "none" : string.Join(", ", tools.Select(t => t.Name)))}.");
     }
 

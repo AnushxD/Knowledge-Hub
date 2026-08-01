@@ -119,17 +119,22 @@ export abstract class KnowledgeGateway {
 
   // ---- repository source administration (Admin only; the API enforces it) ---
 
-  abstract repositorySource(): Observable<RepositorySource>;
+  /** Every repository source the deployment declares, in configuration order. */
+  abstract repositorySources(): Observable<RepositorySource[]>;
 
   abstract saveRepositorySource(
+    name: string,
     endpoint: string | null,
     isEnabled: boolean,
   ): Observable<RepositorySource>;
 
   /** Drops the override so configuration applies again. */
-  abstract resetRepositorySource(): Observable<RepositorySource>;
+  abstract resetRepositorySource(name: string): Observable<RepositorySource>;
 
-  abstract testRepositorySource(endpoint: string | null): Observable<RepositoryProbe>;
+  abstract testRepositorySource(
+    name: string,
+    endpoint: string | null,
+  ): Observable<RepositoryProbe>;
 
   abstract chatSessions(): Observable<ChatSession[]>;
   abstract chatTranscript(sessionId: string): Observable<ChatTranscript>;

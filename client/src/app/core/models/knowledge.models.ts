@@ -350,6 +350,9 @@ export interface NewAccount {
 
 /** The repository source's address, as an administrator manages it. */
 export interface RepositorySource {
+  /** Stable identifier; also what addresses this source in the API's routes. */
+  name: string;
+  displayName: string;
   endpoint: string | null;
   isEnabled: boolean;
   /** True when no override is stored and the deployment's configuration applies. */

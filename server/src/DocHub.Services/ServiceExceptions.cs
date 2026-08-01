@@ -4,12 +4,18 @@ namespace DocHub.Services;
 /// The requested entity does not exist. Mapped to 404 by the API's exception
 /// handler, so services never reference HTTP concepts.
 /// </summary>
-public sealed class NotFoundException(string entity, Guid id)
-    : Exception($"{entity} '{id}' was not found.")
+public sealed class NotFoundException(string entity, string key)
+    : Exception($"{entity} '{key}' was not found.")
 {
+    /// <summary>Most entities are keyed by id; a few, like a knowledge source, by name.</summary>
+    public NotFoundException(string entity, Guid id)
+        : this(entity, id.ToString())
+    {
+    }
+
     public string Entity { get; } = entity;
 
-    public Guid Id { get; } = id;
+    public string Key { get; } = key;
 }
 
 /// <summary>

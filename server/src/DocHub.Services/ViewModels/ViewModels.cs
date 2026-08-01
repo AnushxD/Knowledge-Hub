@@ -239,13 +239,19 @@ public record KnowledgeSourceViewModel(
     string State,
     string Detail);
 
-/// <summary>The repository source's address, as an administrator manages it.</summary>
+/// <summary>One repository source's address, as an administrator manages it.</summary>
+/// <param name="Name">
+/// The stable identifier, which is also what addresses it in the API's routes.
+/// </param>
+/// <param name="DisplayName">What to call it on screen.</param>
 /// <param name="IsFromConfiguration">
 /// True when no override is stored and the deployment's own configuration is in
 /// effect. The screen says so, because an administrator editing a field that
 /// configuration is supplying otherwise has no way to tell why nothing changed.
 /// </param>
 public record RepositorySourceViewModel(
+    string Name,
+    string DisplayName,
     string? Endpoint,
     bool IsEnabled,
     bool IsFromConfiguration,

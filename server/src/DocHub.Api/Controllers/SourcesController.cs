@@ -28,43 +28,61 @@ public sealed class SourcesController(
     // arbitrary host and have it fetch that address, which is a real capability
     // and not one every signed-in user should hold.
 
-    /// <summary>The repository source's address and whether it is switched on.</summary>
-    [HttpGet("repository")]
+    /// <summary>Every repository source this deployment declares.</summary>
+    [HttpGet("repositories")]
+    [Authorize(Policy = Policies.Admin)]
+    [ProducesResponseType<IReadOnlyList<RepositorySourceViewModel>>(StatusCodes.Status200OK)]
+    public async Task<IReadOnlyList<RepositorySourceViewModel>> ListRepositories(
+        CancellationToken ct) =>
+        await repositorySource.ListAsync(ct);
+
+    /// <summary>One repository source's address and whether it is switched on.</summary>
+    [HttpGet("repositories/{name}")]
     [Authorize(Policy = Policies.Admin)]
     [ProducesResponseType<RepositorySourceViewModel>(StatusCodes.Status200OK)]
-    public async Task<RepositorySourceViewModel> GetRepository(CancellationToken ct) =>
-        await repositorySource.GetAsync(ct);
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<RepositorySourceViewModel> GetRepository(
+        string name,
+        CancellationToken ct) =>
+        await repositorySource.GetAsync(name, ct);
 
     /// <summary>Sets the address, overriding whatever configuration declares.</summary>
-    [HttpPut("repository")]
+    [HttpPut("repositories/{name}")]
     [Authorize(Policy = Policies.Admin)]
     [ProducesResponseType<RepositorySourceViewModel>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<RepositorySourceViewModel> UpdateRepository(
+        string name,
         [FromBody] UpdateRepositorySourceRequest request,
         CancellationToken ct) =>
-        await repositorySource.SaveAsync(request, ct);
+        await repositorySource.SaveAsync(name, request, ct);
 
     /// <summary>
     /// Drops the override so the deployment's configuration applies again.
     /// Distinct from saving an empty address, which switches the source off.
     /// </summary>
-    [HttpDelete("repository")]
+    [HttpDelete("repositories/{name}")]
     [Authorize(Policy = Policies.Admin)]
     [ProducesResponseType<RepositorySourceViewModel>(StatusCodes.Status200OK)]
-    public async Task<RepositorySourceViewModel> ResetRepository(CancellationToken ct) =>
-        await repositorySource.ResetAsync(ct);
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<RepositorySourceViewModel> ResetRepository(
+        string name,
+        CancellationToken ct) =>
+        await repositorySource.ResetAsync(name, ct);
 
     /// <summary>
     /// Checks that an address answers, before committing to it. Confirms the
     /// network path, not that the server speaks MCP.
     /// </summary>
-    [HttpPost("repository/test")]
+    [HttpPost("repositories/{name}/test")]
     [Authorize(Policy = Policies.Admin)]
     [ProducesResponseType<RepositoryProbeViewModel>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<RepositoryProbeViewModel> TestRepository(
+        string name,
         [FromBody] UpdateRepositorySourceRequest request,
         CancellationToken ct) =>
-        await repositorySource.ProbeAsync(request.Endpoint, ct);
+        await repositorySource.ProbeAsync(name, request.Endpoint, ct);
 }

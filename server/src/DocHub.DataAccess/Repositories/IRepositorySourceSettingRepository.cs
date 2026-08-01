@@ -9,6 +9,13 @@ public interface IRepositorySourceSettingRepository
     /// <summary>Null when nobody has overridden configuration.</summary>
     Task<RepositorySourceSetting?> GetAsync(string name, CancellationToken ct = default);
 
+    /// <summary>
+    /// Every override that exists, including any left behind by a source
+    /// configuration no longer declares — reconciling that is the caller's job,
+    /// not this layer's.
+    /// </summary>
+    Task<IReadOnlyList<RepositorySourceSetting>> ListAsync(CancellationToken ct = default);
+
     /// <summary>Creates the row or updates it in place.</summary>
     Task<RepositorySourceSetting> SaveAsync(
         string name,
@@ -34,6 +41,10 @@ internal sealed class RepositorySourceSettingRepository(DocHubDbContext db)
             // never to mutate the entity they were handed.
             .AsNoTracking()
             .FirstOrDefaultAsync(setting => setting.Name == name, ct);
+
+    public async Task<IReadOnlyList<RepositorySourceSetting>> ListAsync(
+        CancellationToken ct = default) =>
+        await db.RepositorySourceSettings.AsNoTracking().ToListAsync(ct);
 
     public async Task<RepositorySourceSetting> SaveAsync(
         string name,

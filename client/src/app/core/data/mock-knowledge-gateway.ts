@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import { BehaviorSubject, Observable, from, map, of, timer } from 'rxjs';
+import { BehaviorSubject, Observable, from, map, of, throwError, timer } from 'rxjs';
 import { concatMap, delay, delayWhen, take } from 'rxjs/operators';
 import {
   Account,
@@ -1068,40 +1068,74 @@ export class MockKnowledgeGateway extends KnowledgeGateway {
     return of(account).pipe(delay(120));
   }
 
-  private mockRepositorySource: RepositorySource = {
-    endpoint: null,
-    isEnabled: false,
-    isFromConfiguration: true,
-    updatedAt: null,
-  };
-
-  repositorySource(): Observable<RepositorySource> {
-    return of({ ...this.mockRepositorySource }).pipe(delay(80));
-  }
-
-  saveRepositorySource(endpoint: string | null, isEnabled: boolean): Observable<RepositorySource> {
-    this.mockRepositorySource = {
-      endpoint,
-      isEnabled,
-      isFromConfiguration: false,
-      updatedAt: new Date().toISOString(),
-    };
-
-    return of({ ...this.mockRepositorySource }).pipe(delay(150));
-  }
-
-  resetRepositorySource(): Observable<RepositorySource> {
-    this.mockRepositorySource = {
+  // Two, so the screen is developed against the shape it has in production —
+  // one of them overridden and one on configuration, which are drawn
+  // differently.
+  private mockRepositorySources: RepositorySource[] = [
+    {
+      name: 'code-search',
+      displayName: 'Code search',
+      endpoint: 'http://mcp-cs.internal:8080',
+      isEnabled: true,
+      isFromConfiguration: true,
+      updatedAt: null,
+    },
+    {
+      name: 'implementations',
+      displayName: 'Implementations',
       endpoint: null,
       isEnabled: false,
       isFromConfiguration: true,
       updatedAt: null,
-    };
+    },
+  ];
 
-    return of({ ...this.mockRepositorySource }).pipe(delay(120));
+  repositorySources(): Observable<RepositorySource[]> {
+    return of(this.mockRepositorySources.map((source) => ({ ...source }))).pipe(delay(80));
   }
 
-  testRepositorySource(endpoint: string | null): Observable<RepositoryProbe> {
+  saveRepositorySource(
+    name: string,
+    endpoint: string | null,
+    isEnabled: boolean,
+  ): Observable<RepositorySource> {
+    return this.replaceSource(name, (source) => ({
+      ...source,
+      endpoint,
+      isEnabled,
+      isFromConfiguration: false,
+      updatedAt: new Date().toISOString(),
+    }));
+  }
+
+  resetRepositorySource(name: string): Observable<RepositorySource> {
+    return this.replaceSource(name, (source) => ({
+      ...source,
+      endpoint: null,
+      isEnabled: false,
+      isFromConfiguration: true,
+      updatedAt: null,
+    }));
+  }
+
+  private replaceSource(
+    name: string,
+    change: (source: RepositorySource) => RepositorySource,
+  ): Observable<RepositorySource> {
+    const existing = this.mockRepositorySources.find((source) => source.name === name);
+
+    // Matches the API, which 404s a name configuration does not declare.
+    if (!existing) return throwError(() => new Error(`No repository source named '${name}'.`));
+
+    const updated = change(existing);
+    this.mockRepositorySources = this.mockRepositorySources.map((source) =>
+      source.name === name ? updated : source,
+    );
+
+    return of({ ...updated }).pipe(delay(150));
+  }
+
+  testRepositorySource(name: string, endpoint: string | null): Observable<RepositoryProbe> {
     // Reachable only for an address that looks like one, so the failure path is
     // reachable in the mock too.
     const ok = !!endpoint && /^https?:\/\//.test(endpoint);

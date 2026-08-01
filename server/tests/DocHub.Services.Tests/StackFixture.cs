@@ -122,11 +122,10 @@ public sealed class StackFixture : IAsyncLifetime
         var searchService = new SearchService(
             chunkRepo, embeddings, NullLogger<SearchService>.Instance);
 
-        // Composed as the app does: the stub source reads the administrator's
-        // stored setting, falling back to configuration when there is none.
+        // Tests reconcile overrides against configuration themselves, so the
+        // fixture hands out the repository rather than a settings reader bound
+        // to one set of options.
         var settingRepo = new RepositorySourceSettingRepository(db);
-        var sourceSettings = new RepositorySourceSettings(
-            settingRepo, Options.Create(new KnowledgeSourceOptions()));
 
         // The real activity log, not a stub: recording is a side effect of
         // ordinary operations, and a stub here would let it silently stop
@@ -142,7 +141,7 @@ public sealed class StackFixture : IAsyncLifetime
         var knowledge = new CompositeKnowledgeSource(
             [
                 new DocumentKnowledgeSource(searchService),
-                new NullRepositoryKnowledgeSource(sourceSettings),
+                new NullRepositoryKnowledgeSource(Options.Create(new KnowledgeSourceOptions())),
                 .. extraSources,
             ],
             Options.Create(knowledgeOptions),

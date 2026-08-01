@@ -6,24 +6,31 @@ using Microsoft.Extensions.Logging;
 namespace DocHub.Services.Knowledge;
 
 /// <summary>
-/// Managing the repository source's address.
+/// Managing where each repository source points.
 ///
 /// The rules live here rather than in the controller because they are
 /// decisions, not plumbing: what counts as a usable address, what clearing
-/// means as against disabling, and who is allowed to be told the difference.
+/// means as against disabling, and which sources exist to be edited at all.
 /// </summary>
 public interface IRepositorySourceAdmin
 {
-    Task<RepositorySourceViewModel> GetAsync(CancellationToken ct = default);
+    /// <summary>Every declared source, in the order configuration lists them.</summary>
+    Task<IReadOnlyList<RepositorySourceViewModel>> ListAsync(CancellationToken ct = default);
+
+    Task<RepositorySourceViewModel> GetAsync(string name, CancellationToken ct = default);
 
     Task<RepositorySourceViewModel> SaveAsync(
+        string name,
         UpdateRepositorySourceRequest request,
         CancellationToken ct = default);
 
     /// <summary>Removes the override so the deployment's configuration applies again.</summary>
-    Task<RepositorySourceViewModel> ResetAsync(CancellationToken ct = default);
+    Task<RepositorySourceViewModel> ResetAsync(string name, CancellationToken ct = default);
 
-    Task<RepositoryProbeViewModel> ProbeAsync(string? endpoint, CancellationToken ct = default);
+    Task<RepositoryProbeViewModel> ProbeAsync(
+        string name,
+        string? endpoint,
+        CancellationToken ct = default);
 }
 
 internal sealed class RepositorySourceAdmin(
@@ -33,56 +40,76 @@ internal sealed class RepositorySourceAdmin(
     ICurrentUser currentUser,
     ILogger<RepositorySourceAdmin> logger) : IRepositorySourceAdmin
 {
-    public async Task<RepositorySourceViewModel> GetAsync(CancellationToken ct = default)
+    public async Task<IReadOnlyList<RepositorySourceViewModel>> ListAsync(
+        CancellationToken ct = default)
     {
-        var state = await effective.GetAsync(ct);
-        var stored = await settings.GetAsync(RepositorySourceSettings.SourceName, ct);
+        var states = await effective.ListAsync(ct);
+        var stored = await settings.ListAsync(ct);
 
-        return new RepositorySourceViewModel(
-            state.Endpoint,
-            state.IsEnabled,
-            state.IsFromConfiguration,
-            stored?.UpdatedAt);
+        return
+        [
+            .. states.Select(state => ToViewModel(
+                state,
+                stored.FirstOrDefault(row => string.Equals(
+                    row.Name, state.Name, StringComparison.OrdinalIgnoreCase))?.UpdatedAt)),
+        ];
+    }
+
+    public async Task<RepositorySourceViewModel> GetAsync(
+        string name,
+        CancellationToken ct = default)
+    {
+        var state = await Require(name, ct);
+        var stored = await settings.GetAsync(state.Name, ct);
+
+        return ToViewModel(state, stored?.UpdatedAt);
     }
 
     public async Task<RepositorySourceViewModel> SaveAsync(
+        string name,
         UpdateRepositorySourceRequest request,
         CancellationToken ct = default)
     {
+        // Resolved first so the stored row is keyed by the name configuration
+        // uses, not by whatever casing the caller typed into the route.
+        var state = await Require(name, ct);
         var endpoint = Normalise(request.Endpoint);
 
-        await settings.SaveAsync(
-            RepositorySourceSettings.SourceName,
-            endpoint,
-            request.IsEnabled,
-            currentUser.Id,
-            ct);
+        await settings.SaveAsync(state.Name, endpoint, request.IsEnabled, currentUser.Id, ct);
 
         logger.LogInformation(
-            "User {UserId} set the repository source to {Endpoint} (enabled: {IsEnabled})",
-            currentUser.Id, endpoint ?? "(none)", request.IsEnabled);
+            "User {UserId} set repository source {Source} to {Endpoint} (enabled: {IsEnabled})",
+            currentUser.Id, state.Name, endpoint ?? "(none)", request.IsEnabled);
 
-        return await GetAsync(ct);
+        return await GetAsync(state.Name, ct);
     }
 
-    public async Task<RepositorySourceViewModel> ResetAsync(CancellationToken ct = default)
+    public async Task<RepositorySourceViewModel> ResetAsync(
+        string name,
+        CancellationToken ct = default)
     {
-        await settings.ClearAsync(RepositorySourceSettings.SourceName, ct);
+        var state = await Require(name, ct);
+
+        await settings.ClearAsync(state.Name, ct);
 
         logger.LogInformation(
-            "User {UserId} reset the repository source to configuration", currentUser.Id);
+            "User {UserId} reset repository source {Source} to configuration",
+            currentUser.Id, state.Name);
 
-        return await GetAsync(ct);
+        return await GetAsync(state.Name, ct);
     }
 
     public async Task<RepositoryProbeViewModel> ProbeAsync(
+        string name,
         string? endpoint,
         CancellationToken ct = default)
     {
+        var state = await Require(name, ct);
+
         // Probing what is currently in effect is the useful default: it is how
         // an administrator checks a source that has stopped working without
         // retyping its address.
-        var target = Normalise(endpoint) ?? (await effective.GetAsync(ct)).Endpoint;
+        var target = Normalise(endpoint) ?? state.Endpoint;
 
         if (target is null)
             throw new ValidationException("There is no address to test.");
@@ -91,6 +118,25 @@ internal sealed class RepositorySourceAdmin(
 
         return new RepositoryProbeViewModel(result.IsReachable, result.Detail);
     }
+
+    /// <summary>
+    /// The source by that name, or 404. A name configuration does not declare
+    /// has no override to edit — creating one would store a row nothing reads.
+    /// </summary>
+    private async Task<RepositorySourceState> Require(string name, CancellationToken ct) =>
+        await effective.GetAsync(name, ct)
+        ?? throw new NotFoundException("Repository source", name);
+
+    private static RepositorySourceViewModel ToViewModel(
+        RepositorySourceState state,
+        DateTimeOffset? updatedAt) =>
+        new(
+            state.Name,
+            state.DisplayName,
+            state.Endpoint,
+            state.IsEnabled,
+            state.IsFromConfiguration,
+            updatedAt);
 
     /// <summary>
     /// Blank becomes null — "no address", which switches the source off without

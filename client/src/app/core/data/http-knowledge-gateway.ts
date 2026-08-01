@@ -287,23 +287,29 @@ export class HttpKnowledgeGateway extends KnowledgeGateway {
     return this.http.get<KnowledgeSource[]>(`${this.base}/sources`);
   }
 
-  repositorySource(): Observable<RepositorySource> {
-    return this.http.get<RepositorySource>(`${this.base}/sources/repository`);
+  repositorySources(): Observable<RepositorySource[]> {
+    return this.http.get<RepositorySource[]>(`${this.base}/sources/repositories`);
   }
 
-  saveRepositorySource(endpoint: string | null, isEnabled: boolean): Observable<RepositorySource> {
-    return this.http.put<RepositorySource>(`${this.base}/sources/repository`, {
+  saveRepositorySource(
+    name: string,
+    endpoint: string | null,
+    isEnabled: boolean,
+  ): Observable<RepositorySource> {
+    return this.http.put<RepositorySource>(`${this.base}/sources/repositories/${name}`, {
       endpoint,
       isEnabled,
     });
   }
 
-  resetRepositorySource(): Observable<RepositorySource> {
-    return this.http.delete<RepositorySource>(`${this.base}/sources/repository`);
+  resetRepositorySource(name: string): Observable<RepositorySource> {
+    return this.http.delete<RepositorySource>(`${this.base}/sources/repositories/${name}`);
   }
 
-  testRepositorySource(endpoint: string | null): Observable<RepositoryProbe> {
-    return this.http.post<RepositoryProbe>(`${this.base}/sources/repository/test`, { endpoint });
+  testRepositorySource(name: string, endpoint: string | null): Observable<RepositoryProbe> {
+    return this.http.post<RepositoryProbe>(`${this.base}/sources/repositories/${name}/test`, {
+      endpoint,
+    });
   }
 
   search(query: SearchQuery): Observable<SearchResponse> {

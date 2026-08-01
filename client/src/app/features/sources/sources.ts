@@ -60,8 +60,15 @@ export class SourcesPage {
 
   // ---- repository source administration (admins only) ----------------------
 
-  protected readonly repository = signal<RepositorySource | null>(null);
-  protected readonly editing = signal(false);
+  protected readonly repositories = signal<RepositorySource[] | null>(null);
+
+  /**
+   * Which source's form is open, by name. One at a time: two open forms would
+   * need two drafts, two probe results and two error lines, and editing two
+   * server addresses at once is not a thing anyone does.
+   */
+  protected readonly editingName = signal<string | null>(null);
+
   protected readonly draftEndpoint = signal('');
   protected readonly draftEnabled = signal(true);
   protected readonly saving = signal(false);
@@ -69,42 +76,44 @@ export class SourcesPage {
   protected readonly probe = signal<RepositoryProbe | null>(null);
   protected readonly editFailure = signal<string | null>(null);
 
+  /** The source whose form is open, if any. */
+  protected readonly editingSource = computed(() =>
+    (this.repositories() ?? []).find((source) => source.name === this.editingName()) ?? null,
+  );
+
   constructor() {
     this.reloadSources();
 
     // Only an admin can read this endpoint, so only an admin asks. A viewer
     // requesting it would get a 403 the interceptor would rightly ignore, but
     // the console noise would be ours.
-    if (this.auth.isAdmin()) this.loadRepository();
+    if (this.auth.isAdmin()) this.loadRepositories();
   }
 
-  protected startEditing(): void {
-    const current = this.repository();
-
-    this.draftEndpoint.set(current?.endpoint ?? '');
+  protected startEditing(source: RepositorySource): void {
+    this.draftEndpoint.set(source.endpoint ?? '');
 
     // Editing an existing address reflects whatever it actually is; setting one
     // for the first time defaults to on, because nobody types in a server
     // address in order to leave it switched off.
-    this.draftEnabled.set(current?.endpoint ? current.isEnabled : true);
+    this.draftEnabled.set(source.endpoint ? source.isEnabled : true);
     this.probe.set(null);
     this.editFailure.set(null);
-    this.editing.set(true);
+    this.editingName.set(source.name);
   }
 
   protected save(): void {
-    if (this.saving()) return;
+    const name = this.editingName();
+    if (this.saving() || !name) return;
 
     this.saving.set(true);
     this.editFailure.set(null);
 
     const endpoint = this.draftEndpoint().trim() || null;
 
-    this.gateway.saveRepositorySource(endpoint, this.draftEnabled()).subscribe({
+    this.gateway.saveRepositorySource(name, endpoint, this.draftEnabled()).subscribe({
       next: (saved) => {
-        this.repository.set(saved);
-        this.saving.set(false);
-        this.editing.set(false);
+        this.applySaved(saved);
         // The status line on the card above is now stale — it is computed from
         // this same setting on the server.
         this.reloadSources();
@@ -117,14 +126,15 @@ export class SourcesPage {
   }
 
   protected reset(): void {
+    const name = this.editingName();
+    if (!name) return;
+
     this.saving.set(true);
     this.editFailure.set(null);
 
-    this.gateway.resetRepositorySource().subscribe({
+    this.gateway.resetRepositorySource(name).subscribe({
       next: (saved) => {
-        this.repository.set(saved);
-        this.saving.set(false);
-        this.editing.set(false);
+        this.applySaved(saved);
         this.reloadSources();
       },
       error: (error: unknown) => {
@@ -135,13 +145,14 @@ export class SourcesPage {
   }
 
   protected test(): void {
-    if (this.testing()) return;
+    const name = this.editingName();
+    if (this.testing() || !name) return;
 
     this.testing.set(true);
     this.probe.set(null);
     this.editFailure.set(null);
 
-    this.gateway.testRepositorySource(this.draftEndpoint().trim() || null).subscribe({
+    this.gateway.testRepositorySource(name, this.draftEndpoint().trim() || null).subscribe({
       next: (result) => {
         this.probe.set(result);
         this.testing.set(false);
@@ -154,17 +165,27 @@ export class SourcesPage {
   }
 
   protected cancel(): void {
-    this.editing.set(false);
+    this.editingName.set(null);
     this.probe.set(null);
     this.editFailure.set(null);
   }
 
-  private loadRepository(): void {
-    this.gateway.repositorySource().subscribe({
-      next: (source) => this.repository.set(source),
+  /** Replaces the one row that changed, rather than re-reading the whole list. */
+  private applySaved(saved: RepositorySource): void {
+    this.repositories.update((sources) =>
+      (sources ?? []).map((source) => (source.name === saved.name ? saved : source)),
+    );
+
+    this.saving.set(false);
+    this.editingName.set(null);
+  }
+
+  private loadRepositories(): void {
+    this.gateway.repositorySources().subscribe({
+      next: (sources) => this.repositories.set(sources),
       // Silent: this panel is an extra for admins, and failing to load it must
       // not take the sources list down with it.
-      error: () => this.repository.set(null),
+      error: () => this.repositories.set([]),
     });
   }
 
@@ -189,19 +210,19 @@ export class SourcesPage {
   private toRow(source: KnowledgeSource): SourceRow {
     return {
       ...source,
-      icon: SourcesPage.ICONS[source.name] ?? 'pi-sitemap',
+      icon: SourcesPage.ICONS[source.name] ?? 'pi-github',
       presentation: SourcesPage.STATES[source.state],
     };
   }
 
   /**
-   * Keyed on the source's stable name, with a generic glyph for anything this
-   * build has not seen. A source added on the server must not be able to break
-   * this screen.
+   * Keyed on the source's stable name. Repository sources are named by whoever
+   * configured them, so anything unrecognised gets the repository glyph rather
+   * than a generic one — every source that is not the hub's own documents is a
+   * code server.
    */
   private static readonly ICONS: Record<string, string> = {
     documents: 'pi-database',
-    repositories: 'pi-github',
   };
 
   /**

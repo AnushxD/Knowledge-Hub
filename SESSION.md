@@ -40,6 +40,12 @@ against the org's actual server — see "Blockers".
   the library re-reads every 2.5s, and stops when the tab is hidden.
 - `Cited in answers` on the document detail screen is a real count now — a jsonb
   containment query over stored citations, behind a `jsonb_path_ops` GIN index.
+- An over-long heading no longer fails a whole document: section refs and
+  failure reasons are clamped to their columns before they reach Postgres.
+- **Repository servers are a list.** `KnowledgeSources:Repositories` declares one
+  source per server, each with its own address, override row and route
+  (`/api/sources/repositories/{name}`). The org runs two, which is what prompted
+  it. The singular `RepositoryEndpoint` / `RepositoryToolName` keys are gone.
 
 **It is deployed.** As of 2026-08-01 the site runs on the org Windows machine
 under IIS: people sign in and the assistant streams — the half of phase 6 that
@@ -56,12 +62,20 @@ Nothing. Working tree clean, everything pushed.
 
 ## Blockers
 
-- **The MCP client has never spoken to the org's server.** It is tested against
-  a real MCP server hosted in-process, so the protocol path is exercised, but
-  three things can only be settled against theirs:
-  - **The tool contract is our convention**, not theirs: `query` / `maxResults`
-    returning `{ results: [ { path, lines, text, url, score } ] }`. Ask for the
-    tool list and schema — that, not the address, is what unblocks the mapping.
+- **The MCP client has never spoken to the org's servers.** It is tested against
+  a real MCP server hosted in-process, so the protocol path is exercised. The
+  org runs two — `mcp-cs` and `mcp-impl`, each exposing the same 13 tools — and
+  the hub now searches both as separate sources. What is still unsettled:
+  - **The tool's input schema.** `search_codebase` is the right tool (the only
+    one of the 13 with "search" in its name), but we call it with `query` and
+    `maxResults`, which is our convention. If it names them differently the call
+    fails outright. `tools/list` returns the schema — one connection settles it.
+  - **Whether it returns verbatim source.** `ReadResults` already accepts three
+    output shapes, so the shape is the forgiving half. The text being the file
+    verbatim rather than a summary is the contract that matters, and it cannot
+    be detected from our side. **`get_answer` is the wrong tool for exactly this
+    reason** — a synthesized answer would have the assistant quoting text that
+    exists in no file.
   - **No authentication.** HTTP with no credentials. The SDK transport exposes
     `AdditionalHeaders` and `OAuth`; neither is wired. A server behind a bearer
     token will not connect.
@@ -131,30 +145,31 @@ one-line fix in `web.config` or the environment if it does not.
 The **Hosting on the org Windows machine (IIS)** section of `README.md` is the
 runbook, including where those settings live.
 
-### 2. Point the MCP client at the org's server
+### 2. Point the MCP client at the org's two servers
 
-The client is written and tested; what remains is configuration and one round of
-reality.
+The client is written and tested and now searches a list of servers rather than
+one. What remains is configuration and one round of reality.
 
-1. **Get the tool contract**, not just the address. If the server's search tool
-   does not take `query` / `maxResults` and return
-   `{ results: [ { path, lines, text, url, score } ] }`, adjust `ReadResults` in
-   `McpRepositoryKnowledgeSource` — it already accepts structured content, that
-   JSON in a text block, or plain prose.
-2. **Confirm it returns verbatim source text**, not summaries. The assistant
-   cites what it is handed, so a summarising server would have it quoting text
-   that exists nowhere. This cannot be detected from our side.
-3. **Set `KnowledgeSources__RepositoryProvider` to `mcp`** on the IIS box and put
-   the address in from the **Knowledge sources** screen, or in
-   `KnowledgeSources__RepositoryEndpoint`. Name the tool in
-   `KnowledgeSources__RepositoryToolName` once known — discovery picks the first
-   tool with "search" in its name, which is a guess.
-4. **Add authentication if the server needs it.** `HttpClientTransportOptions`
+1. **Declare both** in `appsettings.Production.json` on the IIS box, and set
+   `KnowledgeSources__RepositoryProvider` to `mcp`. The shape is in README's
+   **Configuration** section. `ToolName` is `search_codebase` for both — the one
+   tool of the 13 with "search" in its name, so discovery would find it anyway,
+   but naming it stops a future `search_docs` quietly taking over.
+   Addresses stay editable per source on the **Knowledge sources** screen.
+2. **Check the input schema first.** We call the tool with `query` and
+   `maxResults`. If it names them differently the call fails outright — a
+   `tools/list` against either server settles it, and the change is two keys in
+   `SearchAsync`.
+3. **Confirm `search_codebase` returns verbatim source text**, not summaries.
+   The assistant cites what it is handed, so a summarising server would have it
+   quoting text that exists nowhere. This cannot be detected from our side.
+   Do **not** point it at `get_answer` for the same reason.
+4. **Add authentication if the servers need it.** `HttpClientTransportOptions`
    takes `AdditionalHeaders` and `OAuth`; a bearer token is a small change plus
    somewhere to keep the secret.
-5. **Verify from the IIS box**, since the Mac cannot reach the server — a real
-   outage is the first genuine test of the failure isolation, which now names the
-   missing source on the answer itself.
+5. **Verify from the IIS box**, since the Mac cannot reach them — a real outage
+   is the first genuine test of the failure isolation, which names the missing
+   source on the answer itself, and now names *which* of the two it was.
 
 ### 3. Smaller, whenever
 

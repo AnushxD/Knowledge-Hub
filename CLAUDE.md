@@ -234,10 +234,16 @@ Recorded so they are not re-litigated. Each is a trade already reasoned through.
   source. A second database-backed source must run sequentially with it.
 - `KnowledgeSourceState` has three values, not a boolean: `inactive` (off by
   design) must not render like `unavailable` (should work, doesn't).
-- The repository address is editable in the UI with configuration as the
-  baseline. An override row wins; otherwise `KnowledgeSources:*` applies.
-  Clearing the override differs from saving an empty address — the first
-  restores configuration, the second switches the source off.
+- Repository servers are a **list**, one knowledge source each, declared in
+  `KnowledgeSources:Repositories`. A team's code sits in more than one index,
+  and the fan-out already handles N sources, so a second server is an entry
+  rather than a code change.
+- **Configuration decides which sources exist; the UI decides where they point.**
+  An override row keyed by the source's `Name` wins; otherwise the configured
+  entry applies. An override for a name configuration does not declare is
+  ignored, not resurrected — that is what a retired server leaves behind.
+  Clearing an override differs from saving an empty address: the first restores
+  configuration, the second switches that source off.
 - Pointing the server at an arbitrary host is **admin-gated SSRF by design**.
   Only absolute http/https is accepted, so the box cannot become a file reader.
 

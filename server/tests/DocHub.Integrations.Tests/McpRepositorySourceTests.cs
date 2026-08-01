@@ -158,31 +158,51 @@ public sealed class McpRepositorySourceTests
         Assert.Contains("search_code", failure.Message);
     }
 
+    /// <summary>The name this test's source is declared under.</summary>
+    private const string SourceName = "repositories";
+
     /// <summary>
     /// Names the tool by default. The scripted server exposes two whose names
     /// contain "search", so discovery would be a coin toss — which is the point
-    /// of <see cref="KnowledgeSourceOptions.RepositoryToolName"/>, and is
-    /// exercised on its own below.
+    /// of <see cref="RepositorySourceOptions.ToolName"/>, and is exercised on
+    /// its own below.
     /// </summary>
     private static McpRepositoryKnowledgeSource SourceFor(
         string? endpoint,
         bool isEnabled = true,
-        string toolName = "search_code") =>
-        new(
-            new StubSettings(new RepositorySourceState(endpoint, isEnabled, IsFromConfiguration: true)),
+        string toolName = "search_code")
+    {
+        var declared = new RepositorySourceOptions
+        {
+            Name = SourceName,
+            DisplayName = "Repositories",
+            Endpoint = endpoint,
+            ToolName = toolName,
+        };
+
+        return new McpRepositoryKnowledgeSource(
+            declared,
+            new StubSettings(new RepositorySourceState(
+                SourceName, "Repositories", endpoint, isEnabled, IsFromConfiguration: true)),
             Options.Create(new KnowledgeSourceOptions
             {
                 RepositoryProvider = KnowledgeSourceOptions.McpProvider,
-                RepositoryEndpoint = endpoint,
-                RepositoryToolName = toolName,
+                Repositories = [declared],
             }),
             NullLoggerFactory.Instance,
             NullLogger<McpRepositoryKnowledgeSource>.Instance);
+    }
 
     private sealed class StubSettings(RepositorySourceState state) : IRepositorySourceSettings
     {
-        public Task<RepositorySourceState> GetAsync(CancellationToken ct = default) =>
-            Task.FromResult(state);
+        public Task<RepositorySourceState?> GetAsync(
+            string name,
+            CancellationToken ct = default) =>
+            Task.FromResult<RepositorySourceState?>(state.Name == name ? state : null);
+
+        public Task<IReadOnlyList<RepositorySourceState>> ListAsync(
+            CancellationToken ct = default) =>
+            Task.FromResult<IReadOnlyList<RepositorySourceState>>([state]);
     }
 
     /// <summary>An MCP server on a loopback port, torn down with the test.</summary>
