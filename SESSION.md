@@ -3,8 +3,8 @@
 Session state only. Architecture, conventions, design decisions and workflow
 live in `CLAUDE.md` and are not repeated here.
 
-**Last updated:** 2026-07-30 · **Branch:** `main`, clean and pushed · **Tests:** 143 green
-(8 Integrations · 17 Api · 14 DataAccess · 104 Services)
+**Last updated:** 2026-08-01 · **Branch:** `main`, clean and pushed · **Tests:** 156 green
+(17 Api · 17 Integrations · 14 DataAccess · 108 Services)
 
 ---
 
@@ -27,6 +27,17 @@ removed from every screen.
 speaks MCP over the official SDK, `RepositoryProvider: "mcp"` switches it on, and
 citations can now resolve outside the hub. What is *not* done is running it
 against the org's actual server — see "Blockers".
+
+**Since phase 7**, four smaller pieces landed:
+
+- Both Ollama calls send `keep_alive` (default 30m), and every answer logs
+  Ollama's own load / prompt-eval / generation split — the only way to tell
+  reading the prompt from writing the answer on a deployed box.
+- A folder can be deleted from the tree, behind a confirm dialog naming what
+  goes with it.
+- Naming a new folder happens in a real dialog, not `window.prompt`.
+- Ingestion status updates on screen: while anything is `pending` or `indexing`
+  the library re-reads every 2.5s, and stops when the tab is hidden.
 
 ---
 

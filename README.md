@@ -847,6 +847,9 @@ and no deployable artefact should contain a credential.
 | Document previews rendered as themselves (Markdown, source, PDF, images) | Done |
 | Citations that resolve outside the hub, not just to documents | Done |
 | Real MCP repository client behind `RepositoryProvider: mcp` | Done |
+| Folder deletion, and naming a folder in a dialog | Done |
+| Ingestion status that updates on screen while a document is processed | Done |
+| Models kept loaded, and a per-answer latency breakdown in the log | Done |
 
 **v1 is complete.** Upload a Markdown, PDF or Word file and it is
 extracted, chunked, embedded and searchable within seconds. Ask a question and
@@ -896,10 +899,9 @@ on, the allowed-domain check runs on the server against the address Google
 verified, and an empty allow-list admits nobody.
 
 Not yet built, by design: Entra ID single sign-on; pushing images to a registry,
-and any automated deploy step —
-CI builds the images and the IIS artefact, but a human still puts them
-somewhere. OCR for scanned PDFs and client-side unit tests are also deferred. OCR for scanned documents is also deferred, so
-image-only PDFs are reported as failed rather than silently indexed as empty.
+and any automated deploy step — CI builds the images and the IIS artefact, but a
+human still puts them somewhere. Client-side unit tests are deferred, as is OCR,
+so image-only PDFs are reported as failed rather than silently indexed as empty.
 
 The client talks to the API through one seam, `KnowledgeGateway`. Two
 implementations exist:
