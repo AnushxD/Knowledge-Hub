@@ -851,7 +851,7 @@ and no deployable artefact should contain a credential.
 | Ingestion status that updates on screen while a document is processed | Done |
 | Models kept loaded, and a per-answer latency breakdown in the log | Done |
 | `Cited in answers`, counted from the citations answers actually carry | Done |
-| Running on the org Windows machine under IIS | Deployed; sign-in verified there |
+| Running on the org Windows machine under IIS | Deployed; sign-in and streaming verified there |
 
 **v1 is complete.** Upload a Markdown, PDF or Word file and it is
 extracted, chunked, embedded and searchable within seconds. Ask a question and

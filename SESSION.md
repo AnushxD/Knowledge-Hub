@@ -42,9 +42,9 @@ against the org's actual server — see "Blockers".
   containment query over stored citations, behind a `jsonb_path_ops` GIN index.
 
 **It is deployed.** As of 2026-08-01 the site runs on the org Windows machine
-under IIS and people can sign in — the half of phase 6 that had only ever been
-simulated. Three of its settings still have not been exercised there; see
-"Unproven, not unbuilt".
+under IIS: people sign in and the assistant streams — the half of phase 6 that
+had only ever been simulated. Two of its settings still have not been exercised
+there; see "Unproven, not unbuilt".
 
 ---
 
@@ -82,13 +82,11 @@ Nothing. Working tree clean, everything pushed.
   follow the format better if it is.
 
 **Unproven, not unbuilt**
-- **IIS runs it, but three of its settings are still untested.** The site was
-  deployed to the org Windows machine on 2026-08-01 and signing in works, so
-  `AspNetCoreModuleV2`, the single-site arrangement and the SPA fallback are
-  proven. Not yet exercised there, each failing quietly rather than loudly:
-  - **SSE buffering** (`responseBufferLimit="0"` in `web.config`) — ask the
-    assistant a question and watch whether the answer arrives word by word or
-    lands complete after a long pause.
+- **IIS runs it, with two settings still untested.** The site was deployed to
+  the org Windows machine on 2026-08-01. Signing in works and the assistant
+  streams word by word, so `AspNetCoreModuleV2`, the single-site arrangement,
+  the SPA fallback and `responseBufferLimit="0"` are all proven there. Not yet
+  exercised, each failing quietly rather than loudly:
   - **The 25 MB upload limit** (`web.config`) — upload something over ~30 MB and
     check the refusal comes from the API, not from IIS.
   - **Data Protection key persistence** (`Authentication__KeyPath`) — recycle the
@@ -125,9 +123,9 @@ Nothing. Working tree clean, everything pushed.
 
 ### 1. Finish proving the IIS host
 
-It is deployed and people can sign in. What is left is the three checks under
-**Unproven, not unbuilt** above — streaming, a large upload, and a session
-across an app-pool recycle. None needs a code change if they pass; each has a
+It is deployed, people can sign in, and answers stream. What is left is the two
+checks under **Unproven, not unbuilt** above — a large upload, and a session
+across an app-pool recycle. Neither needs a code change if it passes; each has a
 one-line fix in `web.config` or the environment if it does not.
 
 The **Hosting on the org Windows machine (IIS)** section of `README.md` is the
