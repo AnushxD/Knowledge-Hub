@@ -404,8 +404,7 @@ Key settings, one strongly-typed Options class per external dependency:
 | `Embeddings:KeepAlive` | The same for the embedding model, which every question needs before retrieval can run |
 | `Chat:PassageCount` | Passages retrieved per question (default 6) |
 | `Chat:HistoryTurns` | Prior turns replayed for follow-ups (default 4) |
-| `KnowledgeSources:RepositoryProvider` | `none` (default) registers the stub that contributes nothing; `mcp` searches every server in `Repositories` |
-| `KnowledgeSources:Repositories` | The MCP servers to search, one source each — see below. Empty (default) means documents only |
+| `KnowledgeSources:RepositoryProvider` | `none` (default) searches no repositories at all; `mcp` searches the servers added on the **Knowledge sources** screen. Which servers exist is not configuration — see below |
 | `KnowledgeSources:RepositoryMaxResults` | Passages to ask each tool for (default 8) |
 | `Authentication:SessionHours` | Session lifetime, sliding (default 8) |
 | `Authentication:KeyPath` | Directory for the Data Protection keys that encrypt the session cookie. **Set it on IIS**, or every application pool recycle signs everyone out. Leave unset in containers |
@@ -419,41 +418,34 @@ Key settings, one strongly-typed Options class per external dependency:
 | `RateLimits:ChatRequests` / `ChatWindowSeconds` | Questions per user per window (default 10 / 60) |
 | `Cors:AllowedOrigins` | Origins allowed to call the API in development |
 
-**Declaring repository servers.** Each entry becomes its own knowledge source,
-searched concurrently under its own deadline and named individually on an answer
-it could not contribute to:
+**Adding repository servers.** They are not configuration — they are rows an
+administrator adds on the **Knowledge sources** screen, because which code a
+team searches changes as the team's code moves, and that should not need a text
+editor on the box and an app-pool recycle. Each server becomes its own knowledge
+source: searched concurrently, under its own deadline, named individually on an
+answer it could not contribute to, and searched from the very next question
+without a restart.
 
-```json
-"KnowledgeSources": {
-  "RepositoryProvider": "mcp",
-  "Repositories": [
-    {
-      "Name": "code-search",
-      "DisplayName": "Code search",
-      "Description": "Every service repository, indexed for search.",
-      "Endpoint": "http://mcp-cs.internal:8080",
-      "ToolName": "search_codebase"
-    },
-    {
-      "Name": "implementations",
-      "DisplayName": "Implementations",
-      "Endpoint": "http://mcp-impl.internal:8080",
-      "ToolName": "search_codebase"
-    }
-  ]
-}
-```
+Each one carries:
 
-`Name` keys the administrator's override and appears in the API route, so
-renaming one abandons its override rather than moving it. `Endpoint` is the
-baseline — an address saved on **Knowledge sources** wins over it, and clearing
-that override restores it. `ToolName` empty means "use the first tool with
-`search` in its name", which is a guess worth replacing once the server's tool
-list is known.
+| Field | Meaning |
+|---|---|
+| Name | Lower-case letters, digits and hyphens. It goes in the API route and is recorded on every citation the server produces, so it cannot be changed afterwards |
+| Display name | What appears on screen and in "… could not be searched" |
+| What it indexes | One line. Two servers exposing identical tools are told apart by this and nothing else |
+| Address | Absolute `http://` or `https://`. **Test address** checks the network path before saving |
+| Search tool | Empty discovers the first tool with `search` in its name — a guess worth replacing once the server's tool list is known |
+| Search this source | Off takes it out of circulation without losing it, which is what an outage calls for |
 
-Which servers exist is deliberately configuration rather than a UI action: an
-administrator can move or switch off a source, but adding one changes what
-answers are grounded in, and that belongs with the deployment.
+`KnowledgeSources:RepositoryProvider` stays in configuration and is the
+deployment's own switch: at `none` no server is searched no matter how many have
+been added, and the rows are left untouched for when it goes back to `mcp`. That
+split is deliberate — an administrator decides *where* to look, the deployment
+decides *whether* to.
+
+Removing a server does not rewrite history. Answers that cited it keep their
+citations, because those denormalise the source's name for the same reason they
+denormalise a document's title.
 
 **Using a bigger or hosted model.** `Llm:Model` takes any model Ollama can
 serve — `llama3.1:8b` or `qwen2.5:7b` follow the citation format noticeably
@@ -757,7 +749,7 @@ Optional settings worth knowing:
 | `RateLimits__ChatRequests` | Questions per user per window, default 10 |
 | `Llm__Model` | `llama3.1:8b` or `qwen2.5:7b` follow the citation format better than the 3B default, at the cost of speed |
 | `Llm__ContextTokens` | Lower it on a constrained box — but lower `Chat__PassageCount` to match, rather than letting the prompt overflow |
-| `KnowledgeSources__RepositoryProvider` | `mcp` to search repositories over MCP. The servers themselves are a JSON array, so set them in `appsettings.Production.json` rather than as environment variables — addresses stay editable from **Knowledge sources** in the UI |
+| `KnowledgeSources__RepositoryProvider` | `mcp` to search repositories over MCP. The servers themselves are added from **Knowledge sources** in the UI, not here |
 
 For Google sign-in, add `Authentication__Google__Enabled` (`true`),
 `__ClientId`, `__ClientSecret` and `__AllowedDomains__0`. The redirect URI
@@ -882,6 +874,7 @@ and no deployable artefact should contain a credential.
 | Document previews rendered as themselves (Markdown, source, PDF, images) | Done |
 | Citations that resolve outside the hub, not just to documents | Done |
 | Real MCP repository client behind `RepositoryProvider: mcp` | Done |
+| Adding, editing and removing MCP servers from the UI | Done |
 | Folder deletion, and naming a folder in a dialog | Done |
 | Ingestion status that updates on screen while a document is processed | Done |
 | Models kept loaded, and a per-answer latency breakdown in the log | Done |
@@ -896,14 +889,14 @@ passage behind it, and declines when the answer isn't there.
 Retrieval runs through `IKnowledgeSource`: every configured source is searched
 concurrently and merged by rank, a source that fails is left out of that answer
 and named in the reply rather than failing the whole question, and `/sources`
-shows which are contributing. Repository sources are real MCP clients: set
-`KnowledgeSources:RepositoryProvider` to `mcp` and declare one or more servers
-in `KnowledgeSources:Repositories`, and their passages join document search and
-are cited alongside documents. Each is a source in its own right — its own
-address, its own deadline, its own line on an answer it could not contribute to
-— so a team whose code is split over several indexes searches all of them at
-once. Left at `none` a single stub contributes nothing, which is what keeps the
-fan-out exercised on a machine with no MCP server.
+shows which are contributing. Repository sources are real MCP clients, added on
+the **Knowledge sources** screen rather than in a config file: give one an
+address and a tool, and its passages join document search and are cited
+alongside documents from the next question onwards. Each is a source in its own
+right — its own address, its own deadline, its own line on an answer it could
+not contribute to — so a team whose code is split over several indexes searches
+all of them at once. With none added, a single stub contributes nothing, which
+is what keeps the fan-out exercised on a machine with no MCP server.
 
 A citation carries a `kind`. A `document` citation resolves into the hub at
 `/docs/:id?chunk=n`; an `external` one links out to wherever the source said the
@@ -980,9 +973,9 @@ requests are same-origin and CORS never applies.
 | `GET` | `/api/chat/sessions/{id}` | One conversation with citations |
 | `DELETE` | `/api/chat/sessions/{id}` | Delete a conversation |
 | `GET` | `/api/sources` | Knowledge sources the assistant may ground answers in, and each one's state |
-| `GET` | `/api/sources/repositories` | Every declared repository server and its address (Admin only) |
-| `GET`/`PUT`/`DELETE` | `/api/sources/repositories/{name}` | One server's address (Admin only). DELETE drops the override so configuration applies again |
-| `POST` | `/api/sources/repositories/{name}/test` | Check an address answers before saving it (Admin only) |
+| `GET`/`POST` | `/api/sources/repositories` | The MCP repository servers, and adding one (Admin only) |
+| `GET`/`PUT`/`DELETE` | `/api/sources/repositories/{name}` | One server. PUT changes everything but its name; DELETE removes it (Admin only) |
+| `POST` | `/api/sources/repositories/test` | Check an address answers before adding it (Admin only) |
 | `POST` | `/api/auth/login` | Sign in with an email and password; sets the session cookie |
 | `POST` | `/api/auth/logout` | End the session |
 | `GET` | `/api/auth/me` | The signed-in user, or 401 |

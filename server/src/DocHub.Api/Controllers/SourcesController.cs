@@ -28,7 +28,7 @@ public sealed class SourcesController(
     // arbitrary host and have it fetch that address, which is a real capability
     // and not one every signed-in user should hold.
 
-    /// <summary>Every repository source this deployment declares.</summary>
+    /// <summary>Every MCP repository server that has been added.</summary>
     [HttpGet("repositories")]
     [Authorize(Policy = Policies.Admin)]
     [ProducesResponseType<IReadOnlyList<RepositorySourceViewModel>>(StatusCodes.Status200OK)]
@@ -36,7 +36,21 @@ public sealed class SourcesController(
         CancellationToken ct) =>
         await repositorySource.ListAsync(ct);
 
-    /// <summary>One repository source's address and whether it is switched on.</summary>
+    /// <summary>Adds a server. It is searched from the next question onwards.</summary>
+    [HttpPost("repositories")]
+    [Authorize(Policy = Policies.Admin)]
+    [ProducesResponseType<RepositorySourceViewModel>(StatusCodes.Status201Created)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<RepositorySourceViewModel>> AddRepository(
+        [FromBody] CreateRepositorySourceRequest request,
+        CancellationToken ct)
+    {
+        var created = await repositorySource.CreateAsync(request, ct);
+
+        return CreatedAtAction(nameof(GetRepository), new { name = created.Name }, created);
+    }
+
+    /// <summary>One server's settings.</summary>
     [HttpGet("repositories/{name}")]
     [Authorize(Policy = Policies.Admin)]
     [ProducesResponseType<RepositorySourceViewModel>(StatusCodes.Status200OK)]
@@ -46,7 +60,7 @@ public sealed class SourcesController(
         CancellationToken ct) =>
         await repositorySource.GetAsync(name, ct);
 
-    /// <summary>Sets the address, overriding whatever configuration declares.</summary>
+    /// <summary>Changes everything about a server except its name.</summary>
     [HttpPut("repositories/{name}")]
     [Authorize(Policy = Policies.Admin)]
     [ProducesResponseType<RepositorySourceViewModel>(StatusCodes.Status200OK)]
@@ -56,33 +70,33 @@ public sealed class SourcesController(
         string name,
         [FromBody] UpdateRepositorySourceRequest request,
         CancellationToken ct) =>
-        await repositorySource.SaveAsync(name, request, ct);
+        await repositorySource.UpdateAsync(name, request, ct);
 
     /// <summary>
-    /// Drops the override so the deployment's configuration applies again.
-    /// Distinct from saving an empty address, which switches the source off.
+    /// Removes a server. Answers that cited it keep their citations — those
+    /// denormalise the source's name, so history is not rewritten.
     /// </summary>
     [HttpDelete("repositories/{name}")]
     [Authorize(Policy = Policies.Admin)]
-    [ProducesResponseType<RepositorySourceViewModel>(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<RepositorySourceViewModel> ResetRepository(
-        string name,
-        CancellationToken ct) =>
-        await repositorySource.ResetAsync(name, ct);
+    public async Task<IActionResult> RemoveRepository(string name, CancellationToken ct)
+    {
+        await repositorySource.DeleteAsync(name, ct);
+        return NoContent();
+    }
 
     /// <summary>
     /// Checks that an address answers, before committing to it. Confirms the
-    /// network path, not that the server speaks MCP.
+    /// network path, not that the server speaks MCP. Takes an address rather
+    /// than a name, because the useful moment to test one is before it exists.
     /// </summary>
-    [HttpPost("repositories/{name}/test")]
+    [HttpPost("repositories/test")]
     [Authorize(Policy = Policies.Admin)]
     [ProducesResponseType<RepositoryProbeViewModel>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<RepositoryProbeViewModel> TestRepository(
-        string name,
         [FromBody] UpdateRepositorySourceRequest request,
         CancellationToken ct) =>
-        await repositorySource.ProbeAsync(name, request.Endpoint, ct);
+        await repositorySource.ProbeAsync(request.Endpoint, ct);
 }

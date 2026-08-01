@@ -39,7 +39,7 @@ namespace DocHub.Services.Knowledge;
 /// </list>
 /// </summary>
 internal sealed class CompositeKnowledgeSource(
-    IEnumerable<IKnowledgeSource> sources,
+    IKnowledgeSourceCatalog catalog,
     IOptions<KnowledgeOptions> options,
     ILogger<CompositeKnowledgeSource> logger) : IKnowledgeRetriever
 {
@@ -88,6 +88,8 @@ internal sealed class CompositeKnowledgeSource(
     public async Task<IReadOnlyList<KnowledgeSourceViewModel>> DescribeSourcesAsync(
         CancellationToken ct = default)
     {
+        var sources = await catalog.ResolveAsync(ct);
+
         var described = await Task.WhenAll(sources.Select(async source =>
         {
             KnowledgeSourceStatus status;
@@ -154,11 +156,16 @@ internal sealed class CompositeKnowledgeSource(
     /// source added here would have to run sequentially with the first, exactly
     /// as the keyword and vector branches do, or it will fail intermittently
     /// under a fast provider and pass under a slow one.
+    ///
+    /// Resolving the sources is itself a database read, so it finishes before
+    /// the fan-out starts rather than racing it on the same DbContext.
     /// </summary>
     private async Task<IReadOnlyList<SourceOutcome>> SearchAllAsync(
         KnowledgeQuery query,
         CancellationToken ct)
     {
+        var sources = await catalog.ResolveAsync(ct);
+
         return await Task.WhenAll(sources.Select(async source =>
         {
             var stopwatch = Stopwatch.StartNew();

@@ -17,6 +17,7 @@ import {
   Person,
   RepositoryProbe,
   RepositorySource,
+  RepositorySourceDraft,
   SearchQuery,
   SearchResponse,
   SignedInUser,
@@ -119,22 +120,26 @@ export abstract class KnowledgeGateway {
 
   // ---- repository source administration (Admin only; the API enforces it) ---
 
-  /** Every repository source the deployment declares, in configuration order. */
+  /** Every MCP repository server that has been added, oldest first. */
   abstract repositorySources(): Observable<RepositorySource[]>;
 
-  abstract saveRepositorySource(
+  /** Adds a server. It is searched from the next question onwards. */
+  abstract addRepositorySource(
     name: string,
-    endpoint: string | null,
-    isEnabled: boolean,
+    draft: RepositorySourceDraft,
   ): Observable<RepositorySource>;
 
-  /** Drops the override so configuration applies again. */
-  abstract resetRepositorySource(name: string): Observable<RepositorySource>;
-
-  abstract testRepositorySource(
+  /** Changes everything about a server except its name, which is its identity. */
+  abstract saveRepositorySource(
     name: string,
-    endpoint: string | null,
-  ): Observable<RepositoryProbe>;
+    draft: RepositorySourceDraft,
+  ): Observable<RepositorySource>;
+
+  /** Removes it entirely. Switching it off instead keeps its address. */
+  abstract removeRepositorySource(name: string): Observable<void>;
+
+  /** Takes an address rather than a name — the moment to test one is before it exists. */
+  abstract testRepositorySource(endpoint: string): Observable<RepositoryProbe>;
 
   abstract chatSessions(): Observable<ChatSession[]>;
   abstract chatTranscript(sessionId: string): Observable<ChatTranscript>;

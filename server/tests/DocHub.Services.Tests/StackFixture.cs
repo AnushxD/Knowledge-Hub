@@ -138,12 +138,21 @@ public sealed class StackFixture : IAsyncLifetime
         // Composed exactly as AddServices + AddIntegrations do it, including
         // the null repository source: the fan-out and merge are only worth
         // testing against more than one source.
+        // Through the catalog, as the app does: the document source plus
+        // whatever repository servers the table holds. With none added it
+        // supplies the stand-in, so the fan-out and merge still see two sources.
+        var catalog = new KnowledgeSourceCatalog(
+            [new DocumentKnowledgeSource(searchService), .. extraSources],
+            settingRepo,
+            new McpRepositoryKnowledgeSourceFactory(
+                Options.Create(new KnowledgeSourceOptions()), NullLoggerFactory.Instance),
+            Options.Create(new KnowledgeSourceOptions
+            {
+                RepositoryProvider = KnowledgeSourceOptions.McpProvider,
+            }));
+
         var knowledge = new CompositeKnowledgeSource(
-            [
-                new DocumentKnowledgeSource(searchService),
-                new NullRepositoryKnowledgeSource(Options.Create(new KnowledgeSourceOptions())),
-                .. extraSources,
-            ],
+            catalog,
             Options.Create(knowledgeOptions),
             NullLogger<CompositeKnowledgeSource>.Instance);
 

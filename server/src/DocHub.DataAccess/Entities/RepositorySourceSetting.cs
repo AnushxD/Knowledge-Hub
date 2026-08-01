@@ -1,39 +1,62 @@
 namespace DocHub.DataAccess.Entities;
 
 /// <summary>
-/// The repository knowledge source's address, as an administrator set it.
+/// One MCP repository server, as an administrator added it.
 ///
-/// Configuration still declares the baseline — a deployment that always wants a
-/// repository source can say so in `KnowledgeSources:*` and be certain of it.
-/// This row is the operational override, so adding or moving an MCP server is
-/// something an administrator does in the UI rather than an app-pool
-/// environment variable and a recycle.
+/// This table <b>is</b> the list of repository sources — not an override on top
+/// of a configured one. Which servers a team searches changes as the team's
+/// code moves, and that is operational rather than architectural: it should not
+/// need a text editor on the box, an app-pool recycle, and a person who knows
+/// where `appsettings.Production.json` lives.
 ///
-/// Exactly one row, keyed by the source's stable name. A table with one row is
-/// a slightly odd shape, but the alternatives are worse: a general key/value
-/// settings table loses every type and constraint, and a second column on some
-/// unrelated entity hides what this is.
+/// What stays in configuration is the deployment's decision — whether to search
+/// repositories at all, and how many passages to ask each server for. Those
+/// change the shape of every answer, so they belong with the deployment.
 /// </summary>
 public class RepositorySourceSetting
 {
-    /// <summary>The source's stable name — "repositories". Also the primary key.</summary>
+    /// <summary>
+    /// Stable identifier and primary key. It appears in the API's routes and is
+    /// recorded on every citation this server produces, so it is chosen once
+    /// and not edited — renaming would orphan the attribution on answers
+    /// already given.
+    /// </summary>
     public required string Name { get; set; }
 
-    /// <summary>
-    /// Absolute http/https address of the MCP server. Null means "not set here",
-    /// which falls back to configuration rather than meaning "disabled".
-    /// </summary>
-    public string? Endpoint { get; set; }
+    /// <summary>What to call it on screen and in the sentence naming a source that failed.</summary>
+    public required string DisplayName { get; set; }
 
     /// <summary>
-    /// Whether to search this source at all. Separate from
-    /// <see cref="Endpoint"/> so an administrator can switch a source off during
-    /// an outage without losing the address they will want back.
+    /// One line saying what this server indexes. Two servers exposing identical
+    /// tools are told apart by this and nothing else.
+    /// </summary>
+    public string Description { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Absolute http/https address of the MCP server. Required: a server with
+    /// no address is not a server, and switching one off during an outage is
+    /// what <see cref="IsEnabled"/> is for.
+    /// </summary>
+    public required string Endpoint { get; set; }
+
+    /// <summary>
+    /// Which of the server's tools to search with. Empty means "discover it" —
+    /// the first tool with "search" in its name, which is a guess worth
+    /// replacing once the server's tool list is known.
+    /// </summary>
+    public string ToolName { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Whether to search this source at all. Separate from deleting it so an
+    /// administrator can take a server out of circulation during an outage
+    /// without losing its address and settings.
     /// </summary>
     public bool IsEnabled { get; set; }
 
+    public DateTimeOffset CreatedAt { get; set; }
+
     public DateTimeOffset UpdatedAt { get; set; }
 
-    /// <summary>Who last changed it. Null for a row that has only ever been the default.</summary>
+    /// <summary>Who last changed it.</summary>
     public Guid? UpdatedById { get; set; }
 }

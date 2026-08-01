@@ -131,47 +131,18 @@ public static class IntegrationsServiceCollectionExtensions
             .Validate(
                 options => options.RepositoryMaxResults > 0,
                 "KnowledgeSources:RepositoryMaxResults must be greater than zero.")
-            .Validate(
-                options => options.Repositories.All(
-                    source => !string.IsNullOrWhiteSpace(source.Name)),
-                "Every KnowledgeSources:Repositories entry needs a Name. It keys the "
-                + "administrator's override and appears in the API's routes.")
-            .Validate(
-                options => options.Repositories
-                    .Select(source => source.Name.Trim())
-                    .Distinct(StringComparer.OrdinalIgnoreCase)
-                    .Count() == options.Repositories.Count,
-                "KnowledgeSources:Repositories names must be unique — two sources sharing one "
-                + "name would share one override row and be indistinguishable on an answer.")
             .ValidateOnStart();
 
-        // Registered as sources among others rather than special-cased: the
-        // composite must see more than one source locally, or the fan-out is
-        // only ever exercised in production.
+        // No IKnowledgeSource registrations for repositories: which servers
+        // exist is a table an administrator edits, so the set cannot be known
+        // when the container is built. The catalog in Services reads that table
+        // per request and calls this factory — which is what lets a server
+        // added in the UI be searched by the very next question.
         //
-        // Scoped, not singleton: every implementation reads the administrator's
-        // current setting per request, so a change in the UI takes effect on the
-        // next question rather than on the next application pool recycle.
-        //
-        // Which shape is a deployment decision taken at startup, deliberately
-        // not probed per question: what an answer was grounded in must not vary
-        // with whether a server happened to be reachable at that moment.
-        if (knowledgeOptions.RepositoryProvider == KnowledgeSourceOptions.McpProvider)
-        {
-            // One instance per declared server, each carrying its own identity.
-            // The entry is captured here rather than looked up by name inside
-            // the source, so a source cannot exist without configuration for it.
-            foreach (var repository in knowledgeOptions.Repositories)
-            {
-                services.AddScoped<IKnowledgeSource>(provider =>
-                    ActivatorUtilities.CreateInstance<McpRepositoryKnowledgeSource>(
-                        provider, repository));
-            }
-        }
-        else
-        {
-            services.AddScoped<IKnowledgeSource, NullRepositoryKnowledgeSource>();
-        }
+        // Singleton: it holds only options and a logger factory, and the
+        // per-request state is the descriptor it is handed.
+        services.AddSingleton<IRepositoryKnowledgeSourceFactory,
+            McpRepositoryKnowledgeSourceFactory>();
 
         // Short timeout: this backs a "test this address" button, where a
         // person is waiting and a quick "could not connect" beats a long wait

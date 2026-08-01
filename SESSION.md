@@ -42,10 +42,14 @@ against the org's actual server — see "Blockers".
   containment query over stored citations, behind a `jsonb_path_ops` GIN index.
 - An over-long heading no longer fails a whole document: section refs and
   failure reasons are clamped to their columns before they reach Postgres.
-- **Repository servers are a list.** `KnowledgeSources:Repositories` declares one
-  source per server, each with its own address, override row and route
-  (`/api/sources/repositories/{name}`). The org runs two, which is what prompted
-  it. The singular `RepositoryEndpoint` / `RepositoryToolName` keys are gone.
+- **Repository servers are added from the UI**, not from `appsettings`. The
+  `repository_source_settings` table *is* the list; `IKnowledgeSourceCatalog`
+  resolves sources per request, so a server added on **Knowledge sources** is
+  searched by the very next question with no restart. Name, display name,
+  description, address, tool and on/off are all editable; a server can be
+  removed. `KnowledgeSources:Repositories` is gone — the only repository
+  setting left in configuration is `RepositoryProvider`, the deployment's
+  own on/off.
 
 **It is deployed.** As of 2026-08-01 the site runs on the org Windows machine
 under IIS: people sign in and the assistant streams — the half of phase 6 that
@@ -150,12 +154,11 @@ runbook, including where those settings live.
 The client is written and tested and now searches a list of servers rather than
 one. What remains is configuration and one round of reality.
 
-1. **Declare both** in `appsettings.Production.json` on the IIS box, and set
-   `KnowledgeSources__RepositoryProvider` to `mcp`. The shape is in README's
-   **Configuration** section. `ToolName` is `search_codebase` for both — the one
+1. **Add both from the UI.** Set `KnowledgeSources__RepositoryProvider` to `mcp`
+   on the IIS box — that is the only configuration left — then add each server
+   on **Knowledge sources**. Search tool is `search_codebase` for both: the one
    tool of the 13 with "search" in its name, so discovery would find it anyway,
    but naming it stops a future `search_docs` quietly taking over.
-   Addresses stay editable per source on the **Knowledge sources** screen.
 2. **Check the input schema first.** We call the tool with `query` and
    `maxResults`. If it names them differently the call fails outright — a
    `tools/list` against either server settles it, and the change is two keys in

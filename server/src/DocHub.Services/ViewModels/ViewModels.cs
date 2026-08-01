@@ -239,35 +239,45 @@ public record KnowledgeSourceViewModel(
     string State,
     string Detail);
 
-/// <summary>One repository source's address, as an administrator manages it.</summary>
+/// <summary>One MCP repository server, as an administrator manages it.</summary>
 /// <param name="Name">
-/// The stable identifier, which is also what addresses it in the API's routes.
+/// The stable identifier: it addresses the server in the API's routes and is
+/// recorded on every citation it produces, so it cannot be edited.
 /// </param>
-/// <param name="DisplayName">What to call it on screen.</param>
-/// <param name="IsFromConfiguration">
-/// True when no override is stored and the deployment's own configuration is in
-/// effect. The screen says so, because an administrator editing a field that
-/// configuration is supplying otherwise has no way to tell why nothing changed.
-/// </param>
-/// <param name="ConfiguredEndpoint">
-/// The address clearing the override would fall back to, or null when clearing
-/// would leave the source with none. The screen says which, so "Use
-/// configuration" does not read as "delete this address".
+/// <param name="ToolName">
+/// Empty means the client discovers a tool by name. Shown as such, because
+/// "discovering" and "you chose this one" behave differently the day a server
+/// grows a second search tool.
 /// </param>
 public record RepositorySourceViewModel(
     string Name,
     string DisplayName,
-    string? Endpoint,
+    string Description,
+    string Endpoint,
+    string ToolName,
     bool IsEnabled,
-    bool IsFromConfiguration,
-    string? ConfiguredEndpoint,
-    DateTimeOffset? UpdatedAt);
+    DateTimeOffset UpdatedAt);
+
+/// <summary>Everything needed to add a server. Name is set once, here.</summary>
+public record CreateRepositorySourceRequest : UpdateRepositorySourceRequest
+{
+    /// <summary>Lower-case letters, digits and hyphens — it goes in a URL.</summary>
+    public string? Name { get; init; }
+}
 
 public record UpdateRepositorySourceRequest
 {
-    /// <summary>Absolute http/https address. Empty switches the source off without losing it.</summary>
+    public string? DisplayName { get; init; }
+
+    public string? Description { get; init; }
+
+    /// <summary>Absolute http/https address. Required — a server needs one to be searched.</summary>
     public string? Endpoint { get; init; }
 
+    /// <summary>Empty discovers the first tool with "search" in its name.</summary>
+    public string? ToolName { get; init; }
+
+    /// <summary>False takes it out of circulation without losing its settings.</summary>
     public bool IsEnabled { get; init; }
 }
 

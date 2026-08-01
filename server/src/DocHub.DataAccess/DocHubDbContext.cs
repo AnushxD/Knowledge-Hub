@@ -159,14 +159,17 @@ public sealed class DocHubDbContext(DbContextOptions<DocHubDbContext> options)
             entity.ToTable("repository_source_settings");
             entity.HasKey(setting => setting.Name);
             entity.Property(setting => setting.Name).HasMaxLength(64);
+            entity.Property(setting => setting.DisplayName).HasMaxLength(120).IsRequired();
+            entity.Property(setting => setting.Description).HasMaxLength(500);
             // Long enough for a hostname with a path; not unbounded, because an
             // endpoint is a URL and an unbounded column invites pasting a page
             // into it.
-            entity.Property(setting => setting.Endpoint).HasMaxLength(2000);
+            entity.Property(setting => setting.Endpoint).HasMaxLength(2000).IsRequired();
+            entity.Property(setting => setting.ToolName).HasMaxLength(120);
 
-            // Deliberately no seed row. Its absence is meaningful: it means
-            // nobody has overridden configuration, which is a different state
-            // from "an administrator set it to empty".
+            // Deliberately no seed row. An empty table is the honest starting
+            // state: no repository servers have been added, and the sources
+            // screen says exactly that.
         });
 
         builder.Entity<Folder>(entity =>

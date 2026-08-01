@@ -349,21 +349,29 @@ export interface NewAccount {
 }
 
 /** The repository source's address, as an administrator manages it. */
+/** One MCP repository server, as an administrator manages it. */
 export interface RepositorySource {
-  /** Stable identifier; also what addresses this source in the API's routes. */
+  /**
+   * Stable identifier: it addresses the server in the API's routes and is
+   * recorded on every citation it produces, so it cannot be edited.
+   */
   name: string;
   displayName: string;
-  endpoint: string | null;
+  description: string;
+  endpoint: string;
+  /** Empty means the client discovers a tool with "search" in its name. */
+  toolName: string;
   isEnabled: boolean;
-  /** True when no override is stored and the deployment's configuration applies. */
-  isFromConfiguration: boolean;
-  /**
-   * What clearing the override would fall back to. Null means clearing switches
-   * the source off rather than restoring an address — which is the difference
-   * between "Use configuration" being a revert and being a delete.
-   */
-  configuredEndpoint: string | null;
-  updatedAt: string | null;
+  updatedAt: string;
+}
+
+/** The editable half of a server; `name` is set once, when it is added. */
+export interface RepositorySourceDraft {
+  displayName: string;
+  description: string;
+  endpoint: string;
+  toolName: string;
+  isEnabled: boolean;
 }
 
 /** The outcome of testing an address before saving it. */

@@ -649,6 +649,68 @@ BEGIN
 END $EF$;
 COMMIT;
 
+START TRANSACTION;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM __ef_migrations_history WHERE "MigrationId" = '20260801115531_RepositoryServersAsData') THEN
+    DELETE FROM repository_source_settings WHERE "Endpoint" IS NULL;
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM __ef_migrations_history WHERE "MigrationId" = '20260801115531_RepositoryServersAsData') THEN
+    ALTER TABLE repository_source_settings ADD "CreatedAt" timestamp with time zone NOT NULL DEFAULT (now());
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM __ef_migrations_history WHERE "MigrationId" = '20260801115531_RepositoryServersAsData') THEN
+    ALTER TABLE repository_source_settings ADD "Description" character varying(500) NOT NULL DEFAULT '';
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM __ef_migrations_history WHERE "MigrationId" = '20260801115531_RepositoryServersAsData') THEN
+    ALTER TABLE repository_source_settings ADD "DisplayName" character varying(120) NOT NULL DEFAULT '';
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM __ef_migrations_history WHERE "MigrationId" = '20260801115531_RepositoryServersAsData') THEN
+    ALTER TABLE repository_source_settings ADD "ToolName" character varying(120) NOT NULL DEFAULT '';
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM __ef_migrations_history WHERE "MigrationId" = '20260801115531_RepositoryServersAsData') THEN
+    UPDATE repository_source_settings
+    SET "DisplayName" = "Name", "CreatedAt" = "UpdatedAt"
+    WHERE "DisplayName" = '';
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM __ef_migrations_history WHERE "MigrationId" = '20260801115531_RepositoryServersAsData') THEN
+    ALTER TABLE repository_source_settings ALTER COLUMN "Endpoint" SET NOT NULL;
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM __ef_migrations_history WHERE "MigrationId" = '20260801115531_RepositoryServersAsData') THEN
+    INSERT INTO __ef_migrations_history ("MigrationId", "ProductVersion")
+    VALUES ('20260801115531_RepositoryServersAsData', '10.0.10');
+    END IF;
+END $EF$;
+COMMIT;
+
 
 -- Default administrator for a fresh deployment.
 --

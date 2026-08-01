@@ -23,6 +23,7 @@ import {
   Person,
   RepositoryProbe,
   RepositorySource,
+  RepositorySourceDraft,
   SearchQuery,
   SearchResponse,
   SearchResult,
@@ -1071,27 +1072,17 @@ export class MockKnowledgeGateway extends KnowledgeGateway {
   // Two, so the screen is developed against the shape it has in production —
   // one of them overridden and one on configuration, which are drawn
   // differently.
+  // One to start with, so both the populated list and the add-a-second flow
+  // are reachable without a backend.
   private mockRepositorySources: RepositorySource[] = [
     {
       name: 'code-search',
       displayName: 'Code search',
+      description: 'Every service repository, indexed for search.',
       endpoint: 'http://mcp-cs.internal:8080',
+      toolName: 'search_codebase',
       isEnabled: true,
-      isFromConfiguration: true,
-      configuredEndpoint: 'http://mcp-cs.internal:8080',
-      updatedAt: null,
-    },
-    {
-      // Declared but with no address, so clearing an override here switches it
-      // off instead of restoring one — both halves of "Use configuration" are
-      // reachable without a backend.
-      name: 'implementations',
-      displayName: 'Implementations',
-      endpoint: null,
-      isEnabled: false,
-      isFromConfiguration: true,
-      configuredEndpoint: null,
-      updatedAt: null,
+      updatedAt: ago(3 * DAY),
     },
   ];
 
@@ -1099,43 +1090,41 @@ export class MockKnowledgeGateway extends KnowledgeGateway {
     return of(this.mockRepositorySources.map((source) => ({ ...source }))).pipe(delay(80));
   }
 
-  saveRepositorySource(
-    name: string,
-    endpoint: string | null,
-    isEnabled: boolean,
-  ): Observable<RepositorySource> {
-    return this.replaceSource(name, (source) => ({
-      ...source,
-      endpoint,
-      isEnabled,
-      isFromConfiguration: false,
-      updatedAt: new Date().toISOString(),
-    }));
+  addRepositorySource(name: string, draft: RepositorySourceDraft): Observable<RepositorySource> {
+    // Same rules as the API, so the error paths are reachable here too: the
+    // name goes in a URL and has to be unique.
+    if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(name)) {
+      return throwError(
+        () =>
+          new Error(
+            'The name may use lower-case letters, digits and hyphens only — for example ' +
+              "'code-search'.",
+          ),
+      );
+    }
+
+    if (this.mockRepositorySources.some((source) => source.name === name)) {
+      return throwError(() => new Error(`A repository server named '${name}' already exists.`));
+    }
+
+    const created: RepositorySource = { name, ...draft, updatedAt: new Date().toISOString() };
+    this.mockRepositorySources = [...this.mockRepositorySources, created];
+
+    return of({ ...created }).pipe(delay(150));
   }
 
-  resetRepositorySource(name: string): Observable<RepositorySource> {
-    // Restores the configured address, matching the API. Returning null here
-    // instead made the mock say clearing an override destroys the address,
-    // which is the opposite of what the button does.
-    return this.replaceSource(name, (source) => ({
-      ...source,
-      endpoint: source.configuredEndpoint,
-      isEnabled: source.configuredEndpoint !== null,
-      isFromConfiguration: true,
-      updatedAt: null,
-    }));
-  }
-
-  private replaceSource(
-    name: string,
-    change: (source: RepositorySource) => RepositorySource,
-  ): Observable<RepositorySource> {
+  saveRepositorySource(name: string, draft: RepositorySourceDraft): Observable<RepositorySource> {
     const existing = this.mockRepositorySources.find((source) => source.name === name);
 
-    // Matches the API, which 404s a name configuration does not declare.
-    if (!existing) return throwError(() => new Error(`No repository source named '${name}'.`));
+    // Matches the API, which 404s a name nobody added.
+    if (!existing) return throwError(() => new Error(`No repository server named '${name}'.`));
 
-    const updated = change(existing);
+    const updated: RepositorySource = {
+      ...existing,
+      ...draft,
+      updatedAt: new Date().toISOString(),
+    };
+
     this.mockRepositorySources = this.mockRepositorySources.map((source) =>
       source.name === name ? updated : source,
     );
@@ -1143,10 +1132,18 @@ export class MockKnowledgeGateway extends KnowledgeGateway {
     return of({ ...updated }).pipe(delay(150));
   }
 
-  testRepositorySource(name: string, endpoint: string | null): Observable<RepositoryProbe> {
+  removeRepositorySource(name: string): Observable<void> {
+    this.mockRepositorySources = this.mockRepositorySources.filter(
+      (source) => source.name !== name,
+    );
+
+    return of(undefined).pipe(delay(120));
+  }
+
+  testRepositorySource(endpoint: string): Observable<RepositoryProbe> {
     // Reachable only for an address that looks like one, so the failure path is
     // reachable in the mock too.
-    const ok = !!endpoint && /^https?:\/\//.test(endpoint);
+    const ok = /^https?:\/\//.test(endpoint);
 
     return of({
       isReachable: ok,
@@ -1175,7 +1172,7 @@ export class MockKnowledgeGateway extends KnowledgeGateway {
         description: "Source code and READMEs from the team's repositories, reached over MCP.",
         state: 'inactive',
         detail:
-          "No MCP server is configured, so answers are grounded in documents only. Set KnowledgeSources:RepositoryProvider to 'mcp' once one is available.",
+          'No repository servers have been added, so answers are grounded in documents only. An administrator can add one on this screen.',
       },
     ]).pipe(delay(120));
   }

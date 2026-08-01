@@ -92,13 +92,30 @@ public sealed class McpRepositorySourceTests
     }
 
     [Fact]
-    public async Task An_address_nobody_set_is_inactive_rather_than_unavailable()
+    public async Task A_server_switched_off_is_inactive_rather_than_unavailable()
     {
-        var status = await SourceFor(endpoint: null).CheckStatusAsync();
+        // A reachable address, switched off by an administrator. Nothing is
+        // wrong, so nothing should look wrong — a permanent red light is one
+        // users learn to ignore. The address must survive, too, or turning it
+        // back on means retyping it.
+        var status = await SourceFor("http://127.0.0.1:9", isEnabled: false).CheckStatusAsync();
 
-        // Off by design must not render like an outage — a permanent red light
-        // is one users learn to ignore.
         Assert.Equal(KnowledgeSourceState.Inactive, status.State);
+        Assert.Contains("127.0.0.1:9", status.Detail);
+    }
+
+    [Fact]
+    public async Task A_server_switched_off_is_not_searched()
+    {
+        await using var server = await FakeMcpServer.StartAsync();
+
+        var result = await SourceFor(server.Endpoint, isEnabled: false)
+            .SearchAsync(new KnowledgeQuery("vpn", null, 5));
+
+        // Empty rather than an exception: the composite reports exceptions as
+        // degradations, and a deliberate switch-off degrades nothing.
+        Assert.Empty(result.Results);
+        Assert.Null(result.Degradation);
     }
 
     [Fact]
@@ -172,42 +189,22 @@ public sealed class McpRepositorySourceTests
         bool isEnabled = true,
         string toolName = "search_code")
     {
-        var declared = new RepositorySourceOptions
-        {
-            Name = SourceName,
-            DisplayName = "Repositories",
-            Endpoint = endpoint,
-            ToolName = toolName,
-        };
+        var descriptor = new RepositorySourceDescriptor(
+            SourceName,
+            "Repositories",
+            "A server that exists only inside this test.",
+            endpoint ?? "http://unset.invalid",
+            toolName,
+            isEnabled);
 
         return new McpRepositoryKnowledgeSource(
-            declared,
-            new StubSettings(new RepositorySourceState(
-                SourceName,
-                "Repositories",
-                endpoint,
-                isEnabled,
-                IsFromConfiguration: true,
-                ConfiguredEndpoint: endpoint)),
+            descriptor,
             Options.Create(new KnowledgeSourceOptions
             {
                 RepositoryProvider = KnowledgeSourceOptions.McpProvider,
-                Repositories = [declared],
             }),
             NullLoggerFactory.Instance,
             NullLogger<McpRepositoryKnowledgeSource>.Instance);
-    }
-
-    private sealed class StubSettings(RepositorySourceState state) : IRepositorySourceSettings
-    {
-        public Task<RepositorySourceState?> GetAsync(
-            string name,
-            CancellationToken ct = default) =>
-            Task.FromResult<RepositorySourceState?>(state.Name == name ? state : null);
-
-        public Task<IReadOnlyList<RepositorySourceState>> ListAsync(
-            CancellationToken ct = default) =>
-            Task.FromResult<IReadOnlyList<RepositorySourceState>>([state]);
     }
 
     /// <summary>An MCP server on a loopback port, torn down with the test.</summary>

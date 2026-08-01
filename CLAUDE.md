@@ -75,7 +75,7 @@ Data Access   → DTOs ↔ EF Core ↔ PostgreSQL
 Integrations  → sibling to Data Access (not inside it) — external systems only,
                 always called from Services through an interface:
                 ILlmProvider, IEmbeddingProvider, IKnowledgeSource,
-                IRepositorySourceSettings, IFileStorage
+                IRepositoryKnowledgeSourceFactory, IFileStorage
 ```
 
 Do not fold Integrations into Data Access. External API calls have different
@@ -90,12 +90,16 @@ database or policy access.
 
 That rule produced the knowledge-source layout:
 
-- `IKnowledgeSource`, `KnowledgeQuery/Result/SearchResult`, `IRepositorySourceSettings`
+- `IKnowledgeSource`, `KnowledgeQuery/Result/SearchResult`,
+  `IRepositoryKnowledgeSourceFactory`, `RepositorySourceDescriptor`
   → **Integrations** (the contracts an MCP client implements or consumes)
 - `NullRepositoryKnowledgeSource` and `McpRepositoryKnowledgeSource` → **Integrations** (external systems)
 - `DocumentKnowledgeSource` → **Services** (wraps `ISearchService`; nothing external)
-- `CompositeKnowledgeSource`, `RepositorySourceSettings` → **Services** (fan-out, merge
-  and reconciliation are policy, i.e. business logic)
+- `CompositeKnowledgeSource`, `KnowledgeSourceCatalog`, `RepositorySourceAdmin`
+  → **Services** (fan-out, merge, and deciding which servers exist are policy,
+  i.e. business logic). The catalog is why a server added in the UI is searched
+  immediately: it reads the table per request and asks Integrations to build a
+  client for each row.
 
 `ChatService` depends on `IKnowledgeRetriever` (Services), not on any source, and
 gets back `RetrievedPassage` — so citation verification is untouched by adding a
@@ -234,16 +238,24 @@ Recorded so they are not re-litigated. Each is a trade already reasoned through.
   source. A second database-backed source must run sequentially with it.
 - `KnowledgeSourceState` has three values, not a boolean: `inactive` (off by
   design) must not render like `unavailable` (should work, doesn't).
-- Repository servers are a **list**, one knowledge source each, declared in
-  `KnowledgeSources:Repositories`. A team's code sits in more than one index,
-  and the fan-out already handles N sources, so a second server is an entry
-  rather than a code change.
-- **Configuration decides which sources exist; the UI decides where they point.**
-  An override row keyed by the source's `Name` wins; otherwise the configured
-  entry applies. An override for a name configuration does not declare is
-  ignored, not resurrected — that is what a retired server leaves behind.
-  Clearing an override differs from saving an empty address: the first restores
-  configuration, the second switches that source off.
+- **Repository servers are data, not configuration.** `repository_source_settings`
+  *is* the list of them, added and removed in the UI, one knowledge source each.
+  Which code a team searches changes as the team's code moves; that is
+  operational, and should not need a text editor on the box and a recycle.
+- Sources are therefore resolved **per request** by `IKnowledgeSourceCatalog`,
+  not injected as a fixed `IEnumerable<IKnowledgeSource>` — a server added in
+  the UI is searched by the very next question. Integrations exposes
+  `IRepositoryKnowledgeSourceFactory`; the container cannot know the set.
+- `KnowledgeSources:RepositoryProvider` stays in configuration and is the
+  deployment's own switch: `none` searches no server however many exist, and
+  leaves the rows alone. An administrator decides *where* to look, the
+  deployment decides *whether* to.
+- A server's `Name` is immutable: it keys the route and is recorded on every
+  citation it produces, so renaming would orphan attribution on answers already
+  given. Deleting one leaves those citations intact, for the same reason a
+  deleted document's citations survive.
+- Switching a server off is not deleting it — an outage should not cost an
+  address and its settings.
 - Pointing the server at an arbitrary host is **admin-gated SSRF by design**.
   Only absolute http/https is accepted, so the box cannot become a file reader.
 

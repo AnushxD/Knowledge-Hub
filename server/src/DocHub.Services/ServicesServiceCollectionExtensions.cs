@@ -55,9 +55,9 @@ public static class ServicesServiceCollectionExtensions
                 + "a hung source stalls every question.")
             .ValidateOnStart();
 
-        // Contract in Integrations, implementation here — only this layer can see
-        // both the stored override and the configured baseline.
-        services.AddScoped<IRepositorySourceSettings, RepositorySourceSettings>();
+        // Resolves the live set of sources per request: the document source
+        // from the container, plus one per repository server in the database.
+        services.AddScoped<IKnowledgeSourceCatalog, KnowledgeSourceCatalog>();
         services.AddScoped<IRepositorySourceAdmin, RepositorySourceAdmin>();
 
         services

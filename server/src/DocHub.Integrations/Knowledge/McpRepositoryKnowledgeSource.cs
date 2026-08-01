@@ -42,8 +42,7 @@ namespace DocHub.Integrations.Knowledge;
 /// </para>
 /// </summary>
 internal sealed class McpRepositoryKnowledgeSource(
-    RepositorySourceOptions source,
-    IRepositorySourceSettings settings,
+    RepositorySourceDescriptor source,
     IOptions<KnowledgeSourceOptions> options,
     ILoggerFactory loggerFactory,
     ILogger<McpRepositoryKnowledgeSource> logger) : IKnowledgeSource
@@ -52,55 +51,41 @@ internal sealed class McpRepositoryKnowledgeSource(
 
     public string Name => source.Name;
 
-    public string DisplayName => source.ResolvedDisplayName;
+    public string DisplayName => source.DisplayName;
 
-    public string Description => source.ResolvedDescription;
+    public string Description => source.Description;
 
     public async Task<KnowledgeSourceStatus> CheckStatusAsync(CancellationToken ct = default)
     {
-        // Null would mean this instance outlived its configuration entry, which
-        // cannot happen — the instance is built from that entry at startup.
-        var state = await settings.GetAsync(Name, ct)
-            ?? throw new InvalidOperationException(
-                $"No repository source named '{Name}' is declared.");
-
         // Off by design is not a fault, and must not render like one — the same
         // three-state reasoning the stub follows.
-        if (state.Endpoint is null)
+        if (!source.IsEnabled)
         {
             return new KnowledgeSourceStatus(
                 KnowledgeSourceState.Inactive,
-                "No MCP server address is set, so answers are grounded in documents only. "
-                + "An administrator can set one on this screen.");
-        }
-
-        if (!state.IsEnabled)
-        {
-            return new KnowledgeSourceStatus(
-                KnowledgeSourceState.Inactive,
-                $"Switched off by an administrator. The address ({state.Endpoint}) is kept, so "
+                $"Switched off by an administrator. The address ({source.Endpoint}) is kept, so "
                 + "turning it back on needs no retyping.");
         }
 
         try
         {
-            await using var client = await ConnectAsync(state.Endpoint, ct);
+            await using var client = await ConnectAsync(source.Endpoint, ct);
             var tool = await ResolveToolAsync(client, ct);
 
             return new KnowledgeSourceStatus(
                 KnowledgeSourceState.Active,
-                $"Connected to {state.Endpoint}, searching with the '{tool.Name}' tool.");
+                $"Connected to {source.Endpoint}, searching with the '{tool.Name}' tool.");
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
             logger.LogWarning(exception,
-                "MCP server at {Endpoint} could not be reached", state.Endpoint);
+                "MCP server at {Endpoint} could not be reached", source.Endpoint);
 
-            // Configured but not answering is the one case that *is* a fault,
-            // and the detail names the address so it can be checked.
+            // Added and not answering is the one case that *is* a fault, and
+            // the detail names the address so it can be checked.
             return new KnowledgeSourceStatus(
                 KnowledgeSourceState.Unavailable,
-                $"{state.Endpoint} did not answer ({exception.Message}).");
+                $"{source.Endpoint} did not answer ({exception.Message}).");
         }
     }
 
@@ -108,17 +93,15 @@ internal sealed class McpRepositoryKnowledgeSource(
         KnowledgeQuery query,
         CancellationToken ct = default)
     {
-        var state = await settings.GetAsync(Name, ct);
-
-        // Nothing configured is an empty answer, not an exception: the composite
-        // reports exceptions as degradations, and "an administrator has not set
-        // this up" is not a degradation of anything.
-        if (state?.Endpoint is null || !state.IsEnabled) return KnowledgeSearchResult.Empty;
+        // Switched off is an empty answer, not an exception: the composite
+        // reports exceptions as degradations, and "an administrator turned this
+        // off" is not a degradation of anything.
+        if (!source.IsEnabled) return KnowledgeSearchResult.Empty;
 
         // A folder filter is a document-shaped idea. A repository has no notion
         // of it, so it is ignored rather than answered with nothing — narrowing
         // to a folder must not silently switch this source off.
-        await using var client = await ConnectAsync(state.Endpoint, ct);
+        await using var client = await ConnectAsync(source.Endpoint, ct);
         var tool = await ResolveToolAsync(client, ct);
 
         var take = Math.Clamp(Math.Min(query.Take, options.RepositoryMaxResults), 1, 100);
@@ -145,7 +128,7 @@ internal sealed class McpRepositoryKnowledgeSource(
 
         logger.LogInformation(
             "MCP source returned {Count} passages from {Endpoint} via '{Tool}'",
-            results.Count, state.Endpoint, tool.Name);
+            results.Count, source.Endpoint, tool.Name);
 
         return new KnowledgeSearchResult(results);
     }
