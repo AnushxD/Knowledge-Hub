@@ -59,6 +59,7 @@ export interface DocumentDetail extends DocumentSummary {
   versions: DocumentVersion[];
   /** Extracted text sections, used for preview + citation highlighting. */
   sections: DocumentSection[];
+  /** How many assistant answers cite this document, across every conversation. */
   citedInAnswers: number;
   createdAt: string;
 }

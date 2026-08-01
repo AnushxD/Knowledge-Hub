@@ -79,6 +79,7 @@ interface ApiDocumentDetail {
     changedAt: string;
   }[];
   sections: { chunkId: number; heading: string; body: string; tokenCount: number }[];
+  citedInAnswers: number;
 }
 
 interface ApiSearchResult {
@@ -172,7 +173,7 @@ export class HttpKnowledgeGateway extends KnowledgeGateway {
         // Empty until ingestion finishes; the detail screen shows pipeline
         // state instead of a preview while that is the case.
         sections: detail.sections,
-        citedInAnswers: 0,
+        citedInAnswers: detail.citedInAnswers,
         createdAt: detail.document.createdAt,
       })),
     );

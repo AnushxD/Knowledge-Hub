@@ -44,11 +44,16 @@ public record DocumentVersionViewModel(
 /// succeeds — which is also when the client shows pipeline state rather than a
 /// preview.
 /// </param>
+/// <param name="CitedInAnswers">
+/// How many assistant answers cite this document, across every conversation —
+/// the one measure of whether indexing it was worth anything.
+/// </param>
 public record DocumentDetailViewModel(
     DocumentViewModel Document,
     IReadOnlyList<FolderViewModel> Breadcrumb,
     IReadOnlyList<DocumentVersionViewModel> Versions,
-    IReadOnlyList<DocumentSectionViewModel> Sections);
+    IReadOnlyList<DocumentSectionViewModel> Sections,
+    int CitedInAnswers);
 
 /// <summary>One indexed chunk, as shown in the preview and pointed at by a citation.</summary>
 /// <param name="ChunkId">

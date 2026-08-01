@@ -139,6 +139,67 @@ public sealed class AssistantTests(StackFixture fixture)
         Assert.Empty(Assert.IsType<ChatEvent.Completed>(events[^1]).Degradations);
     }
 
+    [Fact]
+    public async Task A_document_counts_the_answers_that_cite_it()
+    {
+        await using var scope = fixture.NewScope();
+
+        var folder = await scope.Folders.CreateAsync(new CreateFolderRequest(null, Unique("cited")));
+        var document = await scope.Documents.UploadAsync(folder.Id, Upload(VpnGuide, "vpn.md"));
+        await scope.Ingestion.IngestAsync(document.Id);
+
+        // A second document in a folder of its own, so it is never retrieved.
+        var otherFolder = await scope.Folders.CreateAsync(
+            new CreateFolderRequest(null, Unique("uncited")));
+        var other = await scope.Documents.UploadAsync(
+            otherFolder.Id, Upload("## Expenses\n\nClaim within 30 days.", "expenses.md"));
+        await scope.Ingestion.IngestAsync(other.Id);
+
+        Assert.Equal(0, (await scope.Documents.GetAsync(document.Id)).CitedInAnswers);
+
+        scope.Llm.Answer = "Connect through the company VPN [1].";
+
+        foreach (var _ in Enumerable.Range(0, 2))
+        {
+            await AskAsync(scope, new AskRequest
+            {
+                Question = "How do I reach internal systems?",
+                FolderId = folder.Id,
+            });
+        }
+
+        // Two answers cited it, so it says two — the count is of answers, not
+        // of citations, and not of conversations.
+        Assert.Equal(2, (await scope.Documents.GetAsync(document.Id)).CitedInAnswers);
+
+        // And a document nobody's question reached stays at zero, which is what
+        // makes the number worth showing at all.
+        Assert.Equal(0, (await scope.Documents.GetAsync(other.Id)).CitedInAnswers);
+    }
+
+    [Fact]
+    public async Task A_refusal_does_not_count_towards_any_document()
+    {
+        await using var scope = fixture.NewScope();
+
+        var folder = await scope.Folders.CreateAsync(new CreateFolderRequest(null, Unique("refuse")));
+        var document = await scope.Documents.UploadAsync(folder.Id, Upload(VpnGuide, "vpn.md"));
+        await scope.Ingestion.IngestAsync(document.Id);
+
+        // An empty folder retrieves nothing, so the assistant declines without
+        // ever calling the model — and a declined answer cites nobody.
+        var empty = await scope.Folders.CreateAsync(new CreateFolderRequest(null, Unique("empty")));
+
+        var (events, _) = await AskAsync(scope, new AskRequest
+        {
+            Question = "How do I reach internal systems?",
+            FolderId = empty.Id,
+        });
+
+        Assert.True(Assert.IsType<ChatEvent.Completed>(events[^1]).IsRefusal);
+        Assert.Equal(0, (await scope.Documents.GetAsync(document.Id)).CitedInAnswers);
+    }
+
     /// <summary>A source that is configured but cannot be reached.</summary>
     private sealed class UnreachableSource : IKnowledgeSource
     {

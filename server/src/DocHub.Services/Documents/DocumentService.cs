@@ -13,6 +13,7 @@ internal sealed class DocumentService(
     IDocumentRepository documents,
     IFolderRepository folders,
     IChunkRepository chunks,
+    IChatRepository chat,
     IFileStorage storage,
     IIngestionQueue ingestion,
     IActivityLog activity,
@@ -72,7 +73,11 @@ internal sealed class DocumentService(
         // exactly when the client shows the pipeline state instead of a preview.
         var sections = await chunks.GetForDocumentAsync(id, ct);
 
-        return detail.ToViewModel(sections);
+        // Sequential, not concurrent: both reads share the request-scoped
+        // DbContext.
+        var citedInAnswers = await chat.CountAnswersCitingAsync(id, ct);
+
+        return detail.ToViewModel(sections, citedInAnswers);
     }
 
     public async Task<DocumentContent> DownloadAsync(Guid id, CancellationToken ct = default)

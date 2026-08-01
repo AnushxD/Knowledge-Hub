@@ -850,6 +850,7 @@ and no deployable artefact should contain a credential.
 | Folder deletion, and naming a folder in a dialog | Done |
 | Ingestion status that updates on screen while a document is processed | Done |
 | Models kept loaded, and a per-answer latency breakdown in the log | Done |
+| `Cited in answers`, counted from the citations answers actually carry | Done |
 
 **v1 is complete.** Upload a Markdown, PDF or Word file and it is
 extracted, chunked, embedded and searchable within seconds. Ask a question and

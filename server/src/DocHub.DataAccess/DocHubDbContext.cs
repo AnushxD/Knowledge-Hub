@@ -309,6 +309,14 @@ public sealed class DocHubDbContext(DbContextOptions<DocHubDbContext> options)
 
             entity.Property(message => message.Citations).HasColumnType("jsonb");
 
+            // Counting the answers that cite one document is a containment test
+            // over every message. jsonb_path_ops rather than the default
+            // operator class: it indexes only `@>`, which is the single way this
+            // column is ever searched, and is smaller and faster for it.
+            entity.HasIndex(message => message.Citations)
+                .HasMethod("gin")
+                .HasOperators("jsonb_path_ops");
+
             // Same jsonb treatment as citations, and for the same reason: read
             // whole with the message, never queried across.
             entity.Property(message => message.Degradations)

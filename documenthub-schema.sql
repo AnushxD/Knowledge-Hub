@@ -631,6 +631,24 @@ BEGIN
 END $EF$;
 COMMIT;
 
+START TRANSACTION;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM __ef_migrations_history WHERE "MigrationId" = '20260801102421_CitationsIndex') THEN
+    CREATE INDEX "IX_chat_messages_Citations" ON chat_messages USING gin ("Citations" jsonb_path_ops);
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM __ef_migrations_history WHERE "MigrationId" = '20260801102421_CitationsIndex') THEN
+    INSERT INTO __ef_migrations_history ("MigrationId", "ProductVersion")
+    VALUES ('20260801102421_CitationsIndex', '10.0.10');
+    END IF;
+END $EF$;
+COMMIT;
+
 
 -- Default administrator for a fresh deployment.
 --

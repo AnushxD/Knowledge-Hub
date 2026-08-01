@@ -100,6 +100,7 @@ public sealed class StackFixture : IAsyncLifetime
         var folderRepo = new FolderRepository(db);
         var documentRepo = new DocumentRepository(db);
         var chunkRepo = new ChunkRepository(db);
+        var chatRepo = new ChatRepository(db);
         var user = new TestCurrentUser();
         var queue = new RecordingIngestionQueue();
 
@@ -152,7 +153,7 @@ public sealed class StackFixture : IAsyncLifetime
             new FolderService(
                 folderRepo, Storage, activity, user, NullLogger<FolderService>.Instance),
             new DocumentService(
-                documentRepo, folderRepo, chunkRepo, Storage, queue, activity, user,
+                documentRepo, folderRepo, chunkRepo, chatRepo, Storage, queue, activity, user,
                 NullLogger<DocumentService>.Instance),
             new IngestionService(
                 documentRepo, chunkRepo, Storage, extractors,
@@ -160,7 +161,7 @@ public sealed class StackFixture : IAsyncLifetime
                 NullLogger<IngestionService>.Instance),
             searchService,
             new ChatService(
-                new ChatRepository(db), knowledge, llm, user,
+                chatRepo, knowledge, llm, user,
                 Options.Create(new ChatOptions()), NullLogger<ChatService>.Instance),
             chunkRepo,
             queue,

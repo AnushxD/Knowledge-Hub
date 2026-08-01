@@ -48,12 +48,14 @@ internal static class Mapping
 
     public static DocumentDetailViewModel ToViewModel(
         this DocumentDetailDto detail,
-        IReadOnlyList<ChunkMatchDto> sections) =>
+        IReadOnlyList<ChunkMatchDto> sections,
+        int citedInAnswers) =>
         new(
             detail.Document.ToViewModel(),
             [.. detail.Breadcrumb.Select(ToViewModel)],
             [.. detail.Versions.Select(ToViewModel)],
-            [.. sections.Select(ToViewModel)]);
+            [.. sections.Select(ToViewModel)],
+            citedInAnswers);
 
     public static DocumentSectionViewModel ToViewModel(this ChunkMatchDto chunk) =>
         new(

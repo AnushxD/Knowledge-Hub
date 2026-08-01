@@ -37,9 +37,9 @@ public enum CitationKind
 ///
 /// The optional members are the price of one record covering both kinds, and
 /// are preferred to a second table or a polymorphic jsonb payload: citations
-/// are read as a whole with their message and never queried across, so the
-/// simplest shape that round-trips is the right one. <see cref="Kind"/> says
-/// which members are meaningful.
+/// are read as a whole with their message, so the simplest shape that
+/// round-trips is the right one. <see cref="Kind"/> says which members are
+/// meaningful.
 /// </summary>
 /// <param name="Marker">
 /// The bracketed number used in the answer text — <c>[1]</c>, <c>[2]</c>. This
@@ -89,8 +89,10 @@ public class ChatMessage
 
     /// <summary>
     /// Sources backing this answer, empty for a user message. Stored as jsonb:
-    /// citations are always read as a whole with their message and never
-    /// queried across, so a child table would buy nothing.
+    /// citations are read as a whole with their message, so a child table would
+    /// buy nothing. The one query that crosses messages — how many answers cite
+    /// a given document — is a containment test the GIN index on the column
+    /// covers, which is cheaper than the join a child table would need.
     /// </summary>
     public IReadOnlyList<Citation> Citations { get; set; } = [];
 

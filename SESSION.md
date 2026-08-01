@@ -3,8 +3,8 @@
 Session state only. Architecture, conventions, design decisions and workflow
 live in `CLAUDE.md` and are not repeated here.
 
-**Last updated:** 2026-08-01 · **Branch:** `main`, clean and pushed · **Tests:** 156 green
-(17 Api · 17 Integrations · 14 DataAccess · 108 Services)
+**Last updated:** 2026-08-01 · **Branch:** `main`, clean and pushed · **Tests:** 158 green
+(17 Api · 17 Integrations · 14 DataAccess · 110 Services)
 
 ---
 
@@ -38,6 +38,8 @@ against the org's actual server — see "Blockers".
 - Naming a new folder happens in a real dialog, not `window.prompt`.
 - Ingestion status updates on screen: while anything is `pending` or `indexing`
   the library re-reads every 2.5s, and stops when the tab is hidden.
+- `Cited in answers` on the document detail screen is a real count now — a jsonb
+  containment query over stored citations, behind a `jsonb_path_ops` GIN index.
 
 ---
 
@@ -73,8 +75,6 @@ Nothing. Working tree clean, everything pushed.
   meant the 3B model could see all six passages for the first time; whether it
   is still the weak link is an open question. `llama3.1:8b` and `qwen2.5:7b`
   follow the format better if it is.
-- `Cited in answers` on the document detail screen is always 0 — never wired to
-  chat citations.
 
 **Unproven, not unbuilt**
 - **IIS has never run this.** The single-site arrangement was verified by
@@ -152,7 +152,6 @@ reality.
 - Re-judge answer quality on `llama3.2:3b` now that the context window is right;
   upgrade the model only if it is still weak.
 - Revisit vector-store scale — HNSW parameters and whether pgvector still fits.
-- Wire the `Cited in answers` counter.
 - Pick a registry if images should be pushed.
 
 ---

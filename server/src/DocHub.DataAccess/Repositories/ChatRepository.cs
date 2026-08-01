@@ -110,6 +110,31 @@ internal sealed class ChatRepository(DocHubDbContext db) : IChatRepository
             .Where(session => session.Id == sessionId)
             .ExecuteDeleteAsync(ct) > 0;
 
+    /// <summary>
+    /// Containment (<c>@&gt;</c>) against the jsonb, rather than unnesting the
+    /// array and joining: it is one index probe, and it is the only operator the
+    /// <c>jsonb_path_ops</c> index on the column supports.
+    ///
+    /// Raw SQL because the column goes through a value converter, so EF sees a
+    /// string and no LINQ translation to a jsonb operator exists. The document
+    /// id is a parameter, never interpolated text — <c>jsonb_build_object</c>
+    /// renders it as the same lowercase-hyphenated string
+    /// <c>System.Text.Json</c> wrote.
+    /// </summary>
+    public async Task<int> CountAnswersCitingAsync(
+        Guid documentId,
+        CancellationToken ct = default)
+    {
+        FormattableString sql = $"""
+            SELECT count(*)::int AS "Value"
+            FROM chat_messages
+            WHERE "Citations" @> jsonb_build_array(
+                jsonb_build_object('documentId', {documentId}))
+            """;
+
+        return await db.Database.SqlQuery<int>(sql).SingleAsync(ct);
+    }
+
     private static readonly Expression<Func<ChatSession, ChatSessionDto>> SessionProjection =
         session => new ChatSessionDto(
             session.Id,

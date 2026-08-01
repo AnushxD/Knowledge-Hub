@@ -29,4 +29,15 @@ public interface IChatRepository
         CancellationToken ct = default);
 
     Task<bool> DeleteSessionAsync(Guid sessionId, CancellationToken ct = default);
+
+    /// <summary>
+    /// How many answers cite this document, counted across every conversation.
+    ///
+    /// The one query that reads citations without their message. It answers a
+    /// question about the document — how much of the assistant's work rests on
+    /// it — which is why it is a count rather than a listing: the answers
+    /// themselves belong to whoever asked, and this is shown to anyone who can
+    /// see the document.
+    /// </summary>
+    Task<int> CountAnswersCitingAsync(Guid documentId, CancellationToken ct = default);
 }
