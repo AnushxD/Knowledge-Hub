@@ -138,7 +138,13 @@ internal sealed partial class RepositorySourceAdmin(
         var target = RequireEndpoint(endpoint);
         var result = await probe.ProbeAsync(target, ct);
 
-        return new RepositoryProbeViewModel(result.IsReachable, result.Detail);
+        return new RepositoryProbeViewModel(
+            result.IsReachable,
+            result.SpeaksMcp,
+            result.Detail,
+            result.Tools,
+            result.SuggestedToolName,
+            result.Repositories);
     }
 
     private async Task<RepositorySourceSetting> Require(string name, CancellationToken ct) =>

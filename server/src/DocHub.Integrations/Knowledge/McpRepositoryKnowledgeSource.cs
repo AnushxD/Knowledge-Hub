@@ -161,8 +161,9 @@ internal sealed class McpRepositoryKnowledgeSource(
                     + $"Available: {(tools.Count == 0 ? "none" : string.Join(", ", tools.Select(t => t.Name)))}.");
         }
 
-        return tools.FirstOrDefault(tool =>
-                tool.Name.Contains("search", StringComparison.OrdinalIgnoreCase))
+        var discovered = RepositoryToolNames.PickSearchTool(tools.Select(tool => tool.Name));
+
+        return tools.FirstOrDefault(tool => tool.Name == discovered)
             ?? throw new InvalidOperationException(
                 "The server exposes no tool with 'search' in its name. Set this source's "
                 + "ToolName to choose one explicitly. "

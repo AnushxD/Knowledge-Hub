@@ -274,22 +274,59 @@
         </label>
 
         @if (probe(); as result) {
+          <!-- Three outcomes, three colours. "Something answered but it is not
+               MCP" is a warning, not a pass: the address is right and the
+               source would still fail on every question. -->
           <div
-            class="mt-3 flex items-start gap-2.5 rounded-dh border p-3"
-            [style.borderColor]="
-              'color-mix(in oklab, ' +
-              (result.isReachable ? 'var(--dh-status-indexed)' : 'var(--dh-status-failed)') +
-              ' 32%, transparent)'
-            "
+            class="mt-3 rounded-dh border p-3"
+            [style.borderColor]="'color-mix(in oklab, ' + probeColour() + ' 32%, transparent)'"
           >
-            <i
-              class="pi mt-[1px] text-[13px]"
-              [class]="result.isReachable ? 'pi-check-circle' : 'pi-exclamation-triangle'"
-              [style.color]="
-                result.isReachable ? 'var(--dh-status-indexed)' : 'var(--dh-status-failed)'
-              "
-            ></i>
-            <p class="text-[12px] text-muted">{{ result.detail }}</p>
+            <div class="flex items-start gap-2.5">
+              <i
+                class="pi mt-[1px] text-[13px]"
+                [class]="result.speaksMcp ? 'pi-check-circle' : 'pi-exclamation-triangle'"
+                [style.color]="probeColour()"
+              ></i>
+              <p class="text-[12px] text-muted">{{ result.detail }}</p>
+            </div>
+
+            @if (result.tools.length) {
+              <div class="mt-2.5 pl-[22px]">
+                <p class="text-[11.5px] text-subtle">Tools it exposes</p>
+                <div class="mt-1.5 flex flex-wrap gap-1.5">
+                  @for (tool of result.tools; track tool) {
+                    <code
+                      class="rounded-full border border-hairline bg-surface-2 px-2 py-[3px] text-[11px]"
+                      [class.text-ink]="tool === result.suggestedToolName"
+                      [class.text-subtle]="tool !== result.suggestedToolName"
+                    >
+                      {{ tool }}
+                    </code>
+                  }
+                </div>
+              </div>
+            }
+
+            @if (result.repositories.length) {
+              <div class="mt-2.5 pl-[22px]">
+                <p class="text-[11.5px] text-subtle">
+                  Indexes {{ result.repositories.length }}
+                  {{ result.repositories.length === 1 ? 'repository' : 'repositories' }}
+                </p>
+                <p class="mt-1 text-[11.5px] break-words text-muted">
+                  {{ result.repositories.slice(0, 8).join(', ')
+                  }}{{ result.repositories.length > 8 ? ', …' : '' }}
+                </p>
+              </div>
+            }
+
+            @if (canUseSuggestedTool()) {
+              <div class="mt-3 pl-[22px]">
+                <button class="dh-btn-ghost" type="button" (click)="useSuggestedTool()">
+                  Use “{{ result.suggestedToolName }}”
+                </button>
+              </div>
+            }
           </div>
         }
 

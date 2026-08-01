@@ -258,6 +258,16 @@ Recorded so they are not re-litigated. Each is a trade already reasoned through.
   address and its settings.
 - Pointing the server at an arbitrary host is **admin-gated SSRF by design**.
   Only absolute http/https is accepted, so the box cannot become a file reader.
+- **Only a `search`-style tool can ground an answer.** A tool that returns the
+  server's own prose (`get_answer`, `get_architecture`) or a computed analysis
+  (`get_blast_radius`) has no passage to cite, so wiring one in would have the
+  assistant quoting text that exists in no file. `RepositoryToolNames` holds the
+  one rule for picking a tool, shared by the searcher and the probe so the probe
+  cannot promise a tool the searcher would not use.
+- The address probe speaks MCP and reports the tool list, because the mistakes
+  worth catching are "wrong server" and "wrong tool name", and an HTTP ping sees
+  neither. It falls back to a plain request only to tell "answered but not MCP"
+  apart from "nothing listening" — different problems, different fixes.
 
 **Identity**
 - The `users` table **is** the Identity store (`User : IdentityUser<Guid>`), so

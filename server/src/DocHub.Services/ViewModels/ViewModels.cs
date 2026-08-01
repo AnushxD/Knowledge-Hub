@@ -283,10 +283,24 @@ public record UpdateRepositorySourceRequest
 
 /// <summary>The outcome of probing an address before saving it.</summary>
 /// <param name="Detail">
-/// Says what was actually established. A reachable address is not the same as a
+/// Says what was actually established. Something answering is not the same as a
 /// working MCP server, and the wording must not imply otherwise.
 /// </param>
-public record RepositoryProbeViewModel(bool IsReachable, string Detail);
+/// <param name="SpeaksMcp">
+/// The handshake succeeded. Only then do the tool and repository lists mean
+/// anything, and only then is the address worth saving.
+/// </param>
+/// <param name="SuggestedToolName">
+/// The tool searching would pick on its own. Offered so the screen can fill the
+/// field rather than asking somebody to copy it out of a list.
+/// </param>
+public record RepositoryProbeViewModel(
+    bool IsReachable,
+    bool SpeaksMcp,
+    string Detail,
+    IReadOnlyList<string> Tools,
+    string? SuggestedToolName,
+    IReadOnlyList<string> Repositories);
 
 // ---- chat -------------------------------------------------------------------
 

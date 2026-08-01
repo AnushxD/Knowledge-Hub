@@ -207,54 +207,6 @@ public sealed class McpRepositorySourceTests
             NullLogger<McpRepositoryKnowledgeSource>.Instance);
     }
 
-    /// <summary>An MCP server on a loopback port, torn down with the test.</summary>
-    private sealed class FakeMcpServer : IAsyncDisposable
-    {
-        private readonly WebApplication app;
-
-        private FakeMcpServer(WebApplication app, string endpoint)
-        {
-            this.app = app;
-            Endpoint = endpoint;
-        }
-
-        public string Endpoint { get; }
-
-        public static async Task<FakeMcpServer> StartAsync()
-        {
-            var builder = WebApplication.CreateSlimBuilder();
-
-            // Port 0: the OS picks a free one, so parallel test runs cannot
-            // collide on a hard-coded port.
-            builder.WebHost.UseSetting("urls", "http://127.0.0.1:0");
-            builder.Logging.ClearProviders();
-
-            builder.Services
-                .AddMcpServer()
-                .WithHttpTransport()
-                .WithTools<FakeRepositoryTools>();
-
-            var app = builder.Build();
-            app.MapMcp();
-
-            await app.StartAsync();
-
-            var address = app.Services
-                .GetRequiredService<IServer>()
-                .Features
-                .Get<IServerAddressesFeature>()!
-                .Addresses
-                .First();
-
-            return new FakeMcpServer(app, address);
-        }
-
-        public async ValueTask DisposeAsync()
-        {
-            await app.StopAsync();
-            await app.DisposeAsync();
-        }
-    }
 }
 
 /// <summary>
@@ -293,6 +245,18 @@ public sealed class FakeRepositoryTools
     [McpServerTool(Name = "search_notes")]
     [Description("Searches loose notes, returning prose.")]
     public static string SearchNotes(string query, int maxResults) => PlainNote;
+
+    public static readonly string[] Repositories = ["hub", "worker", "docs"];
+
+    /// <summary>
+    /// What the org's servers offer alongside search. Nothing grounds an answer
+    /// in it — it is how the "test address" button says which server this is.
+    /// </summary>
+    [McpServerTool(Name = "list_repos")]
+    [Description("The repositories this server indexes.")]
+    public static RepositoryList ListRepos() => new(Repositories);
+
+    public sealed record RepositoryList(IReadOnlyList<string> Repositories);
 
     public sealed record SearchResponse(IReadOnlyList<SearchHit> Results);
 

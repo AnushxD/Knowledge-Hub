@@ -433,7 +433,7 @@ Each one carries:
 | Name | Lower-case letters, digits and hyphens. It goes in the API route and is recorded on every citation the server produces, so it cannot be changed afterwards |
 | Display name | What appears on screen and in "… could not be searched" |
 | What it indexes | One line. Two servers exposing identical tools are told apart by this and nothing else |
-| Address | Absolute `http://` or `https://`. **Test address** checks the network path before saving |
+| Address | Absolute `http://` or `https://`. **Test address** connects over MCP and reports what is there — see below |
 | Search tool | Empty discovers the first tool with `search` in its name — a guess worth replacing once the server's tool list is known |
 | Search this source | Off takes it out of circulation without losing it, which is what an outage calls for |
 
@@ -446,6 +446,27 @@ decides *whether* to.
 Removing a server does not rewrite history. Answers that cited it keep their
 citations, because those denormalise the source's name for the same reason they
 denormalise a document's title.
+
+**Test address** does a real MCP handshake rather than an HTTP ping, because the
+mistakes that matter are not "the host is down" — they are "that is the wrong
+one of our two servers" and "the tool is not called what you assumed". It
+reports the server's whole tool list, which repositories it says it indexes, and
+which tool searching would pick, with a button to fill that in. Three outcomes,
+drawn differently:
+
+- **Connected** — the handshake worked. If nothing has `search` in its name it
+  still says so, because that source would fail on every question.
+- **Something answered, but not MCP** — the address and network path are right
+  and it is still unusable. Usually the service's home page rather than its MCP
+  endpoint.
+- **Could not connect** — nothing is listening. A different problem entirely,
+  which is why it is worth telling apart from the one above.
+
+Only `search`-style tools are usable. A server exposing `get_answer` or
+`get_architecture` returns its own prose, and the assistant cites what it is
+handed — so grounding an answer in a summary would have it quoting text that
+exists in no file. Analysis tools like `get_blast_radius` are the same: real
+output, but nothing a citation can point at.
 
 **Using a bigger or hosted model.** `Llm:Model` takes any model Ollama can
 serve — `llama3.1:8b` or `qwen2.5:7b` follow the citation format noticeably

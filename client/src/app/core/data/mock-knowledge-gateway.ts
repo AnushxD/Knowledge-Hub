@@ -1141,15 +1141,41 @@ export class MockKnowledgeGateway extends KnowledgeGateway {
   }
 
   testRepositorySource(endpoint: string): Observable<RepositoryProbe> {
-    // Reachable only for an address that looks like one, so the failure path is
-    // reachable in the mock too.
-    const ok = /^https?:\/\//.test(endpoint);
+    // Three outcomes, matching the API: a server that speaks MCP, one that
+    // answers HTTP and does not, and nothing at all. All three are drawn
+    // differently, so all three have to be reachable without a backend.
+    if (!/^https?:\/\//.test(endpoint)) {
+      return of({
+        isReachable: false,
+        speaksMcp: false,
+        detail: 'Could not connect (mock gateway).',
+        tools: [],
+        suggestedToolName: null,
+        repositories: [],
+      }).pipe(delay(400));
+    }
+
+    if (endpoint.includes('not-mcp')) {
+      return of({
+        isReachable: true,
+        speaksMcp: false,
+        detail:
+          'Something answered (200 OK), but the MCP handshake failed. Check this is the MCP endpoint rather than the service’s home page.',
+        tools: [],
+        suggestedToolName: null,
+        repositories: [],
+      }).pipe(delay(400));
+    }
+
+    const tools = ['search_codebase', 'get_answer', 'get_architecture', 'get_symbol', 'list_repos'];
 
     return of({
-      isReachable: ok,
-      detail: ok
-        ? 'Reachable — answered 200 OK. This confirms the address and the network path, not that the server speaks MCP.'
-        : 'Could not connect (mock gateway).',
+      isReachable: true,
+      speaksMcp: true,
+      detail: 'Connected. Searching would use "search_codebase". Indexes 3 repositories.',
+      tools,
+      suggestedToolName: 'search_codebase',
+      repositories: ['hub', 'worker', 'docs'],
     }).pipe(delay(400));
   }
 

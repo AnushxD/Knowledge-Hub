@@ -50,6 +50,12 @@ against the org's actual server — see "Blockers".
   removed. `KnowledgeSources:Repositories` is gone — the only repository
   setting left in configuration is `RepositoryProvider`, the deployment's
   own on/off.
+- **Test address speaks MCP**, not HTTP: it reports the server's tool list,
+  which repositories it says it indexes, and which tool searching would pick,
+  with a button to fill that field in. It tells "answered but not MCP" apart
+  from "nothing listening", and warns when a reachable server exposes nothing
+  searchable. Only `search`-style tools are usable — `get_answer` and the
+  analysis tools return no passage a citation could point at.
 
 **It is deployed.** As of 2026-08-01 the site runs on the org Windows machine
 under IIS: people sign in and the assistant streams — the half of phase 6 that
@@ -73,7 +79,9 @@ Nothing. Working tree clean, everything pushed.
   - **The tool's input schema.** `search_codebase` is the right tool (the only
     one of the 13 with "search" in its name), but we call it with `query` and
     `maxResults`, which is our convention. If it names them differently the call
-    fails outright. `tools/list` returns the schema — one connection settles it.
+    fails outright. **Test address** now reports the server's whole tool list,
+    so confirming the name takes one click from the sources screen — the
+    argument names still need `tools/list` or one real attempt.
   - **Whether it returns verbatim source.** `ReadResults` already accepts three
     output shapes, so the shape is the forgiving half. The text being the file
     verbatim rather than a summary is the contract that matters, and it cannot

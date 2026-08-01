@@ -144,11 +144,13 @@ public static class IntegrationsServiceCollectionExtensions
         services.AddSingleton<IRepositoryKnowledgeSourceFactory,
             McpRepositoryKnowledgeSourceFactory>();
 
-        // Short timeout: this backs a "test this address" button, where a
-        // person is waiting and a quick "could not connect" beats a long wait
-        // for the same answer.
+        // The HttpClient here is only the fallback probe, reached when the MCP
+        // handshake fails. Short timeout: by then the question is just "is
+        // anything listening", a person is waiting, and a quick "could not
+        // connect" beats a long wait for the same answer. The MCP path carries
+        // its own, longer deadline.
         services
-            .AddHttpClient<IRepositoryEndpointProbe, HttpRepositoryEndpointProbe>(client =>
+            .AddHttpClient<IRepositoryEndpointProbe, McpRepositoryEndpointProbe>(client =>
             {
                 client.Timeout = TimeSpan.FromSeconds(5);
             });

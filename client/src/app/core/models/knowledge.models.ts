@@ -376,6 +376,13 @@ export interface RepositorySourceDraft {
 
 /** The outcome of testing an address before saving it. */
 export interface RepositoryProbe {
+  /** Something answered, whether or not it spoke MCP. */
   isReachable: boolean;
+  /** The handshake worked. Only then do the lists below mean anything. */
+  speaksMcp: boolean;
   detail: string;
+  tools: string[];
+  /** The tool searching would pick on its own, offered to fill the field. */
+  suggestedToolName: string | null;
+  repositories: string[];
 }

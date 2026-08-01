@@ -227,7 +227,13 @@ public sealed class RepositoryServerAdminTests(StackFixture fixture)
         public Task<EndpointProbeResult> ProbeAsync(
             string endpoint,
             CancellationToken ct = default) =>
-            Task.FromResult(new EndpointProbeResult(true, $"{endpoint} answered."));
+            Task.FromResult(new EndpointProbeResult(
+                IsReachable: true,
+                SpeaksMcp: true,
+                $"{endpoint} answered.",
+                ["search_codebase"],
+                "search_codebase",
+                []));
     }
 
     /// <summary>
