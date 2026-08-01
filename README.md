@@ -404,7 +404,7 @@ Key settings, one strongly-typed Options class per external dependency:
 | `Embeddings:KeepAlive` | The same for the embedding model, which every question needs before retrieval can run |
 | `Chat:PassageCount` | Passages retrieved per question (default 6) |
 | `Chat:HistoryTurns` | Prior turns replayed for follow-ups (default 4) |
-| `KnowledgeSources:RepositoryProvider` | `none` (default) searches no repositories at all; `mcp` searches the servers added on the **Knowledge sources** screen. Which servers exist is not configuration — see below |
+| `KnowledgeSources:RepositoryProvider` | `mcp` (default) searches the servers added on the **Knowledge sources** screen; `none` searches none of them, whatever has been added. Which servers exist is not configuration — see below |
 | `KnowledgeSources:RepositoryMaxResults` | Passages to ask each tool for (default 8) |
 | `Authentication:SessionHours` | Session lifetime, sliding (default 8) |
 | `Authentication:KeyPath` | Directory for the Data Protection keys that encrypt the session cookie. **Set it on IIS**, or every application pool recycle signs everyone out. Leave unset in containers |
@@ -438,10 +438,16 @@ Each one carries:
 | Search this source | Off takes it out of circulation without losing it, which is what an outage calls for |
 
 `KnowledgeSources:RepositoryProvider` stays in configuration and is the
-deployment's own switch: at `none` no server is searched no matter how many have
-been added, and the rows are left untouched for when it goes back to `mcp`. That
-split is deliberate — an administrator decides *where* to look, the deployment
-decides *whether* to.
+deployment's own switch over every server at once: at `none` none of them is
+searched no matter how many have been added, and the rows are left untouched for
+when it goes back to `mcp`. That split is deliberate — an administrator decides
+*where* to look, the deployment decides *whether* to.
+
+It defaults to `mcp`, which sounds like the unsafe default and is not: a fresh
+install has no servers, so nothing is searched either way. Defaulting to `none`
+as well would only mean a server added in the UI silently does nothing until
+somebody edited this file — the exact round trip the screen exists to remove.
+Reach for `none` when every server is down or a network is being rebuilt.
 
 Removing a server does not rewrite history. Answers that cited it keep their
 citations, because those denormalise the source's name for the same reason they
@@ -770,7 +776,7 @@ Optional settings worth knowing:
 | `RateLimits__ChatRequests` | Questions per user per window, default 10 |
 | `Llm__Model` | `llama3.1:8b` or `qwen2.5:7b` follow the citation format better than the 3B default, at the cost of speed |
 | `Llm__ContextTokens` | Lower it on a constrained box — but lower `Chat__PassageCount` to match, rather than letting the prompt overflow |
-| `KnowledgeSources__RepositoryProvider` | `mcp` to search repositories over MCP. The servers themselves are added from **Knowledge sources** in the UI, not here |
+| `KnowledgeSources__RepositoryProvider` | Defaults to `mcp`; set `none` to take every repository server out of circulation at once. The servers themselves are added from **Knowledge sources** in the UI, not here |
 
 For Google sign-in, add `Authentication__Google__Enabled` (`true`),
 `__ClientId`, `__ClientSecret` and `__AllowedDomains__0`. The redirect URI

@@ -3,8 +3,8 @@
 Session state only. Architecture, conventions, design decisions and workflow
 live in `CLAUDE.md` and are not repeated here.
 
-**Last updated:** 2026-08-01 · **Branch:** `main`, clean and pushed · **Tests:** 158 green
-(17 Api · 17 Integrations · 14 DataAccess · 110 Services)
+**Last updated:** 2026-08-01 · **Branch:** `main`, clean and pushed · **Tests:** 179 green
+(17 Api · 26 Integrations · 15 DataAccess · 121 Services)
 
 ---
 
@@ -92,7 +92,8 @@ Nothing. Working tree clean, everything pushed.
     `AdditionalHeaders` and `OAuth`; neither is wired. A server behind a bearer
     token will not connect.
   - **HTTP transport only.** A stdio server would need a different transport.
-  The Mac keeps `RepositoryProvider: "none"`; the IIS box gets `"mcp"`.
+  `RepositoryProvider` now defaults to `"mcp"`, so adding a server in the UI
+  is enough on any machine; the Mac simply has none added.
 - **Nothing blocks anything else.**
 
 ---
@@ -162,11 +163,11 @@ runbook, including where those settings live.
 The client is written and tested and now searches a list of servers rather than
 one. What remains is configuration and one round of reality.
 
-1. **Add both from the UI.** Set `KnowledgeSources__RepositoryProvider` to `mcp`
-   on the IIS box — that is the only configuration left — then add each server
-   on **Knowledge sources**. Search tool is `search_codebase` for both: the one
-   tool of the 13 with "search" in its name, so discovery would find it anyway,
-   but naming it stops a future `search_docs` quietly taking over.
+1. **Add both from the UI**, on **Knowledge sources**. No configuration step:
+   `RepositoryProvider` defaults to `mcp`. Search tool is `search_codebase` for
+   both — the one tool of the 13 with "search" in its name, so discovery would
+   find it anyway, but naming it stops a future `search_docs` quietly taking
+   over. **Test address** confirms the tool list before saving.
 2. **Check the input schema first.** We call the tool with `query` and
    `maxResults`. If it names them differently the call fails outright — a
    `tools/list` against either server settles it, and the change is two keys in

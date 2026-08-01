@@ -200,6 +200,28 @@ public sealed class RepositoryServerAdminTests(StackFixture fixture)
     }
 
     [Fact]
+    public async Task Out_of_the_box_a_server_added_in_the_UI_is_searched()
+    {
+        await using var scope = fixture.NewScope();
+        await RemoveAllAsync(scope);
+
+        // Deliberately the *default* options rather than a provider chosen here:
+        // defaulting the switch off would mean a server added in the UI does
+        // nothing until somebody edits a file, which is what the UI exists to
+        // avoid. This is the assertion that stops that default drifting back.
+        var catalog = new KnowledgeSourceCatalog(
+            [],
+            scope.SourceSettings,
+            new StubSourceFactory(),
+            Options.Create(new KnowledgeSourceOptions()));
+
+        await Administering(scope).CreateAsync(NewServer("code-search"));
+
+        Assert.Single(await catalog.ResolveAsync(), source => source.Name == "code-search");
+        await RemoveAllAsync(scope);
+    }
+
+    [Fact]
     public async Task Repository_search_switched_off_leaves_the_servers_alone()
     {
         await using var scope = fixture.NewScope();

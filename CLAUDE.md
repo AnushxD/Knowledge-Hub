@@ -249,7 +249,9 @@ Recorded so they are not re-litigated. Each is a trade already reasoned through.
 - `KnowledgeSources:RepositoryProvider` stays in configuration and is the
   deployment's own switch: `none` searches no server however many exist, and
   leaves the rows alone. An administrator decides *where* to look, the
-  deployment decides *whether* to.
+  deployment decides *whether* to. It defaults to `mcp`, because the servers are
+  already off by default — an empty table — and defaulting the switch off too
+  would mean a server added in the UI does nothing until a file is edited.
 - A server's `Name` is immutable: it keys the route and is recorded on every
   citation it produces, so renaming would orphan attribution on answers already
   given. Deleting one leaves those citations intact, for the same reason a

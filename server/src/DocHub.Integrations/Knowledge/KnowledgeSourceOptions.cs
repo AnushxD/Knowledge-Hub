@@ -28,8 +28,14 @@ public sealed class KnowledgeSourceOptions
     /// search any of them is still a deployment decision, and one worth being
     /// able to make without deleting anybody's rows: it is the switch to reach
     /// for when every server is down or a network is being rebuilt.
+    ///
+    /// Defaults to on, matching appsettings.json. Off would be the safer-looking
+    /// choice and is the wrong one: the servers are already off by default,
+    /// because a fresh install has no rows, so this defaulting to "none" as well
+    /// would only mean a server added in the UI silently does nothing until
+    /// somebody edits a file — which is what the UI exists to avoid.
     /// </summary>
-    public string RepositoryProvider { get; set; } = NoneProvider;
+    public string RepositoryProvider { get; set; } = McpProvider;
 
     /// <summary>
     /// Passages to ask each tool for. Sent as the tool's <c>maxResults</c>
