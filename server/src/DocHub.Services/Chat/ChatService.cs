@@ -100,7 +100,7 @@ internal sealed class ChatService(
 
             yield return new ChatEvent.Token(refusal.Content);
             yield return new ChatEvent.Completed(
-                refusal.Id, [], IsRefusal: true, retrieval.Degradations);
+                refusal.Id, refusal.Content, [], IsRefusal: true, retrieval.Degradations);
             yield break;
         }
 
@@ -152,11 +152,28 @@ internal sealed class ChatService(
         var citations = isRefusal ? [] : GroundedPrompt.VerifyCitations(text, passages);
         var cleaned = isRefusal ? text : GroundedPrompt.StripUnresolvedMarkers(text, citations);
 
+        // An answer that cites nothing verifiable is not a grounded answer, and
+        // is refused rather than shown.
+        //
+        // Retrieval being non-empty is a weaker guarantee than it looks: a
+        // source that replies "no matches" in prose still hands back a passage,
+        // and one irrelevant passage is enough for a model to fall back on what
+        // it knows and answer anyway. That is the confident fabrication the
+        // whole pipeline exists to prevent, and zero resolvable citations is the
+        // only signal available that it has happened.
+        //
+        // It costs the occasional real answer whose markers the model forgot.
+        // That trade is the product's first rule: an answer is trustworthy or it
+        // is not given.
         if (!isRefusal && citations.Count == 0)
         {
             logger.LogWarning(
-                "Answer in session {SessionId} cited nothing verifiable across {PassageCount} passages",
+                "Answer in session {SessionId} cited nothing verifiable across {PassageCount} "
+                + "passages; refusing rather than presenting it as grounded",
                 sessionId, passages.Count);
+
+            isRefusal = true;
+            cleaned = GroundedPrompt.RefusalPhrase;
         }
 
         var saved = await sessions.AppendMessageAsync(
@@ -182,6 +199,7 @@ internal sealed class ChatService(
 
         yield return new ChatEvent.Completed(
             saved.Id,
+            cleaned,
             [.. citations.Select(ToViewModel)],
             isRefusal,
             retrieval.Degradations);

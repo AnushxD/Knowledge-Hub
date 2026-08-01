@@ -310,6 +310,16 @@ Recorded so they are not re-litigated. Each is a trade already reasoned through.
   produces confident fabrication. Refuse instead.
 - Every citation marker the model emits is verified against the passages
   actually supplied; unresolvable markers are stripped, never rendered as links.
+- **An answer that cites nothing verifiable is refused, not shown.** Non-empty
+  retrieval is a weaker guarantee than it looks — a source answering "no
+  matches" in prose still returns a passage, and one irrelevant passage is
+  enough for a model to answer from its own training instead. Zero resolvable
+  citations is the only evidence left that this happened, so it is acted on.
+  It costs the occasional real answer whose markers the model forgot; that is
+  the trade the first product goal already chose.
+- `ChatEvent.Completed` carries the persisted text, because verification
+  happens after the tokens have streamed. What is on screen must be replaced by
+  what was stored, or a refused answer stays visible until reload.
 - "I don't know" is a designed outcome, persisted with `IsRefusal`, rendered as
   information rather than as an error.
 - Citations denormalise document title and heading onto the message, so renaming

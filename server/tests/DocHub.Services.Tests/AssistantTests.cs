@@ -140,6 +140,65 @@ public sealed class AssistantTests(StackFixture fixture)
     }
 
     [Fact]
+    public async Task An_answer_that_cites_nothing_is_refused_rather_than_shown()
+    {
+        await using var scope = fixture.NewScope();
+        var folderId = await IndexAsync(scope, VpnGuide, "ungrounded");
+
+        // What a model does when the passages do not answer the question and it
+        // would rather be helpful: a fluent, plausible answer out of its own
+        // training, citing nothing because there was nothing to cite.
+        scope.Llm.Answer =
+            "To reverse a number in Python, convert it to a string and slice it with [::-1].";
+
+        var (events, answer) = await AskAsync(scope, new AskRequest
+        {
+            Question = "How do I reverse a number in Python?",
+            FolderId = folderId,
+        });
+
+        var completed = Assert.IsType<ChatEvent.Completed>(events[^1]);
+
+        // Refused. Retrieval was not empty, so the guard before generation
+        // could not catch this — an uncitable answer is the only evidence left
+        // that the model answered from somewhere other than the passages.
+        Assert.True(completed.IsRefusal);
+        Assert.Empty(completed.Citations);
+        Assert.DoesNotContain("[::-1]", completed.Content);
+
+        // And the reader is not left looking at the fabrication that streamed
+        // before we knew: the completion carries what was actually stored.
+        Assert.Contains("don't have information", completed.Content);
+        Assert.Contains("reverse", answer, StringComparison.OrdinalIgnoreCase);
+
+        var transcript = await scope.Chat.GetTranscriptAsync(
+            Assert.IsType<ChatEvent.SessionOpened>(events[0]).SessionId);
+
+        var stored = transcript.Messages.Last(message => message.Role == "assistant");
+        Assert.True(stored.IsRefusal);
+        Assert.DoesNotContain("[::-1]", stored.Content);
+    }
+
+    [Fact]
+    public async Task An_answer_that_cites_one_real_passage_still_stands()
+    {
+        await using var scope = fixture.NewScope();
+        var folderId = await IndexAsync(scope, VpnGuide, "grounded");
+
+        scope.Llm.Answer = "Connect through the company VPN [1].";
+
+        var (_, answer) = await AskAsync(scope, new AskRequest
+        {
+            Question = "How do I reach internal systems?",
+            FolderId = folderId,
+        });
+
+        // The refusal rule must not swallow a properly grounded answer, which
+        // is the whole risk of making it strict.
+        Assert.Contains("company VPN", answer);
+    }
+
+    [Fact]
     public async Task A_document_counts_the_answers_that_cite_it()
     {
         await using var scope = fixture.NewScope();

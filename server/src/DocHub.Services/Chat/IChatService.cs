@@ -35,8 +35,16 @@ public abstract record ChatEvent
     /// thinner answer is indistinguishable from a complete one. Empty is the
     /// normal case.
     /// </param>
+    /// <param name="Content">
+    /// The answer as it was persisted, which is not always what was streamed:
+    /// unresolvable markers are stripped, and an answer that turned out to cite
+    /// nothing is replaced by the refusal outright. The client shows this in
+    /// place of what it accumulated, so the screen and the stored transcript
+    /// cannot disagree.
+    /// </param>
     public sealed record Completed(
         Guid MessageId,
+        string Content,
         IReadOnlyList<CitationViewModel> Citations,
         bool IsRefusal,
         IReadOnlyList<string> Degradations) : ChatEvent;

@@ -88,6 +88,8 @@ public sealed class ChatController(IChatService chat) : ControllerBase
                 ("done", new
                 {
                     messageId = completed.MessageId,
+                    // The persisted text, which is not always what was streamed.
+                    content = completed.Content,
                     citations = completed.Citations,
                     isRefusal = completed.IsRefusal,
                     degradations = completed.Degradations,

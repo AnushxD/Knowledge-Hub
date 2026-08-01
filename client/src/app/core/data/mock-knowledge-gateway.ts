@@ -992,7 +992,13 @@ export class MockKnowledgeGateway extends KnowledgeGateway {
       { type: 'session', sessionId: request.sessionId ?? 'mock-session', title: request.question },
       { type: 'sources', sources },
       ...answer.split(' ').map((word) => ({ type: 'token' as const, text: `${word} ` })),
-      { type: 'done', messageId: 'mock-message', citations: [sources[0]], isRefusal: false },
+      {
+        type: 'done',
+        messageId: 'mock-message',
+        content: answer,
+        citations: [sources[0]],
+        isRefusal: false,
+      },
     ];
 
     // Paced so the streaming UI is exercised rather than filled in one frame.

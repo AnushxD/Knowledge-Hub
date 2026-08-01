@@ -3,8 +3,8 @@
 Session state only. Architecture, conventions, design decisions and workflow
 live in `CLAUDE.md` and are not repeated here.
 
-**Last updated:** 2026-08-01 · **Branch:** `main`, clean and pushed · **Tests:** 180 green
-(17 Api · 27 Integrations · 15 DataAccess · 121 Services)
+**Last updated:** 2026-08-01 · **Branch:** `main`, clean and pushed · **Tests:** 193 green
+(17 Api · 38 Integrations · 15 DataAccess · 123 Services)
 
 ---
 
@@ -51,6 +51,14 @@ against the org's actual server — see "Blockers".
   status line under it already names the address and the tool. `KnowledgeSources:Repositories` is gone — the only repository
   setting left in configuration is `RepositoryProvider`, the deployment's
   own on/off.
+- **An answer that cites nothing is now refused.** A source returning "no
+  matches" as prose counted as a retrieved passage, so the empty-retrieval
+  guard did not fire, and `llama3.2:3b` answered a Python question from its own
+  training with no citations — which was then shown. Found by asking it to
+  reverse a number in Python.
+- **Search tools are called with the arguments they declare.** We hard-coded
+  `query`/`maxResults`; a server taking `q` ignored both and searched for the
+  empty string. Read off the tool's input schema now.
 - **Test address speaks MCP**, not HTTP: it reports the server's tool list,
   which repositories it says it indexes, and which tool searching would pick,
   with a button to fill that field in. It tells "answered but not MCP" apart

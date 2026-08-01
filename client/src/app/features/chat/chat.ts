@@ -169,6 +169,7 @@ export class ChatPage {
 
           case 'done':
             this.completePending(
+              event.content,
               event.citations,
               event.isRefusal,
               event.messageId,
@@ -252,6 +253,7 @@ export class ChatPage {
   }
 
   private completePending(
+    content: string,
     citations: Citation[],
     isRefusal: boolean,
     messageId: string,
@@ -260,7 +262,17 @@ export class ChatPage {
     this.turns.update((turns) =>
       turns.map((turn) =>
         turn.streaming
-          ? { ...turn, id: messageId, citations, isRefusal, degradations, streaming: false }
+          ? {
+              ...turn,
+              id: messageId,
+              // Replaces what streamed. An answer the server would not stand
+              // behind must not stay on screen just because it arrived.
+              content,
+              citations,
+              isRefusal,
+              degradations,
+              streaming: false,
+            }
           : turn,
       ),
     );

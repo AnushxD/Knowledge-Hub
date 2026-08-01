@@ -261,6 +261,13 @@ export type ChatEvent =
   | {
       type: 'done';
       messageId: string;
+      /**
+       * The answer as stored, which is not always what streamed: unresolvable
+       * markers are stripped, and an answer that cited nothing verifiable is
+       * replaced by the refusal. Shown in place of the accumulated text so the
+       * screen and the transcript cannot disagree.
+       */
+      content: string;
       citations: Citation[];
       isRefusal: boolean;
       degradations?: string[];
