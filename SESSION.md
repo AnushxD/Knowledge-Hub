@@ -41,6 +41,11 @@ against the org's actual server — see "Blockers".
 - `Cited in answers` on the document detail screen is a real count now — a jsonb
   containment query over stored citations, behind a `jsonb_path_ops` GIN index.
 
+**It is deployed.** As of 2026-08-01 the site runs on the org Windows machine
+under IIS and people can sign in — the half of phase 6 that had only ever been
+simulated. Three of its settings still have not been exercised there; see
+"Unproven, not unbuilt".
+
 ---
 
 ## In progress
@@ -77,10 +82,17 @@ Nothing. Working tree clean, everything pushed.
   follow the format better if it is.
 
 **Unproven, not unbuilt**
-- **IIS has never run this.** The single-site arrangement was verified by
-  publishing and running that output under Kestrel, which exercises static
-  serving and the anonymous SPA fallback but **not** `AspNetCoreModuleV2` or
-  `web.config` — where the SSE buffering and upload-limit settings live.
+- **IIS runs it, but three of its settings are still untested.** The site was
+  deployed to the org Windows machine on 2026-08-01 and signing in works, so
+  `AspNetCoreModuleV2`, the single-site arrangement and the SPA fallback are
+  proven. Not yet exercised there, each failing quietly rather than loudly:
+  - **SSE buffering** (`responseBufferLimit="0"` in `web.config`) — ask the
+    assistant a question and watch whether the answer arrives word by word or
+    lands complete after a long pause.
+  - **The 25 MB upload limit** (`web.config`) — upload something over ~30 MB and
+    check the refusal comes from the API, not from IIS.
+  - **Data Protection key persistence** (`Authentication__KeyPath`) — recycle the
+    app pool and see whether the session survives.
 - **Google sign-in has never talked to Google.** The domain allow-list has 17
   unit tests; the OAuth round trip has had none.
 - CI is green on every push, but no step deploys anything: images are built and
@@ -111,16 +123,15 @@ Nothing. Working tree clean, everything pushed.
 
 ## Next steps
 
-### 1. Deploy to the org Windows machine
+### 1. Finish proving the IIS host
 
-The unproven half of phase 6, and the highest-value thing left. Follow the
-**Hosting on the org Windows machine (IIS)** section of `README.md` — it is a
-complete runbook covering Portainer, the app pool, environment variables and the
-provisioning commands.
+It is deployed and people can sign in. What is left is the three checks under
+**Unproven, not unbuilt** above — streaming, a large upload, and a session
+across an app-pool recycle. None needs a code change if they pass; each has a
+one-line fix in `web.config` or the environment if it does not.
 
-Two settings there are load-bearing and easy to miss: `Authentication__KeyPath`
-(without it every recycle signs everyone out) and the app pool's
-`loadUserProfile`.
+The **Hosting on the org Windows machine (IIS)** section of `README.md` is the
+runbook, including where those settings live.
 
 ### 2. Point the MCP client at the org's server
 
