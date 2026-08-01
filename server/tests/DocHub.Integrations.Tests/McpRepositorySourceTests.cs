@@ -92,6 +92,27 @@ public sealed class McpRepositorySourceTests
     }
 
     [Fact]
+    public void A_server_with_no_description_still_says_what_it_is()
+    {
+        // The description is optional and the sources screen shows it to
+        // everyone signed in, not just to the administrator who added the
+        // server. Blank would render as an empty line under the name.
+        var source = SourceFor("http://mcp.internal:8080", description: "");
+
+        Assert.NotEmpty(source.Description);
+        Assert.Contains("MCP", source.Description);
+    }
+
+    [Fact]
+    public void A_description_that_was_written_is_used_verbatim()
+    {
+        var source = SourceFor(
+            "http://mcp.internal:8080", description: "  Service implementation code.  ");
+
+        Assert.Equal("Service implementation code.", source.Description);
+    }
+
+    [Fact]
     public async Task A_server_switched_off_is_inactive_rather_than_unavailable()
     {
         // A reachable address, switched off by an administrator. Nothing is
@@ -187,12 +208,13 @@ public sealed class McpRepositorySourceTests
     private static McpRepositoryKnowledgeSource SourceFor(
         string? endpoint,
         bool isEnabled = true,
-        string toolName = "search_code")
+        string toolName = "search_code",
+        string description = "A server that exists only inside this test.")
     {
         var descriptor = new RepositorySourceDescriptor(
             SourceName,
             "Repositories",
-            "A server that exists only inside this test.",
+            description,
             endpoint ?? "http://unset.invalid",
             toolName,
             isEnabled);

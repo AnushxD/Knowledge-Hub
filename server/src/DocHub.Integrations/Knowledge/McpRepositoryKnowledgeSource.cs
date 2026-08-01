@@ -53,7 +53,7 @@ internal sealed class McpRepositoryKnowledgeSource(
 
     public string DisplayName => source.DisplayName;
 
-    public string Description => source.Description;
+    public string Description => source.ResolvedDescription;
 
     public async Task<KnowledgeSourceStatus> CheckStatusAsync(CancellationToken ct = default)
     {

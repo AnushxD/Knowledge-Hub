@@ -25,7 +25,21 @@ public sealed record RepositorySourceDescriptor(
     string Description,
     string Endpoint,
     string ToolName,
-    bool IsEnabled);
+    bool IsEnabled)
+{
+    /// <summary>
+    /// The line shown under the source's name, which is never blank.
+    ///
+    /// <see cref="Description"/> is optional and often empty, and the sources
+    /// screen shows this to everyone signed in — not only to the administrator
+    /// who added the server. Rendering an empty line there would leave a reader
+    /// with a source name and no idea what is in it.
+    /// </summary>
+    public string ResolvedDescription =>
+        string.IsNullOrWhiteSpace(Description)
+            ? "Source code and READMEs from the team's repositories, reached over MCP."
+            : Description.Trim();
+}
 
 /// <summary>
 /// Builds a knowledge source for one repository server.
