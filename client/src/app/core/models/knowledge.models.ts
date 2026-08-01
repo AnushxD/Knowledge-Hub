@@ -357,7 +357,6 @@ export interface RepositorySource {
    */
   name: string;
   displayName: string;
-  description: string;
   endpoint: string;
   /** Empty means the client discovers a tool with "search" in its name. */
   toolName: string;
@@ -368,7 +367,6 @@ export interface RepositorySource {
 /** The editable half of a server; `name` is set once, when it is added. */
 export interface RepositorySourceDraft {
   displayName: string;
-  description: string;
   endpoint: string;
   toolName: string;
   isEnabled: boolean;

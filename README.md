@@ -431,8 +431,7 @@ Each one carries:
 | Field | Meaning |
 |---|---|
 | Name | Lower-case letters, digits and hyphens. It goes in the API route and is recorded on every citation the server produces, so it cannot be changed afterwards |
-| Display name | What appears on screen and in "… could not be searched" |
-| What it indexes | One line. Two servers exposing identical tools are told apart by this and nothing else |
+| Display name | What appears on screen and in "… could not be searched". This is what tells two servers apart, so it is worth choosing well |
 | Address | Absolute `http://` or `https://`. **Test address** connects over MCP and reports what is there — see below |
 | Search tool | Empty discovers the first tool with `search` in its name — a guess worth replacing once the server's tool list is known |
 | Search this source | Off takes it out of circulation without losing it, which is what an outage calls for |

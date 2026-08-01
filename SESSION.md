@@ -3,8 +3,8 @@
 Session state only. Architecture, conventions, design decisions and workflow
 live in `CLAUDE.md` and are not repeated here.
 
-**Last updated:** 2026-08-01 · **Branch:** `main`, clean and pushed · **Tests:** 179 green
-(17 Api · 26 Integrations · 15 DataAccess · 121 Services)
+**Last updated:** 2026-08-01 · **Branch:** `main`, clean and pushed · **Tests:** 180 green
+(17 Api · 27 Integrations · 15 DataAccess · 121 Services)
 
 ---
 
@@ -46,8 +46,9 @@ against the org's actual server — see "Blockers".
   `repository_source_settings` table *is* the list; `IKnowledgeSourceCatalog`
   resolves sources per request, so a server added on **Knowledge sources** is
   searched by the very next question with no restart. Name, display name,
-  description, address, tool and on/off are all editable; a server can be
-  removed. `KnowledgeSources:Repositories` is gone — the only repository
+  address, tool and on/off are all editable; a server can be removed. There is
+  no per-server description: the display name tells two servers apart, and the
+  status line under it already names the address and the tool. `KnowledgeSources:Repositories` is gone — the only repository
   setting left in configuration is `RepositoryProvider`, the deployment's
   own on/off.
 - **Test address speaks MCP**, not HTTP: it reports the server's tool list,

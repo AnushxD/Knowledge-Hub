@@ -57,7 +57,9 @@
                 <code class="text-[11px] text-subtle">{{ source.name }}</code>
               </div>
 
-              <p class="mt-1.5 text-[12.5px] text-muted">{{ source.description }}</p>
+              @if (source.description) {
+                <p class="mt-1.5 text-[12.5px] text-muted">{{ source.description }}</p>
+              }
 
               <!-- The state on its own is not actionable; this line is what
                    tells someone whether anything needs doing. -->
@@ -121,10 +123,6 @@
                       : 'discovering a tool with “search” in its name'
                   }}
                 </p>
-
-                @if (source.description) {
-                  <p class="mt-1 text-[11.5px] text-muted">{{ source.description }}</p>
-                }
               </div>
 
               @if (editingName() !== source.name) {
@@ -211,20 +209,6 @@
             [ngModel]="draftDisplayName()"
             (ngModelChange)="draftDisplayName.set($event)"
           />
-        </label>
-
-        <label class="mt-3 block">
-          <span class="mb-1.5 block text-[12px] font-medium text-ink">What it indexes</span>
-          <input
-            class="h-9 w-full rounded-dh border border-hairline bg-surface-1 px-3 text-[13px] text-ink outline-none transition placeholder:text-subtle focus:border-brand-500/50"
-            type="text"
-            placeholder="Every service repository, indexed for search."
-            [ngModel]="draftDescription()"
-            (ngModelChange)="draftDescription.set($event)"
-          />
-          <span class="mt-1.5 block text-[11.5px] text-subtle">
-            Two servers exposing the same tools are told apart by this and nothing else.
-          </span>
         </label>
 
         <label class="mt-3 block">

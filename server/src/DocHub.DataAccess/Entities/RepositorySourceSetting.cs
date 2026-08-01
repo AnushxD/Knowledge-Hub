@@ -27,12 +27,6 @@ public class RepositorySourceSetting
     public required string DisplayName { get; set; }
 
     /// <summary>
-    /// One line saying what this server indexes. Two servers exposing identical
-    /// tools are told apart by this and nothing else.
-    /// </summary>
-    public string Description { get; set; } = string.Empty;
-
-    /// <summary>
     /// Absolute http/https address of the MCP server. Required: a server with
     /// no address is not a server, and switching one off during an outage is
     /// what <see cref="IsEnabled"/> is for.

@@ -252,7 +252,6 @@ public record KnowledgeSourceViewModel(
 public record RepositorySourceViewModel(
     string Name,
     string DisplayName,
-    string Description,
     string Endpoint,
     string ToolName,
     bool IsEnabled,
@@ -268,8 +267,6 @@ public record CreateRepositorySourceRequest : UpdateRepositorySourceRequest
 public record UpdateRepositorySourceRequest
 {
     public string? DisplayName { get; init; }
-
-    public string? Description { get; init; }
 
     /// <summary>Absolute http/https address. Required — a server needs one to be searched.</summary>
     public string? Endpoint { get; init; }

@@ -28,7 +28,6 @@ public interface IRepositorySourceSettingRepository
     Task<RepositorySourceSetting?> UpdateAsync(
         string name,
         string displayName,
-        string description,
         string endpoint,
         string toolName,
         bool isEnabled,
@@ -78,7 +77,6 @@ internal sealed class RepositorySourceSettingRepository(DocHubDbContext db)
     public async Task<RepositorySourceSetting?> UpdateAsync(
         string name,
         string displayName,
-        string description,
         string endpoint,
         string toolName,
         bool isEnabled,
@@ -91,7 +89,6 @@ internal sealed class RepositorySourceSettingRepository(DocHubDbContext db)
         if (existing is null) return null;
 
         existing.DisplayName = displayName;
-        existing.Description = description;
         existing.Endpoint = endpoint;
         existing.ToolName = toolName;
         existing.IsEnabled = isEnabled;

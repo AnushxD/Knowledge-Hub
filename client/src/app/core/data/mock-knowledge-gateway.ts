@@ -1078,7 +1078,6 @@ export class MockKnowledgeGateway extends KnowledgeGateway {
     {
       name: 'code-search',
       displayName: 'Code search',
-      description: 'Every service repository, indexed for search.',
       endpoint: 'http://mcp-cs.internal:8080',
       toolName: 'search_codebase',
       isEnabled: true,

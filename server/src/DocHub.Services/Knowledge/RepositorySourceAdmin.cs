@@ -69,7 +69,6 @@ internal sealed partial class RepositorySourceAdmin(
             {
                 Name = name,
                 DisplayName = NormaliseDisplayName(request.DisplayName, name),
-                Description = request.Description?.Trim() ?? string.Empty,
                 Endpoint = RequireEndpoint(request.Endpoint),
                 ToolName = request.ToolName?.Trim() ?? string.Empty,
                 IsEnabled = request.IsEnabled,
@@ -104,7 +103,6 @@ internal sealed partial class RepositorySourceAdmin(
         var updated = await repositories.UpdateAsync(
             existing.Name,
             NormaliseDisplayName(request.DisplayName, existing.Name),
-            request.Description?.Trim() ?? string.Empty,
             RequireEndpoint(request.Endpoint),
             request.ToolName?.Trim() ?? string.Empty,
             request.IsEnabled,
@@ -155,7 +153,6 @@ internal sealed partial class RepositorySourceAdmin(
         new(
             source.Name,
             source.DisplayName,
-            source.Description,
             source.Endpoint,
             source.ToolName,
             source.IsEnabled,

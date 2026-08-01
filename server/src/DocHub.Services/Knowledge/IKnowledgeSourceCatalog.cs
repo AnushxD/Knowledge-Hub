@@ -71,7 +71,6 @@ internal sealed class KnowledgeSourceCatalog(
             .. added.Select(row => factory.Create(new RepositorySourceDescriptor(
                 row.Name,
                 row.DisplayName,
-                row.Description,
                 row.Endpoint,
                 row.ToolName,
                 row.IsEnabled))),

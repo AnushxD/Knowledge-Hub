@@ -160,7 +160,6 @@ public sealed class DocHubDbContext(DbContextOptions<DocHubDbContext> options)
             entity.HasKey(setting => setting.Name);
             entity.Property(setting => setting.Name).HasMaxLength(64);
             entity.Property(setting => setting.DisplayName).HasMaxLength(120).IsRequired();
-            entity.Property(setting => setting.Description).HasMaxLength(500);
             // Long enough for a hostname with a path; not unbounded, because an
             // endpoint is a URL and an unbounded column invites pasting a page
             // into it.

@@ -53,7 +53,13 @@ internal sealed class McpRepositoryKnowledgeSource(
 
     public string DisplayName => source.DisplayName;
 
-    public string Description => source.ResolvedDescription;
+    /// <summary>
+    /// Empty on purpose. A repository server is identified by its display name
+    /// and by the status line under it, which names the address and the tool it
+    /// is searching with — both true of this server and only this one. A
+    /// generic sentence in between would read the same on every one of them.
+    /// </summary>
+    public string Description => string.Empty;
 
     public async Task<KnowledgeSourceStatus> CheckStatusAsync(CancellationToken ct = default)
     {

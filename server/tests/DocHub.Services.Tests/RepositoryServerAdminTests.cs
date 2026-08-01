@@ -44,7 +44,6 @@ public sealed class RepositoryServerAdminTests(StackFixture fixture)
         {
             Name = name,
             DisplayName = "Code search",
-            Description = "Every service repository.",
             Endpoint = endpoint,
             ToolName = "search_codebase",
             IsEnabled = true,
