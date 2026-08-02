@@ -132,8 +132,13 @@ Nothing. Working tree clean, everything pushed.
     app pool and see whether the session survives.
 - **Google sign-in has never talked to Google.** The domain allow-list has 17
   unit tests; the OAuth round trip has had none.
-- CI is green on every push, but no step deploys anything: images are built and
-  pushed nowhere, and a human installs the IIS artefact.
+- No CI step deploys anything: images are built and pushed nowhere, and a human
+  installs the IIS artefact.
+- **The container build was red from 2026-07-30 to 2026-08-02** — thirteen runs
+  — and nobody noticed, because `dotnet build`/`dotnet test` pass locally and
+  the publish workflow kept succeeding. Only the Docker build was affected.
+  Worth remembering: local green is not CI green, and this repository has a job
+  that only runs on the server.
 
 **Deferred, no phase assigned**
 - Entra ID single sign-on — one more branch in `AddDocHubAuthentication`.

@@ -20,6 +20,13 @@ RUN dotnet restore server/src/DocHub.Api/DocHub.Api.csproj
 
 COPY server/src/ server/src/
 
+# The schema script lives at the repository root and the API project links it
+# into its publish output, so the published folder always carries the schema
+# matching its binaries. It is outside server/src/, so it has to be copied
+# explicitly — without it `dotnet publish` fails on the missing link, which is
+# a build error and not a quiet omission.
+COPY documenthub-schema.sql ./
+
 # No app host: the image starts the app with `dotnet DocHub.Api.dll`, so the
 # native launcher would be dead weight.
 RUN dotnet publish server/src/DocHub.Api/DocHub.Api.csproj \
