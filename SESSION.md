@@ -59,6 +59,11 @@ against the org's actual server — see "Blockers".
 - **Search tools are called with the arguments they declare.** We hard-coded
   `query`/`maxResults`; a server taking `q` ignored both and searched for the
   empty string. Read off the tool's input schema now.
+- **Users can change their own password** from Settings, with the current one
+  required and 5 attempts per 5 minutes. Verified end to end against a
+  throwaway database: wrong current and too-short new are both refused with the
+  real reason, the session survives the change, the old password stops working,
+  and the sixth attempt is a 429.
 - **Test address speaks MCP**, not HTTP: it reports the server's tool list,
   which repositories it says it indexes, and which tool searching would pick,
   with a button to fill that field in. It tells "answered but not MCP" apart

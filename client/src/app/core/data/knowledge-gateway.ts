@@ -49,6 +49,12 @@ export abstract class KnowledgeGateway {
 
   abstract signOut(): Observable<void>;
 
+  /**
+   * Changes the signed-in user's own password. No id: the server changes
+   * whoever is asking, so there is nothing here to point at someone else.
+   */
+  abstract changePassword(currentPassword: string, newPassword: string): Observable<void>;
+
   // ---- account administration (Admin only; the API enforces it) ------------
 
   abstract accounts(): Observable<Account[]>;

@@ -1016,6 +1016,7 @@ export class MockKnowledgeGateway extends KnowledgeGateway {
     email: 'ana@documenthub.local',
     initials: 'AR',
     role: 'Admin',
+    hasPassword: true,
   };
 
   private readonly mockAccounts: Account[] = PEOPLE.map((person, index) => ({
@@ -1042,6 +1043,23 @@ export class MockKnowledgeGateway extends KnowledgeGateway {
 
   signOut(): Observable<void> {
     return of(void 0).pipe(delay(80));
+  }
+
+  /**
+   * Accepts one password, so both outcomes are reachable without a backend.
+   * The failure path is the one worth developing against — it is what a
+   * mistyped current password looks like.
+   */
+  changePassword(currentPassword: string, newPassword: string): Observable<void> {
+    if (currentPassword !== 'mock-password') {
+      return throwError(() => new Error('The current password is incorrect.'));
+    }
+
+    if (newPassword.length < 7) {
+      return throwError(() => new Error('Passwords must be at least 7 characters.'));
+    }
+
+    return of(void 0).pipe(delay(400));
   }
 
   accounts(): Observable<Account[]> {

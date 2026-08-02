@@ -167,12 +167,29 @@ public record ActivityEventViewModel(
 
 /// <summary>The signed-in user, as every screen needs them.</summary>
 /// <param name="Role">Admin / Editor / Viewer — the client uses it to hide what cannot be done.</param>
+/// <param name="HasPassword">
+/// False for an account that only signs in through Google. Surfaced so the
+/// settings screen can offer a password change to the people who can actually
+/// make one, rather than to everybody and an error to those who cannot.
+/// </param>
 public record SignedInUserViewModel(
     Guid Id,
     string Name,
     string Email,
     string Initials,
-    string Role);
+    string Role,
+    bool HasPassword);
+
+/// <summary>
+/// Changing your own password. There is no user id: the account changed is
+/// always the one making the request, so a stolen id cannot redirect it.
+/// </summary>
+public record ChangePasswordRequest
+{
+    public string CurrentPassword { get; init; } = string.Empty;
+
+    public string NewPassword { get; init; } = string.Empty;
+}
 
 /// <summary>
 /// What the login screen needs to draw itself before anyone has signed in.

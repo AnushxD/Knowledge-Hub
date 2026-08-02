@@ -322,6 +322,11 @@ export interface SignedInUser {
   email: string;
   initials: string;
   role: UserRole;
+  /**
+   * False for an account that only signs in through Google. Settings offers a
+   * password change only to people who have one to change.
+   */
+  hasPassword: boolean;
 }
 
 /**

@@ -416,6 +416,7 @@ Key settings, one strongly-typed Options class per external dependency:
 | `Authentication:Google:AllowedDomains` | Email domains allowed in. **Empty admits nobody**, never everybody |
 | `Authentication:Google:AutoProvision` | Create a Viewer for a verified allowed-domain sign-in (default true) |
 | `RateLimits:ChatRequests` / `ChatWindowSeconds` | Questions per user per window (default 10 / 60) |
+| `RateLimits:PasswordAttempts` / `PasswordWindowSeconds` | Password changes per user per window (default 5 / 300). Not about cost — it is what stops a stolen session guessing the current password |
 | `Cors:AllowedOrigins` | Origins allowed to call the API in development |
 
 **Adding repository servers.** They are not configuration — they are rows an
@@ -1011,6 +1012,7 @@ requests are same-origin and CORS never applies.
 | `POST` | `/api/sources/repositories/test` | Check an address answers before adding it (Admin only) |
 | `POST` | `/api/auth/login` | Sign in with an email and password; sets the session cookie |
 | `POST` | `/api/auth/logout` | End the session |
+| `POST` | `/api/auth/password` | Change your own password. Requires the current one; rate limited |
 | `GET` | `/api/auth/me` | The signed-in user, or 401 |
 | `GET` | `/api/auth/google/start` | Begin Google sign-in (only when it is enabled) |
 | `GET` | `/api/users` | Accounts (Admin only) |

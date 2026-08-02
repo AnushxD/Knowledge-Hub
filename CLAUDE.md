@@ -280,6 +280,12 @@ Recorded so they are not re-litigated. Each is a trade already reasoned through.
   Service over `SignInManager` would only forward. The boundary that matters is
   `ICurrentUser`, which stays framework-free.
 - Accounts are disabled, never deleted — they own documents and conversations.
+- Changing your own password requires the current one, even though the caller is
+  already authenticated. That is what keeps a stolen cookie from becoming a
+  permanent takeover — and it is rate limited, because otherwise the rule is
+  only as strong as how fast the password can be guessed. Identity's lockout
+  does not apply to a signed-in caller. The endpoint changes whoever is asking:
+  no id crosses the wire.
 - The password hash never appears in a migration; `seed-admin` sets it.
 
 **Activity**

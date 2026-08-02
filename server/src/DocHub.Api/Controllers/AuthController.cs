@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using DocHub.Api.Infrastructure;
 using DocHub.Api.Infrastructure.Auth;
 using DocHub.DataAccess.Entities;
 using DocHub.Services.ViewModels;
@@ -6,6 +7,7 @@ using Microsoft.AspNetCore.Authentication.Google;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Options;
 
 namespace DocHub.Api.Controllers;
@@ -267,13 +269,86 @@ public sealed class AuthController(
     private string SafeReturnUrl(string? returnUrl) =>
         !string.IsNullOrWhiteSpace(returnUrl) && Url.IsLocalUrl(returnUrl) ? returnUrl : "/";
 
+    /// <summary>
+    /// Changes your own password.
+    ///
+    /// The account changed is whoever is signed in — never an id from the body,
+    /// which would make this an account-takeover endpoint for anybody who could
+    /// guess one.
+    ///
+    /// The current password is required even though the caller is already
+    /// authenticated. That is the whole protection against a stolen session
+    /// becoming a permanent one: a cookie alone can read the hub, but it cannot
+    /// lock its owner out of it. Rate limited for the same reason — without a
+    /// limit, "must know the current password" is only as strong as how fast it
+    /// can be guessed, and Identity's lockout does not apply to a signed-in
+    /// caller.
+    /// </summary>
+    [HttpPost("password")]
+    [Authorize]
+    [EnableRateLimiting(RateLimiting.PasswordPolicy)]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> ChangePassword([FromBody] ChangePasswordRequest request)
+    {
+        var user = await users.GetUserAsync(User);
+
+        if (user is null)
+        {
+            await signIn.SignOutAsync();
+            return Unauthorized();
+        }
+
+        // A Google-only account has no password to change, and setting a first
+        // one from a session Google vouched for is a different decision with
+        // different risks — so it is refused plainly rather than half-supported.
+        if (user.PasswordHash is null)
+        {
+            return Problem(
+                title: "No password to change",
+                detail: "This account signs in with Google, so it has no password. An "
+                    + "administrator can create a password for it.",
+                statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        var result = await users.ChangePasswordAsync(
+            user, request.CurrentPassword ?? string.Empty, request.NewPassword ?? string.Empty);
+
+        if (!result.Succeeded)
+        {
+            logger.LogInformation(
+                "Password change rejected for {UserId}: {Errors}",
+                user.Id, string.Join("; ", result.Errors.Select(error => error.Code)));
+
+            // Identity's own wording names the rule that was broken — "passwords
+            // must be at least 7 characters" is more use than "invalid". Saying
+            // the current password was wrong is safe here: the caller has
+            // already proved they are this user, so there is nothing to enumerate.
+            return Problem(
+                title: "Password not changed",
+                detail: string.Join(" ", result.Errors.Select(error => error.Description)),
+                statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        // Changing a password rotates the security stamp, which invalidates every
+        // cookie issued before it — including the one making this request. Without
+        // this the user is signed out by their own success.
+        await signIn.RefreshSignInAsync(user);
+
+        logger.LogInformation("User {UserId} changed their password", user.Id);
+
+        return NoContent();
+    }
+
     private static SignedInUserViewModel Describe(User user) =>
         new(
             user.Id,
             user.Name,
             user.Email ?? string.Empty,
             Initials(user.Name),
-            Roles.IsKnown(user.Role) ? user.Role : Roles.Viewer);
+            Roles.IsKnown(user.Role) ? user.Role : Roles.Viewer,
+            user.PasswordHash is not null);
 
     /// <summary>Mirrors the avatar initials the rest of the API returns.</summary>
     private static string Initials(string name)

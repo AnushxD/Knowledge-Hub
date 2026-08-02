@@ -60,6 +60,108 @@
       </div>
       <button class="dh-btn-ghost shrink-0" type="button" (click)="auth.signOut()">Sign out</button>
     </div>
+
+    <!-- Password. Offered only to accounts that have one: a Google-only user
+         has nothing to change, and a form that always fails is worse than no
+         form. -->
+    @if (auth.currentUser()?.hasPassword) {
+      <div class="mt-3 rounded-dh border border-hairline p-3">
+        @if (!changingPassword()) {
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <div class="min-w-0">
+              <p class="text-[13px] font-medium text-ink">Password</p>
+              @if (passwordChanged()) {
+                <p class="mt-1 text-[11.5px]" [style.color]="'var(--dh-status-indexed)'">
+                  Changed. Your other devices will need the new one.
+                </p>
+              } @else {
+                <p class="mt-1 text-[11.5px] text-subtle">
+                  Changing it needs your current password, so a borrowed session cannot lock you out
+                  of your own account.
+                </p>
+              }
+            </div>
+            <button class="dh-btn-ghost shrink-0" type="button" (click)="startChangingPassword()">
+              <i class="pi pi-lock text-[12px]"></i>
+              Change password
+            </button>
+          </div>
+        } @else {
+          <p class="text-[13px] font-medium text-ink">Change password</p>
+
+          @if (passwordError(); as message) {
+            <div
+              class="mt-3 flex items-start gap-2.5 rounded-dh border p-3"
+              role="alert"
+              [style.borderColor]="'color-mix(in oklab, var(--dh-status-failed) 32%, transparent)'"
+              [style.background]="'color-mix(in oklab, var(--dh-status-failed) 10%, transparent)'"
+            >
+              <i
+                class="pi pi-exclamation-triangle mt-[1px] text-[13px]"
+                [style.color]="'var(--dh-status-failed)'"
+              ></i>
+              <p class="text-[12.5px] text-ink">{{ message }}</p>
+            </div>
+          }
+
+          <label class="mt-3 block">
+            <span class="mb-1.5 block text-[12px] font-medium text-ink">Current password</span>
+            <input
+              class="h-9 w-full rounded-dh border border-hairline bg-surface-1 px-3 text-[13px] text-ink outline-none transition focus:border-brand-500/50"
+              type="password"
+              autocomplete="current-password"
+              [ngModel]="currentPassword()"
+              (ngModelChange)="currentPassword.set($event)"
+            />
+          </label>
+
+          <label class="mt-3 block">
+            <span class="mb-1.5 block text-[12px] font-medium text-ink">New password</span>
+            <input
+              class="h-9 w-full rounded-dh border border-hairline bg-surface-1 px-3 text-[13px] text-ink outline-none transition focus:border-brand-500/50"
+              type="password"
+              autocomplete="new-password"
+              [ngModel]="newPassword()"
+              (ngModelChange)="newPassword.set($event)"
+            />
+            <span class="mt-1.5 block text-[11.5px] text-subtle">
+              At least 7 characters. Length matters more than punctuation, so a short phrase beats a
+              mangled word.
+            </span>
+          </label>
+
+          <label class="mt-3 block">
+            <span class="mb-1.5 block text-[12px] font-medium text-ink">Confirm new password</span>
+            <input
+              class="h-9 w-full rounded-dh border border-hairline bg-surface-1 px-3 text-[13px] text-ink outline-none transition focus:border-brand-500/50"
+              type="password"
+              autocomplete="new-password"
+              [ngModel]="confirmPassword()"
+              (ngModelChange)="confirmPassword.set($event)"
+            />
+          </label>
+
+          <div class="mt-4 flex flex-wrap justify-end gap-2">
+            <button
+              class="dh-btn-ghost"
+              type="button"
+              [disabled]="savingPassword()"
+              (click)="cancelChangingPassword()"
+            >
+              Cancel
+            </button>
+            <button
+              class="dh-btn-primary disabled:opacity-60"
+              type="button"
+              [disabled]="savingPassword()"
+              (click)="changePassword()"
+            >
+              {{ savingPassword() ? 'Changing…' : 'Change password' }}
+            </button>
+          </div>
+        }
+      </div>
+    }
   </section>
 
   <!-- Library defaults -->

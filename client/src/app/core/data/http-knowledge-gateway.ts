@@ -250,6 +250,13 @@ export class HttpKnowledgeGateway extends KnowledgeGateway {
     );
   }
 
+  changePassword(currentPassword: string, newPassword: string): Observable<void> {
+    return this.http.post<void>(`${this.base}/auth/password`, {
+      currentPassword,
+      newPassword,
+    });
+  }
+
   authOptions(): Observable<AuthOptions> {
     return this.http.get<AuthOptions>(`${this.base}/auth/options`);
   }

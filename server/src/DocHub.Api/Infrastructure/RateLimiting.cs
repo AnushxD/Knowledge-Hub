@@ -16,12 +16,29 @@ public sealed class RateLimitOptions
     public int ChatRequests { get; set; } = 10;
 
     public int ChatWindowSeconds { get; set; } = 60;
+
+    /// <summary>
+    /// Password changes one user may attempt per
+    /// <see cref="PasswordWindowSeconds"/>.
+    ///
+    /// Not about cost — it is about a stolen session. Changing a password needs
+    /// the current one, which is what stops a hijacked cookie becoming a
+    /// permanent takeover; without a limit that protection is only as good as
+    /// how fast the attacker can guess. Identity's lockout does not apply here,
+    /// because the account is already signed in.
+    /// </summary>
+    public int PasswordAttempts { get; set; } = 5;
+
+    public int PasswordWindowSeconds { get; set; } = 300;
 }
 
 internal static class RateLimiting
 {
     /// <summary>Policy name, referenced by the attribute on the chat endpoint.</summary>
     public const string ChatPolicy = "chat";
+
+    /// <summary>Policy name, referenced by the attribute on the password endpoint.</summary>
+    public const string PasswordPolicy = "password";
 
     /// <summary>
     /// Rate limiting for generation.
@@ -49,6 +66,12 @@ internal static class RateLimiting
             .Validate(
                 options => options.ChatWindowSeconds > 0,
                 "RateLimits:ChatWindowSeconds must be greater than zero.")
+            .Validate(
+                options => options.PasswordAttempts > 0,
+                "RateLimits:PasswordAttempts must be greater than zero.")
+            .Validate(
+                options => options.PasswordWindowSeconds > 0,
+                "RateLimits:PasswordWindowSeconds must be greater than zero.")
             .ValidateOnStart();
 
         var limits = configuration.GetSection(RateLimitOptions.SectionName).Get<RateLimitOptions>()
@@ -66,6 +89,18 @@ internal static class RateLimiting
                     // is one the user watches spin with no way to tell it from
                     // a slow answer, and the honest response is "you are asking
                     // faster than this can answer".
+                    QueueLimit = 0,
+                }));
+
+            // Partitioned per user for the same reason as chat, and here it
+            // is the only partition that makes sense: the limit exists to slow
+            // down guessing at one account's password.
+            options.AddPolicy(PasswordPolicy, context => RateLimitPartition.GetFixedWindowLimiter(
+                context.User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "anonymous",
+                _ => new FixedWindowRateLimiterOptions
+                {
+                    PermitLimit = limits.PasswordAttempts,
+                    Window = TimeSpan.FromSeconds(limits.PasswordWindowSeconds),
                     QueueLimit = 0,
                 }));
 
