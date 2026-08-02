@@ -199,6 +199,19 @@ internal static partial class GroundedPrompt
         var start = answer.LastIndexOfAny(['.', '!', '?', '\n'], Math.Max(0, markerIndex - 1));
         var end = answer.IndexOfAny(['.', '!', '?', '\n'], markerIndex);
 
+        // A marker sitting after the terminating punctuation belongs to the
+        // sentence it trails — the prompt itself allows "before the full stop or
+        // after it". Attributing it to the empty span between the two would
+        // leave the check with nothing to weigh, and a citation with nothing to
+        // weigh is kept by default: that is how a model's invented footnote,
+        // "[1] This response is based on common associations", passed as a
+        // verified citation and carried a wholly fabricated answer onto the
+        // screen.
+        if (start >= 0 && answer.AsSpan((start + 1)..markerIndex).IsWhiteSpace())
+        {
+            start = answer.LastIndexOfAny(['.', '!', '?', '\n'], Math.Max(0, start - 1));
+        }
+
         return answer[(start + 1)..(end < 0 ? answer.Length : end)];
     }
 

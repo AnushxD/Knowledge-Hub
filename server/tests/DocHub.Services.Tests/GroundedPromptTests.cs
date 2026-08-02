@@ -218,6 +218,39 @@ public sealed class GroundedPromptTests
     }
 
     [Fact]
+    public void An_invented_footnote_does_not_count_as_a_verified_citation()
+    {
+        // Measured against qwen2.5:7b, asked "arsenal": it answered from its own
+        // training and closed with a footnote of its own invention. The trailing
+        // marker fell after the exclamation mark, so the sentence it was checked
+        // against was the empty span between them — nothing to weigh, and a
+        // citation with nothing to weigh was kept. That single approved citation
+        // was enough to defeat the refusal, and the fabrication was shown.
+        var citations = GroundedPrompt.VerifyCitations(
+            "Arsenal Football Club is an English club based in Islington, London. If you have "
+            + "a specific context in mind, please provide more details! [1]\n\n"
+            + "[1] This response is based on common associations.",
+            UnrelatedSources,
+            "arsenal");
+
+        Assert.Empty(citations);
+    }
+
+    [Fact]
+    public void A_citation_after_the_full_stop_is_judged_on_the_sentence_it_trails()
+    {
+        // The prompt allows a marker "before the full stop or after it", so a
+        // trailing marker is an ordinary citation and must survive on the
+        // strength of the sentence it follows rather than be waved through.
+        var citations = GroundedPrompt.VerifyCitations(
+            "Download the client from the IT portal and sign in with your network credentials. [1]",
+            ThreeSources,
+            "how do I connect to the VPN");
+
+        Assert.Single(citations);
+    }
+
+    [Fact]
     public void One_word_in_common_is_coincidence_rather_than_support()
     {
         var citations = GroundedPrompt.VerifyCitations(
