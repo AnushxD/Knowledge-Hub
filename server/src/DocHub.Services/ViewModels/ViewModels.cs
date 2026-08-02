@@ -368,6 +368,11 @@ public record ChatSessionViewModel(
 /// with the message, so reopening the conversation still says the grounding was
 /// thinner than usual.
 /// </param>
+/// <param name="SourcesWithoutMatches">
+/// Sources that were searched when this answer was given and matched nothing.
+/// Persisted for the same reason, and separate because a source that answered
+/// "no" is working and a source that could not be reached is not.
+/// </param>
 public record ChatMessageViewModel(
     Guid Id,
     string Role,
@@ -375,7 +380,8 @@ public record ChatMessageViewModel(
     IReadOnlyList<CitationViewModel> Citations,
     bool IsRefusal,
     DateTimeOffset CreatedAt,
-    IReadOnlyList<string> Degradations);
+    IReadOnlyList<string> Degradations,
+    IReadOnlyList<string> SourcesWithoutMatches);
 
 public record ChatTranscriptViewModel(
     ChatSessionViewModel Session,

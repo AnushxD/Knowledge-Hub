@@ -82,7 +82,16 @@ internal sealed class CompositeKnowledgeSource(
             .Select(outcome => outcome.Degradation!)
             .ToList();
 
-        return new GroundingResult(passages, degradations);
+        // Answered, and answered "nothing". Kept apart from the degradations
+        // above because the two are different claims: one source could not be
+        // asked, the other was asked and said no. Collapsing them would report a
+        // working source as broken.
+        var withoutMatches = outcomes
+            .Where(outcome => outcome.Degradation is null && outcome.Results.Count == 0)
+            .Select(outcome => outcome.DisplayName)
+            .ToList();
+
+        return new GroundingResult(passages, degradations, withoutMatches);
     }
 
     public async Task<IReadOnlyList<KnowledgeSourceSummaryViewModel>> ListSourcesAsync(
@@ -194,7 +203,8 @@ internal sealed class CompositeKnowledgeSource(
                     "Knowledge source {Source} returned {Count} passages in {ElapsedMs}ms",
                     source.Name, result.Results.Count, stopwatch.ElapsedMilliseconds);
 
-                return new SourceOutcome(source.Name, result.Results, result.Degradation);
+                return new SourceOutcome(
+                    source.Name, source.DisplayName, result.Results, result.Degradation);
             }
             // A bad request is the caller's fault and applies to every source,
             // so it must surface as a validation error rather than be reported
@@ -214,6 +224,7 @@ internal sealed class CompositeKnowledgeSource(
 
                 return new SourceOutcome(
                     source.Name,
+                    source.DisplayName,
                     [],
                     $"{source.DisplayName} did not respond within "
                     + $"{options.SourceTimeoutSeconds} seconds, so nothing from it was used.");
@@ -225,6 +236,7 @@ internal sealed class CompositeKnowledgeSource(
 
                 return new SourceOutcome(
                     source.Name,
+                    source.DisplayName,
                     [],
                     $"{source.DisplayName} could not be searched ({exception.Message}), so "
                     + "nothing from it was used.");
@@ -301,9 +313,17 @@ internal sealed class CompositeKnowledgeSource(
             // misattribute its passages to another.
             SourceName: outcome.Name);
 
+    /// <param name="Name">
+    /// The source's own identifier, used to attribute its passages.
+    /// </param>
+    /// <param name="DisplayName">
+    /// What a reader is shown, which is what "this source matched nothing" has
+    /// to name.
+    /// </param>
     /// <param name="Degradation">Null when the source answered fully.</param>
     private sealed record SourceOutcome(
         string Name,
+        string DisplayName,
         IReadOnlyList<KnowledgeResult> Results,
         string? Degradation);
 

@@ -243,6 +243,47 @@ public sealed class KnowledgeSourceTests(StackFixture fixture)
     }
 
     [Fact]
+    public async Task A_source_that_matched_nothing_is_named_rather_than_left_silent()
+    {
+        // The live-score server, asked something it does not cover, replies with
+        // an empty result set. It worked; it simply had no answer. Reported
+        // because from the outside "searched and found nothing" is otherwise
+        // indistinguishable from "never searched" — which is exactly what it was
+        // mistaken for.
+        var quiet = new FakeKnowledgeSource("wiki", []);
+
+        await using var scope = fixture.NewScope(quiet);
+        var folderId = await IndexAsync(scope, "quiet");
+
+        var retrieval = await scope.Knowledge.RetrieveAsync(Ask(folderId));
+
+        Assert.NotEmpty(retrieval.Passages);
+        Assert.Contains("wiki", retrieval.SourcesWithoutMatches);
+
+        // And emphatically not as a degradation: nothing is broken, and calling
+        // a working source broken is its own kind of dishonesty.
+        Assert.Empty(retrieval.Degradations);
+    }
+
+    [Fact]
+    public async Task A_source_that_failed_is_not_reported_as_having_matched_nothing()
+    {
+        // The two are different claims about a source and must not be merged: a
+        // source that could not be asked has said nothing about whether it holds
+        // the answer.
+        var broken = new FakeKnowledgeSource("wiki", [],
+            searchFailure: new HttpRequestException("connection refused"));
+
+        await using var scope = fixture.NewScope(broken);
+        var folderId = await IndexAsync(scope, "not-conflated");
+
+        var retrieval = await scope.Knowledge.RetrieveAsync(Ask(folderId));
+
+        Assert.Single(retrieval.Degradations);
+        Assert.DoesNotContain("wiki", retrieval.SourcesWithoutMatches);
+    }
+
+    [Fact]
     public async Task An_answer_is_still_produced_when_a_source_is_down()
     {
         var broken = new FakeKnowledgeSource("wiki", [],
@@ -307,6 +348,38 @@ public sealed class KnowledgeSourceTests(StackFixture fixture)
         Assert.NotNull(completed);
         var degradation = Assert.Single(completed.Degradations);
         Assert.Contains("could not be searched", degradation);
+    }
+
+    [Fact]
+    public async Task A_source_that_matched_nothing_is_still_named_when_the_conversation_is_reopened()
+    {
+        var quiet = new FakeKnowledgeSource("wiki", []);
+
+        await using var scope = fixture.NewScope(quiet);
+        var folderId = await IndexAsync(scope, "reopened");
+
+        var completed = default(ChatEvent.Completed);
+
+        await foreach (var @event in scope.Chat.AskAsync(new AskRequest
+        {
+            Question = "How do I restart the ingestion worker?",
+            FolderId = folderId,
+        }))
+        {
+            if (@event is ChatEvent.Completed done) completed = done;
+        }
+
+        Assert.NotNull(completed);
+        Assert.Contains("wiki", completed.SourcesWithoutMatches);
+
+        // The point of persisting it: a transcript read tomorrow has to say the
+        // same thing the live answer did, or the source silently becomes one
+        // that was never consulted.
+        var transcript = await scope.Chat.GetTranscriptAsync(
+            (await scope.Chat.ListSessionsAsync())[0].Id);
+
+        var answer = transcript.Messages.Last(message => message.Role == "assistant");
+        Assert.Contains("wiki", answer.SourcesWithoutMatches);
     }
 
     [Fact]

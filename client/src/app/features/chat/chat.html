@@ -154,6 +154,16 @@
                       @for (degradation of turn.degradations; track degradation) {
                         <p class="mt-1 text-[12px] leading-relaxed text-subtle">{{ degradation }}</p>
                       }
+                      <!-- The sources that were asked and had nothing. On a
+                           refusal this is the whole explanation: without it,
+                           "nothing matched" is indistinguishable from a source
+                           having been skipped. -->
+                      @if (turn.sourcesWithoutMatches.length) {
+                        <p class="mt-1 text-[12px] leading-relaxed text-subtle">
+                          Searched with no matches:
+                          {{ turn.sourcesWithoutMatches.join(', ') }}
+                        </p>
+                      }
                     </div>
                   </div>
                 } @else {
@@ -257,6 +267,18 @@
                         }
                       </div>
                     </div>
+                  }
+
+                  <!-- Which sources were consulted and had nothing to offer.
+                       Quiet on purpose: nothing is wrong, and it belongs with
+                       the sources footer rather than beside the warning about
+                       sources that failed — a source that answered "no" is
+                       working, and must not be presented as a problem. -->
+                  @if (!turn.streaming && turn.sourcesWithoutMatches.length) {
+                    <p class="mt-2 text-[11.5px] leading-relaxed text-subtle">
+                      Searched with no matches:
+                      {{ turn.sourcesWithoutMatches.join(', ') }}
+                    </p>
                   }
                 }
               </div>

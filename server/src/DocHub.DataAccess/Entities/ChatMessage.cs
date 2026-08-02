@@ -110,6 +110,21 @@ public class ChatMessage
     public IReadOnlyList<string> Degradations { get; set; } = [];
 
     /// <summary>
+    /// Knowledge sources that were searched for this answer and matched nothing,
+    /// by display name.
+    ///
+    /// Persisted for the same reason as <see cref="Degradations"/>, and kept
+    /// separate from it for the opposite one: these sources worked. Which
+    /// sources had nothing to say is a property of the answer — a reopened
+    /// conversation that showed only the sources which contributed would leave a
+    /// reader unable to tell a source that found nothing from one that was never
+    /// consulted.
+    ///
+    /// Empty means every source contributed at least one passage.
+    /// </summary>
+    public IReadOnlyList<string> SourcesWithoutMatches { get; set; } = [];
+
+    /// <summary>
     /// True when the assistant declined because retrieval found nothing to
     /// ground an answer in.
     ///

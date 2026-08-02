@@ -242,6 +242,16 @@ export interface ChatMessage {
    * the conversation still says the grounding was thinner than usual.
    */
   degradations?: string[];
+  /**
+   * Sources that were searched when this answer was given and matched nothing,
+   * by display name. Empty means every source contributed something.
+   *
+   * Separate from `degradations` because the two say opposite things about a
+   * source: this one worked and had no answer, that one could not be asked.
+   * Reported at all because a source that contributes nothing is otherwise
+   * invisible, and silence reads as "never searched".
+   */
+  sourcesWithoutMatches?: string[];
   createdAt: string;
 }
 
@@ -271,6 +281,7 @@ export type ChatEvent =
       citations: Citation[];
       isRefusal: boolean;
       degradations?: string[];
+      sourcesWithoutMatches?: string[];
     }
   | { type: 'error'; reason: string };
 

@@ -35,6 +35,17 @@ public abstract record ChatEvent
     /// thinner answer is indistinguishable from a complete one. Empty is the
     /// normal case.
     /// </param>
+    /// <param name="SourcesWithoutMatches">
+    /// Sources that were searched for this answer and matched nothing, by
+    /// display name.
+    ///
+    /// The counterpart to <paramref name="Degradations"/>, and deliberately not
+    /// merged with it: a source that was asked and said "no" is working, while
+    /// one that could not be asked is not, and only the second is a problem to
+    /// fix. Both are reported for the same underlying reason — a source that
+    /// contributed nothing is invisible otherwise, and silence reads as "never
+    /// searched".
+    /// </param>
     /// <param name="Content">
     /// The answer as it was persisted, which is not always what was streamed:
     /// unresolvable markers are stripped, and an answer that turned out to cite
@@ -47,7 +58,8 @@ public abstract record ChatEvent
         string Content,
         IReadOnlyList<CitationViewModel> Citations,
         bool IsRefusal,
-        IReadOnlyList<string> Degradations) : ChatEvent;
+        IReadOnlyList<string> Degradations,
+        IReadOnlyList<string> SourcesWithoutMatches) : ChatEvent;
 
     /// <summary>Generation failed. Distinct from a refusal, which is a valid answer.</summary>
     public sealed record Failed(string Reason) : ChatEvent;

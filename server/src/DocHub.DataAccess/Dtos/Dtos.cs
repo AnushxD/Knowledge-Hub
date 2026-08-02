@@ -135,6 +135,10 @@ public record ChatSessionDto(
 /// Sources that could not be searched for this answer. Empty when every source
 /// answered.
 /// </param>
+/// <param name="SourcesWithoutMatches">
+/// Sources that were searched and matched nothing. Empty when every source
+/// contributed.
+/// </param>
 public record ChatMessageDto(
     Guid Id,
     Guid SessionId,
@@ -143,7 +147,8 @@ public record ChatMessageDto(
     IReadOnlyList<Citation> Citations,
     bool IsRefusal,
     DateTimeOffset CreatedAt,
-    IReadOnlyList<string> Degradations);
+    IReadOnlyList<string> Degradations,
+    IReadOnlyList<string> SourcesWithoutMatches);
 
 /// <summary>A session together with its whole transcript.</summary>
 public record ChatTranscriptDto(
@@ -160,6 +165,9 @@ public record NewChatMessageDto
 
     /// <summary>Sources that could not be searched for this answer.</summary>
     public IReadOnlyList<string> Degradations { get; init; } = [];
+
+    /// <summary>Sources that were searched and matched nothing.</summary>
+    public IReadOnlyList<string> SourcesWithoutMatches { get; init; } = [];
 }
 
 /// <summary>One chunk ready to be persisted, as produced by the ingestion pipeline.</summary>

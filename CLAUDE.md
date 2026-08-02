@@ -222,6 +222,13 @@ Recorded so they are not re-litigated. Each is a trade already reasoned through.
 - Sources that could not be searched are stored on the message too, for the same
   reason as citations: an answer grounded in less than usual has to still say so
   when the conversation is reopened.
+- **Sources that were searched and matched nothing are stored and named as
+  well**, separately from the failures. A source that contributes no passage is
+  otherwise invisible on the answer, and that silence reads as "never searched" —
+  it was read that way in practice. The two stay apart because they are opposite
+  claims: one source worked and had no answer, the other could not be asked. Only
+  the second is a fault, and rendering them alike would report a healthy source
+  as broken.
 - SSE for chat, with the first event pulled *before* headers are written so
   validation and 404s still return problem details.
 - Ollama for both embeddings and generation; a hashing embedding provider and a
@@ -355,6 +362,9 @@ Recorded so they are not re-litigated. Each is a trade already reasoned through.
 - Search and the assistant share one ranking implementation.
 - A knowledge source that fails is left out of that one answer and named in the
   reply — never silently dropped, never allowed to fail the whole question.
+- A knowledge source that was searched and matched nothing is named on the reply
+  too, as information rather than as a fault. "Searched and found nothing" and
+  "never searched" must not look the same to the reader.
 - Every source answers under its own deadline, linked to the caller's token, and
   a timeout is reported like any other degradation.
 - Any source must return **verbatim passages, not summaries**, or the assistant

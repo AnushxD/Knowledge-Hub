@@ -60,6 +60,18 @@ public interface IKnowledgeRetriever
 /// ahead — but a thin answer and a broken source must not look the same to the
 /// person reading it.
 /// </param>
+/// <param name="SourcesWithoutMatches">
+/// The display name of every source that was searched successfully and matched
+/// nothing. Not a degradation: the source did its job and the honest answer was
+/// "no". Reported because from the outside that is indistinguishable from a
+/// source that was never searched at all — which is what it was mistaken for.
+///
+/// Names rather than sentences, unlike <paramref name="Degradations"/>. A
+/// source matching nothing is the ordinary case and several will on most
+/// questions, so this renders as a short list; a paragraph per source would
+/// bury the answer it belongs to.
+/// </param>
 public sealed record GroundingResult(
     IReadOnlyList<RetrievedPassage> Passages,
-    IReadOnlyList<string> Degradations);
+    IReadOnlyList<string> Degradations,
+    IReadOnlyList<string> SourcesWithoutMatches);

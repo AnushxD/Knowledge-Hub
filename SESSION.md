@@ -3,8 +3,8 @@
 Session state only. Architecture, conventions, design decisions and workflow
 live in `CLAUDE.md` and are not repeated here.
 
-**Last updated:** 2026-08-02 · **Branch:** `main`, clean and pushed · **Tests:** 207 green
-(17 Api · 42 Integrations · 17 DataAccess · 131 Services) · **CI:** green
+**Last updated:** 2026-08-02 · **Branch:** `main`, clean and pushed · **Tests:** 210 green
+(17 Api · 42 Integrations · 17 DataAccess · 134 Services) · **CI:** green
 
 ---
 
@@ -104,6 +104,19 @@ against the org's actual server — see "Blockers".
   - Cost, measured: prompt evaluation roughly halves, 101–111 tok/s → 50–58
     tok/s, and it dominates — about 70s of a 110s answer is reading the prompt,
     not writing the answer. Reload after an idle spell is ~8s, against ~3s.
+- **An answer now names the sources that were searched and matched nothing.**
+  Asked "ionel messi barcelona player", the live-score server was searched, took
+  2.5s, and returned nothing — and the reply said nothing about it, which read as
+  the server never having been consulted. It now carries
+  `sourcesWithoutMatches` beside `degradations`, persisted in its own jsonb
+  column so a reopened conversation says the same thing. The two are kept apart
+  deliberately: a source that answered "no" is working, and rendering it like a
+  failure would report a healthy server as broken. Rendered as a quiet line, not
+  a warning.
+  - The cause was never ours. That server matches the query as one literal
+    phrase, so `messi` returns a passage and the four-word version returns none.
+    An empty result envelope contributing no passage is the deliberate rule from
+    the previous session, and it held.
 - **A citation marker after the full stop was never really checked.** The
   support check judged it against the empty span between the punctuation and the
   marker, and a citation with nothing to weigh is kept by default. `qwen2.5:7b`
@@ -318,7 +331,8 @@ nothing verifiable · a citation whose passage says nothing about the sentence �
 a model's invented footnote counted as a verified citation · a source echoing
 the query back as if it were agreement · a retrieved passage
 that is merely the nearest of many bad ones · a server's "nothing matched" read
-as content · vector-branch outage
+as content · a source that matched nothing looking like one never searched ·
+vector-branch outage
 degrading to keyword-only · `DbContext` concurrency across search branches · SSE
 validation before headers · unresolved markers rendered as plain text · a
 knowledge source failing mid-question · a source that never replies · duplicate
@@ -338,7 +352,9 @@ the row action menu clipped on the last list item.
 > `CLAUDE.md` is authoritative for architecture, design decisions, conventions
 > and workflow; `SESSION.md` is current state. **v1 and phase 7 are complete —
 > do not re-analyse or rebuild them.** 207 tests pass, `main` is clean and
-> pushed, and CI is green.
+> pushed, and CI is green. The database has a migration this session
+> (`MessageSourcesWithoutMatches`) — run `dotnet ef database update` if the local
+> one predates it.
 >
 > **Start with "Next steps" item 1: the sentence-level grounding guard.** The
 > answer model is already `qwen2.5:7b` and `llama3.2:3b` is gone — that swap is

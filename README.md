@@ -300,6 +300,13 @@ grounded.
 don't cover a question the assistant says so plainly, and that turn is saved
 like any other — a recorded refusal is what makes the grounding auditable.
 
+**An answer says which sources had nothing to offer.** A source that returns no
+passage contributes nothing to the answer and would otherwise leave no trace, so
+"Searched with no matches" names it. That is deliberately distinct from a source
+that *could not* be searched, which is reported as a warning: the first worked
+and had no answer, the second could not be asked. Both are saved with the turn,
+so reopening the conversation tells the same story.
+
 Everything is persisted: questions, answers, and the sources each answer
 cited, with the document title and heading copied onto the citation. Renaming
 or deleting a document later cannot rewrite what a historical answer claimed
@@ -438,7 +445,7 @@ Each one carries:
 | Field | Meaning |
 |---|---|
 | Name | Lower-case letters, digits and hyphens. It goes in the API route and is recorded on every citation the server produces, so it cannot be changed afterwards |
-| Display name | What appears on screen and in "… could not be searched". This is what tells two servers apart, so it is worth choosing well |
+| Display name | What appears on screen, in "… could not be searched", and in "Searched with no matches". This is what tells two servers apart, so it is worth choosing well |
 | Address | Absolute `http://` or `https://`. **Test address** connects over MCP and reports what is there — see below |
 | Search tool | Empty discovers the first tool with `search` in its name — a guess worth replacing once the server's tool list is known. Its arguments are read from the tool's own schema, so a tool taking `q` is sent `q` |
 | Search this source | Off takes it out of circulation without losing it, which is what an outage calls for |

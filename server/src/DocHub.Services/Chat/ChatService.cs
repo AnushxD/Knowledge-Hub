@@ -96,11 +96,20 @@ internal sealed class ChatService(
         if (passages.Count == 0)
         {
             var refusal = await SaveRefusalAsync(
-                sessionId, NoSourcesMessage(retrieval), retrieval.Degradations, ct);
+                sessionId,
+                NoSourcesMessage(retrieval),
+                retrieval.Degradations,
+                retrieval.SourcesWithoutMatches,
+                ct);
 
             yield return new ChatEvent.Token(refusal.Content);
             yield return new ChatEvent.Completed(
-                refusal.Id, refusal.Content, [], IsRefusal: true, retrieval.Degradations);
+                refusal.Id,
+                refusal.Content,
+                [],
+                IsRefusal: true,
+                retrieval.Degradations,
+                retrieval.SourcesWithoutMatches);
             yield break;
         }
 
@@ -190,6 +199,10 @@ internal sealed class ChatService(
                 // so is the difference between a thin answer and a thin answer
                 // the reader knows to treat as thin.
                 Degradations = retrieval.Degradations,
+                // Every source that was asked and had nothing, so a reopened
+                // conversation can still tell those apart from sources that
+                // were never consulted.
+                SourcesWithoutMatches = retrieval.SourcesWithoutMatches,
             },
             ct)
             ?? throw new NotFoundException("Chat session", sessionId);
@@ -204,7 +217,8 @@ internal sealed class ChatService(
             cleaned,
             [.. citations.Select(ToViewModel)],
             isRefusal,
-            retrieval.Degradations);
+            retrieval.Degradations,
+            retrieval.SourcesWithoutMatches);
     }
 
     public async Task<IReadOnlyList<ChatSessionViewModel>> ListSessionsAsync(
@@ -316,6 +330,7 @@ internal sealed class ChatService(
         Guid sessionId,
         string content,
         IReadOnlyList<string> degradations,
+        IReadOnlyList<string> sourcesWithoutMatches,
         CancellationToken ct) =>
         await sessions.AppendMessageAsync(
             sessionId,
@@ -325,6 +340,7 @@ internal sealed class ChatService(
                 Content = content,
                 IsRefusal = true,
                 Degradations = degradations,
+                SourcesWithoutMatches = sourcesWithoutMatches,
             },
             ct)
             ?? throw new NotFoundException("Chat session", sessionId);
@@ -381,5 +397,6 @@ internal sealed class ChatService(
             [.. message.Citations.Select(ToViewModel)],
             message.IsRefusal,
             message.CreatedAt,
-            message.Degradations);
+            message.Degradations,
+            message.SourcesWithoutMatches);
 }

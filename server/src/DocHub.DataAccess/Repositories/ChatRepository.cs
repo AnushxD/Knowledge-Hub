@@ -84,6 +84,7 @@ internal sealed class ChatRepository(DocHubDbContext db) : IChatRepository
             Citations = [.. input.Citations],
             IsRefusal = input.IsRefusal,
             Degradations = [.. input.Degradations],
+            SourcesWithoutMatches = [.. input.SourcesWithoutMatches],
             CreatedAt = now,
         };
 
@@ -102,7 +103,8 @@ internal sealed class ChatRepository(DocHubDbContext db) : IChatRepository
             message.Citations,
             message.IsRefusal,
             message.CreatedAt,
-            message.Degradations);
+            message.Degradations,
+            message.SourcesWithoutMatches);
     }
 
     public async Task<bool> DeleteSessionAsync(Guid sessionId, CancellationToken ct = default) =>
@@ -152,5 +154,6 @@ internal sealed class ChatRepository(DocHubDbContext db) : IChatRepository
             message.Citations,
             message.IsRefusal,
             message.CreatedAt,
-            message.Degradations);
+            message.Degradations,
+            message.SourcesWithoutMatches);
 }

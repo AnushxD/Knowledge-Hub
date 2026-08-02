@@ -72,7 +72,7 @@ sequenceDiagram
     R-->>D: 6 passages, full text
     D-->>K: KnowledgeResults
     Note over K: RRF fuse across sources,<br/>dedupe on (document, chunk)
-    K-->>S: 6 passages + degradations
+    K-->>S: 6 passages + degradations + empty sources
 
     S-->>C: SourcesRetrieved
     C-->>B: event: sources
@@ -269,7 +269,7 @@ flowchart TD
     F2 --> H
     G2 --> H
 
-    H --> I["Take(6) → GroundingResult(passages, degradations)"]
+    H --> I["Take(6) → GroundingResult(passages,<br/>degradations, sources that matched nothing)"]
 ```
 
 Four decisions are encoded here:
@@ -618,7 +618,7 @@ Five SSE event names, each with a distinct job:
 | `session` | `sessionId`, `title` | Makes a brand-new conversation addressable |
 | `sources` | all retrieved passages, numbered | Renders the source list **while the answer is still being written** |
 | `token` | `text` | Appends to the streaming answer |
-| `done` | `messageId`, **verified** citations, `isRefusal`, `degradations` | Replaces the provisional source list with what was actually cited, and names any source that could not be searched |
+| `done` | `messageId`, **verified** citations, `isRefusal`, `degradations`, `sourcesWithoutMatches` | Replaces the provisional source list with what was actually cited, names any source that could not be searched, and names any source that was searched and matched nothing |
 | `error` | `reason` | Shows a failure, distinct from a refusal |
 
 > **The subtlety worth internalising:** `sources` carries everything *retrieved*

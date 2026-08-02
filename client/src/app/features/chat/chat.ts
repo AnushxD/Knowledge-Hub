@@ -25,6 +25,11 @@ interface Turn {
   isRefusal: boolean;
   /** Sources that could not be searched for this answer. Usually empty. */
   degradations: string[];
+  /**
+   * Sources that were searched for this answer and matched nothing. Shown so a
+   * source that had no answer cannot be mistaken for one that was skipped.
+   */
+  sourcesWithoutMatches: string[];
   /** True while tokens are still arriving for this turn. */
   streaming: boolean;
 }
@@ -137,6 +142,7 @@ export class ChatPage {
         citations: [],
         isRefusal: false,
         degradations: [],
+        sourcesWithoutMatches: [],
         streaming: false,
       },
       {
@@ -146,6 +152,7 @@ export class ChatPage {
         citations: [],
         isRefusal: false,
         degradations: [],
+        sourcesWithoutMatches: [],
         streaming: true,
       },
     ]);
@@ -174,6 +181,7 @@ export class ChatPage {
               event.isRefusal,
               event.messageId,
               event.degradations ?? [],
+              event.sourcesWithoutMatches ?? [],
             );
             break;
 
@@ -258,6 +266,7 @@ export class ChatPage {
     isRefusal: boolean,
     messageId: string,
     degradations: string[],
+    sourcesWithoutMatches: string[],
   ): void {
     this.turns.update((turns) =>
       turns.map((turn) =>
@@ -271,6 +280,7 @@ export class ChatPage {
               citations,
               isRefusal,
               degradations,
+              sourcesWithoutMatches,
               streaming: false,
             }
           : turn,
@@ -316,6 +326,7 @@ function toTurn(message: ChatMessage): Turn {
     citations: message.citations,
     isRefusal: message.isRefusal,
     degradations: message.degradations ?? [],
+    sourcesWithoutMatches: message.sourcesWithoutMatches ?? [],
     streaming: false,
   };
 }

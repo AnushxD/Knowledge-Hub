@@ -346,6 +346,17 @@ public sealed class DocHubDbContext(DbContextOptions<DocHubDbContext> options)
                 .HasColumnType("jsonb")
                 .HasDefaultValueSql("'[]'::jsonb");
 
+            // Stored the same way as the degradations beside it. The converter
+            // and comparer are shared: both are a list of strings read whole
+            // with the message, and only what they mean differs.
+            entity.Property(message => message.SourcesWithoutMatches)
+                .HasConversion(DegradationsConverter)
+                .Metadata.SetValueComparer(DegradationsComparer);
+
+            entity.Property(message => message.SourcesWithoutMatches)
+                .HasColumnType("jsonb")
+                .HasDefaultValueSql("'[]'::jsonb");
+
             entity.HasOne(message => message.Session)
                 .WithMany(session => session.Messages)
                 .HasForeignKey(message => message.SessionId)
