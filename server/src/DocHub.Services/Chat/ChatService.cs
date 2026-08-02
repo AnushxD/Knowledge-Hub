@@ -149,7 +149,9 @@ internal sealed class ChatService(
         // model asked to cite will occasionally invent a plausible number, and
         // an uncheckable citation is worse than none — it makes the answer look
         // better supported than it is.
-        var citations = isRefusal ? [] : GroundedPrompt.VerifyCitations(text, passages);
+        // The question is passed in so a citation cannot be justified by a
+        // source echoing the query back at us.
+        var citations = isRefusal ? [] : GroundedPrompt.VerifyCitations(text, passages, question);
         var cleaned = isRefusal ? text : GroundedPrompt.StripUnresolvedMarkers(text, citations);
 
         // An answer that cites nothing verifiable is not a grounded answer, and

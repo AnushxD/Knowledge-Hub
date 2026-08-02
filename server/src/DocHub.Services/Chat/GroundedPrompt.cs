@@ -108,10 +108,12 @@ internal static partial class GroundedPrompt
     /// </summary>
     public static IReadOnlyList<Citation> VerifyCitations(
         string answer,
-        IReadOnlyList<RetrievedPassage> passages)
+        IReadOnlyList<RetrievedPassage> passages,
+        string question = "")
     {
         var cited = new List<Citation>();
         var seen = new HashSet<int>();
+        var questionTerms = Terms(question);
 
         foreach (Match match in CitationMarker().Matches(answer))
         {
@@ -123,6 +125,14 @@ internal static partial class GroundedPrompt
             if (!seen.Add(marker)) continue;
 
             var passage = passages[index];
+
+            // A marker pointing at a real passage is not the same as a passage
+            // that says anything about the sentence citing it.
+            if (!Supports(passage.Text, SentenceAround(answer, match.Index), questionTerms))
+            {
+                seen.Remove(marker);
+                continue;
+            }
 
             cited.Add(new Citation(
                 marker,
@@ -139,6 +149,79 @@ internal static partial class GroundedPrompt
 
         return [.. cited.OrderBy(citation => citation.Marker)];
     }
+
+
+    /// <summary>
+    /// Whether a passage plausibly backs the sentence that cited it.
+    ///
+    /// The marker check above proves a citation points at a passage the model
+    /// was given. It cannot tell whether that passage has anything to do with
+    /// the claim — so a model that invents an answer and sprinkles markers over
+    /// it passes, and the answer looks sourced when it is not. That has
+    /// happened: an orange-juice recipe cited a realtime status probe and a
+    /// payments data model.
+    ///
+    /// The test is deliberately weak, because it is guarding against decoration
+    /// rather than judging meaning: share at least two substantial words with
+    /// the sentence, and not only words the question already supplied. That
+    /// second half matters because a source can echo the query back — one here
+    /// answers every search with "Search results for '…'" — which would
+    /// otherwise look like agreement with any sentence on the subject.
+    ///
+    /// A sentence with almost no content words is exempt: there is nothing to
+    /// judge, and refusing over "Yes [1]." would be the check inventing a
+    /// problem.
+    /// </summary>
+    private static bool Supports(
+        string passage,
+        string sentence,
+        IReadOnlySet<string> questionTerms)
+    {
+        var sentenceTerms = Terms(sentence);
+        if (sentenceTerms.Count < 3) return true;
+
+        var shared = Terms(passage);
+        shared.IntersectWith(sentenceTerms);
+
+        // Two, not one: a single word in common between any two pieces of
+        // English prose is coincidence more often than support.
+        if (shared.Count < 2) return false;
+
+        return shared.Except(questionTerms).Any();
+    }
+
+    /// <summary>
+    /// The sentence a marker sits in, so a claim is checked against its own
+    /// source rather than against everything the answer happens to say.
+    /// </summary>
+    private static string SentenceAround(string answer, int markerIndex)
+    {
+        var start = answer.LastIndexOfAny(['.', '!', '?', '\n'], Math.Max(0, markerIndex - 1));
+        var end = answer.IndexOfAny(['.', '!', '?', '\n'], markerIndex);
+
+        return answer[(start + 1)..(end < 0 ? answer.Length : end)];
+    }
+
+    /// <summary>
+    /// Substantial words, lower-cased. Short ones are dropped rather than
+    /// stop-listed: at four characters and up, the words that survive carry the
+    /// subject matter, and a list of English stop words would be one more thing
+    /// to maintain for the same effect.
+    /// </summary>
+    private static HashSet<string> Terms(string text)
+    {
+        var terms = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var word in WordPattern().Matches(text).Cast<Match>())
+        {
+            if (word.Length >= 4) terms.Add(word.Value.ToLowerInvariant());
+        }
+
+        return terms;
+    }
+
+    [GeneratedRegex(@"[A-Za-z][A-Za-z0-9_-]*")]
+    private static partial Regex WordPattern();
 
     /// <summary>
     /// Whether the model declined for lack of grounding.

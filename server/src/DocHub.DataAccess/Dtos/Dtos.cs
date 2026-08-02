@@ -212,6 +212,19 @@ public record ChunkSearchDto
 
     /// <summary>Candidates to pull from each branch before fusion.</summary>
     public int Limit { get; init; } = 40;
+
+    /// <summary>
+    /// Cosine distance past which a chunk is not a match at all, however close
+    /// it happens to be to everything else.
+    ///
+    /// Without this the vector branch is a nearest-neighbour lookup rather than
+    /// a search: it returns the closest chunks to any question, including
+    /// questions the corpus has no answer to. Null disables the floor, which is
+    /// what the search screen wants — a human reading ranked results can judge
+    /// a weak one, while the assistant treats whatever it is handed as grounds
+    /// for an answer.
+    /// </summary>
+    public double? MaxDistance { get; init; }
 }
 
 /// <summary>One entry in the activity trail, with its actor resolved.</summary>

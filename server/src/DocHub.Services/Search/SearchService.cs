@@ -3,16 +3,21 @@ using System.Text;
 using DocHub.DataAccess.Dtos;
 using DocHub.DataAccess.Repositories;
 using DocHub.Integrations.Embeddings;
+using DocHub.Services.Knowledge;
 using DocHub.Services.ViewModels;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace DocHub.Services.Search;
 
 internal sealed class SearchService(
     IChunkRepository chunks,
     IEmbeddingProvider embeddings,
+    IOptions<KnowledgeOptions> knowledge,
     ILogger<SearchService> logger) : ISearchService
 {
+    private readonly KnowledgeOptions knowledge = knowledge.Value;
+
     /// <summary>
     /// Reciprocal rank fusion constant. 60 is the value from the original RRF
     /// paper and behaves well without tuning: large enough that the top few
@@ -63,7 +68,11 @@ internal sealed class SearchService(
         SearchRequest request,
         CancellationToken ct = default)
     {
-        var (_, take, keyword, vector, vectorError) = await RankAsync(request, ct);
+        // The floor applies here and not on the search screen. A person
+        // reading ranked results can see for themselves that the top hit is
+        // poor; the assistant cannot, and will write an answer around it.
+        var (_, take, keyword, vector, vectorError) =
+            await RankAsync(request, ct, knowledge.MaxPassageDistance);
 
         var passages = Fuse(keyword, vector)
             .Take(take)
@@ -88,7 +97,10 @@ internal sealed class SearchService(
     /// diverged, the assistant would cite passages the search screen never
     /// showed, and neither result would explain the other.
     /// </summary>
-    private async Task<RankedBranches> RankAsync(SearchRequest request, CancellationToken ct)
+    private async Task<RankedBranches> RankAsync(
+        SearchRequest request,
+        CancellationToken ct,
+        double? maxDistance = null)
     {
         var query = request.Query?.Trim() ?? string.Empty;
 
@@ -109,6 +121,7 @@ internal sealed class SearchService(
             // Deeper than the page size: fusion can only reorder what it was
             // given, so each branch has to offer more than the caller will see.
             Limit = Math.Max(take * 3, 40),
+            MaxDistance = maxDistance,
         };
 
         // Start embedding first, then run the keyword query while it is in

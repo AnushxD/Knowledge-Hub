@@ -3,8 +3,8 @@
 Session state only. Architecture, conventions, design decisions and workflow
 live in `CLAUDE.md` and are not repeated here.
 
-**Last updated:** 2026-08-01 · **Branch:** `main`, clean and pushed · **Tests:** 194 green
-(17 Api · 39 Integrations · 15 DataAccess · 123 Services)
+**Last updated:** 2026-08-01 · **Branch:** `main`, clean and pushed · **Tests:** 202 green
+(17 Api · 39 Integrations · 17 DataAccess · 129 Services)
 
 ---
 
@@ -68,6 +68,13 @@ against the org's actual server — see "Blockers".
   servers configured, because every status is a handshake with a server
   somewhere else (measured: 2.2–3.1s). Split into `/api/sources` (2–35ms, draws
   the page) and `/api/sources/status` (unchanged, fills the badges).
+- **Two more fabrication holes closed**, both found by asking off-topic
+  questions. Retrieval had no relevance floor, so "how to make orange juice"
+  retrieved the nearest chunks however far (measured 0.54+ against 0.31 for a
+  real match) — there is now a configurable cosine floor for the assistant
+  only. And citation checking was purely syntactic, so a model could invent an
+  answer and hang resolving markers off it; a citation must now share wording
+  with the sentence citing it, beyond what the question itself supplied.
 - **Test address speaks MCP**, not HTTP: it reports the server's tool list,
   which repositories it says it indexes, and which tool searching would pick,
   with a button to fill that field in. It tells "answered but not MCP" apart

@@ -11,13 +11,22 @@ namespace DocHub.Services.Tests;
 /// </summary>
 public sealed class GroundedPromptTests
 {
-    private static RetrievedPassage Passage(string title, string heading, int chunkId = 0) =>
+    /// <param name="body">
+    /// Real prose, not a placeholder: a citation is now checked against the
+    /// words of the passage it points at, so a fixture whose body said nothing
+    /// would be testing the check rather than the behaviour under it.
+    /// </param>
+    private static RetrievedPassage Passage(
+        string title,
+        string heading,
+        string body,
+        int chunkId = 0) =>
         new(
             PassageKind.Document,
             title,
             chunkId,
             heading,
-            $"Body of {heading}.",
+            body,
             0.5,
             "both",
             DocumentId: Guid.NewGuid(),
@@ -25,9 +34,20 @@ public sealed class GroundedPromptTests
 
     private static readonly IReadOnlyList<RetrievedPassage> ThreeSources =
     [
-        Passage("VPN Guide", "Connecting"),
-        Passage("VPN Guide", "Multi-factor", 1),
-        Passage("Runbook", "Escalation", 4),
+        Passage(
+            "VPN Guide",
+            "Connecting",
+            "Download the client from the IT portal and sign in with your network credentials."),
+        Passage(
+            "VPN Guide",
+            "Multi-factor",
+            "Every remote session requires a second factor from the authenticator app.",
+            1),
+        Passage(
+            "Runbook",
+            "Escalation",
+            "Escalate to the on-call engineer after thirty minutes without acknowledgement.",
+            4),
     ];
 
     [Fact]
@@ -48,7 +68,8 @@ public sealed class GroundedPromptTests
     public void Markers_resolve_to_the_passage_they_point_at()
     {
         var citations = GroundedPrompt.VerifyCitations(
-            "Use the client [1]. Escalate after thirty minutes [3].", ThreeSources);
+            "Download the client from the portal [1]. Escalate after thirty minutes [3].",
+            ThreeSources);
 
         Assert.Equal([1, 3], citations.Select(citation => citation.Marker));
         Assert.Equal("Connecting", citations[0].Heading);
@@ -62,7 +83,7 @@ public sealed class GroundedPromptTests
         // The failure this whole check exists for: a model asked to cite will
         // sometimes produce a plausible number it was never given.
         var citations = GroundedPrompt.VerifyCitations(
-            "Rotate the key every ninety days [7].", ThreeSources);
+            "Download the client from the portal [7].", ThreeSources);
 
         Assert.Empty(citations);
     }
@@ -79,7 +100,11 @@ public sealed class GroundedPromptTests
     public void A_marker_repeated_across_sentences_is_listed_once()
     {
         var citations = GroundedPrompt.VerifyCitations(
-            "First point [1]. Second point [1]. Third [1].", ThreeSources);
+            """
+            Download the client from the portal [1]. Sign in with your network
+            credentials [1]. The portal client is the only one supported [1].
+            """,
+            ThreeSources);
 
         Assert.Single(citations);
     }
@@ -88,7 +113,11 @@ public sealed class GroundedPromptTests
     public void Citations_are_ordered_by_marker_regardless_of_where_they_appear()
     {
         var citations = GroundedPrompt.VerifyCitations(
-            "Later source first [3]. Earlier one after [1].", ThreeSources);
+            """
+            Escalate to the on-call engineer after thirty minutes [3]. Download the
+            client from the IT portal first [1].
+            """,
+            ThreeSources);
 
         Assert.Equal([1, 3], citations.Select(citation => citation.Marker));
     }
@@ -96,7 +125,8 @@ public sealed class GroundedPromptTests
     [Fact]
     public void Unresolved_markers_are_stripped_from_the_rendered_answer()
     {
-        const string Answer = "Grounded claim [1]. Invented claim [9].";
+        const string Answer =
+            "Download the client from the portal [1]. Rotate the signing key yearly [9].";
 
         var citations = GroundedPrompt.VerifyCitations(Answer, ThreeSources);
         var cleaned = GroundedPrompt.StripUnresolvedMarkers(Answer, citations);
@@ -105,7 +135,100 @@ public sealed class GroundedPromptTests
         // goes, rather than rendering as a link to nothing.
         Assert.Contains("[1]", cleaned);
         Assert.DoesNotContain("[9]", cleaned);
-        Assert.Contains("Invented claim", cleaned);
+        Assert.Contains("Rotate the signing key yearly", cleaned);
+    }
+
+    // ---- citations that point somewhere real and mean nothing ---------------
+    //
+    // These are the case that got through: an orange-juice recipe, cited to a
+    // realtime status probe and a payments data model, because the markers
+    // resolved. The passages below are the ones actually retrieved.
+
+    private static readonly IReadOnlyList<RetrievedPassage> UnrelatedSources =
+    [
+        Passage(
+            "zz-realtime",
+            "Realtime status probe",
+            "Uploaded to watch the status change without a reload. The ingestion worker "
+            + "should take it from Queued to Indexed."),
+        Passage(
+            "auth_workflows",
+            "6. OAuth 2.0 / SSO Login Flow",
+            "User clicks sign in with provider, the app redirects to the identity provider, "
+            + "the user authenticates and grants consent.",
+            1),
+    ];
+
+    [Fact]
+    public void A_citation_whose_passage_says_nothing_about_the_claim_is_dropped()
+    {
+        var citations = GroundedPrompt.VerifyCitations(
+            "The resulting juice can be strained through a fine-mesh sieve to remove pulp [1].",
+            UnrelatedSources,
+            "how to make orange juice");
+
+        // The marker resolves. The passage is about an ingestion worker. A
+        // citation is a promise that the passage backs the sentence.
+        Assert.Empty(citations);
+    }
+
+    [Fact]
+    public void A_citation_justified_only_by_the_question_being_echoed_back_is_dropped()
+    {
+        // One configured server answers every search with "Search results for
+        // '…'", so its passage always contains the question's own words. That
+        // must not read as agreement with whatever the model then invented.
+        IReadOnlyList<RetrievedPassage> echoing =
+        [
+            Passage(
+                "Live score",
+                "result",
+                "Search results for 'how to make orange juice': {\"result\": []}"),
+        ];
+
+        var citations = GroundedPrompt.VerifyCitations(
+            "To make orange juice, peel the oranges and squeeze them with a juicer [1].",
+            echoing,
+            "how to make orange juice");
+
+        Assert.Empty(citations);
+    }
+
+    [Fact]
+    public void A_citation_backed_by_words_the_question_never_supplied_survives()
+    {
+        // The guard must not swallow the ordinary case: the answer carries
+        // detail that could only have come from the passage.
+        var citations = GroundedPrompt.VerifyCitations(
+            "Download the client from the IT portal and sign in with your network credentials [1].",
+            ThreeSources,
+            "how do I connect to the VPN");
+
+        Assert.Single(citations);
+    }
+
+    [Fact]
+    public void A_sentence_too_short_to_judge_keeps_its_citation()
+    {
+        // Nothing to weigh. Refusing over "Yes [1]." would be the check
+        // inventing a problem rather than catching one.
+        var citations = GroundedPrompt.VerifyCitations("Yes [1].", ThreeSources, "is it on?");
+
+        Assert.Single(citations);
+    }
+
+    [Fact]
+    public void One_word_in_common_is_coincidence_rather_than_support()
+    {
+        var citations = GroundedPrompt.VerifyCitations(
+            "Some people add sugar or honey to balance the flavour of the juice [2].",
+            [
+                Passage("payments", "3. Relevant Data Model", "The ledger must balance."),
+                Passage("payments", "3. Relevant Data Model", "The ledger must balance.", 1),
+            ],
+            "how to make orange juice");
+
+        Assert.Empty(citations);
     }
 
     [Theory]
@@ -130,7 +253,7 @@ public sealed class GroundedPromptTests
     public void Bracketed_text_that_is_not_a_number_is_ignored()
     {
         var citations = GroundedPrompt.VerifyCitations(
-            "See the appendix [see note] and the guide [1].", ThreeSources);
+            "Download the client from the portal [see note] and sign in [1].", ThreeSources);
 
         Assert.Single(citations);
         Assert.Equal(1, citations[0].Marker);

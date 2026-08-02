@@ -322,6 +322,16 @@ Recorded so they are not re-litigated. Each is a trade already reasoned through.
   produces confident fabrication. Refuse instead.
 - Every citation marker the model emits is verified against the passages
   actually supplied; unresolvable markers are stripped, never rendered as links.
+- **Retrieval for the assistant has a relevance floor** (`Knowledge:MaxPassageDistance`,
+  cosine, default 0.5). A vector index always has a nearest neighbour, so
+  without one every question retrieves something and the model is handed
+  whatever was least unlike it. The search screen has no floor: a person can
+  see a weak result for what it is, and the assistant cannot.
+- **A citation is checked against the sentence citing it**, not just against the
+  list of supplied passages. Sharing at least two substantial words, and not
+  only words the question already supplied — a source that echoes the query
+  back would otherwise look like agreement with anything. Deliberately weak: it
+  catches decoration, not subtle mismatch.
 - **An answer that cites nothing verifiable is refused, not shown.** Non-empty
   retrieval is a weaker guarantee than it looks — a source answering "no
   matches" in prose still returns a passage, and one irrelevant passage is

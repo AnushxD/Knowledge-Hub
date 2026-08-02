@@ -119,8 +119,21 @@ public sealed class StackFixture : IAsyncLifetime
         var extractors = new TextExtractorRegistry(
             [new PlainTextExtractor(), new PdfTextExtractor(), new OpenXmlTextExtractor()]);
 
+        // The relevance floor is switched off here, not tuned down: the hashing
+        // embedding provider produces deterministic vectors with no semantic
+        // geometry, so "distance" between a question and its own document is
+        // arbitrary. A floor would reject everything and every test would be
+        // measuring the floor rather than what it meant to. The floor itself is
+        // tested where it lives, against real vectors, in the DataAccess suite.
         var searchService = new SearchService(
-            chunkRepo, embeddings, NullLogger<SearchService>.Instance);
+            chunkRepo,
+            embeddings,
+            Options.Create(new KnowledgeOptions
+            {
+                SourceTimeoutSeconds = knowledgeOptions.SourceTimeoutSeconds,
+                MaxPassageDistance = double.MaxValue,
+            }),
+            NullLogger<SearchService>.Instance);
 
         // Tests reconcile overrides against configuration themselves, so the
         // fixture hands out the repository rather than a settings reader bound

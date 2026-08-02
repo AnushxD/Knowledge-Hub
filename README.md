@@ -409,6 +409,7 @@ Key settings, one strongly-typed Options class per external dependency:
 | `Authentication:SessionHours` | Session lifetime, sliding (default 8) |
 | `Authentication:KeyPath` | Directory for the Data Protection keys that encrypt the session cookie. **Set it on IIS**, or every application pool recycle signs everyone out. Leave unset in containers |
 | `Knowledge:SourceTimeoutSeconds` | How long one knowledge source may take before the answer goes ahead without it (default 10) |
+| `Knowledge:MaxPassageDistance` | Cosine distance past which a passage is not retrieved for the assistant (default 0.5). Raise it if answerable questions start being refused; lower it if unrelated passages reach the model. Does not affect the search screen |
 | `Authentication:SeedAdminPassword` | Applied by `seed-admin`; a real deployment puts this in user-secrets |
 | `Authentication:Google:Enabled` | Turns Google sign-in on. Off by default |
 | `Authentication:Google:ClientId` | From the Google Cloud console |

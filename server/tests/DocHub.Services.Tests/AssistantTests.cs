@@ -180,6 +180,34 @@ public sealed class AssistantTests(StackFixture fixture)
     }
 
     [Fact]
+    public async Task An_answer_that_decorates_a_fabrication_with_real_markers_is_refused()
+    {
+        await using var scope = fixture.NewScope();
+        var folderId = await IndexAsync(scope, VpnGuide, "decorated");
+
+        // The failure that got past the previous guard: the model invents an
+        // answer and hangs a marker off each sentence. Every marker resolves —
+        // the passages were genuinely supplied — so counting citations proves
+        // nothing. What is missing is any connection between the sentences and
+        // what those passages say.
+        scope.Llm.Answer =
+            "To make orange juice, peel the oranges and squeeze them [1]. Strain the juice "
+            + "through a fine-mesh sieve to remove the pulp [1].";
+
+        var (events, _) = await AskAsync(scope, new AskRequest
+        {
+            Question = "How do I make orange juice?",
+            FolderId = folderId,
+        });
+
+        var completed = Assert.IsType<ChatEvent.Completed>(events[^1]);
+
+        Assert.True(completed.IsRefusal);
+        Assert.Empty(completed.Citations);
+        Assert.DoesNotContain("sieve", completed.Content);
+    }
+
+    [Fact]
     public async Task An_answer_that_cites_one_real_passage_still_stands()
     {
         await using var scope = fixture.NewScope();

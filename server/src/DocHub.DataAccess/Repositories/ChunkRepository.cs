@@ -117,6 +117,16 @@ internal sealed class ChunkRepository(DocHubDbContext db) : IChunkRepository
 
         var vector = new Vector(queryEmbedding);
 
+        // Applied before the ordering so Postgres can still use the HNSW index
+        // for the sort. Chunks beyond the floor are not near-misses to be shown
+        // greyed out — they are the answer to "what is closest" for a question
+        // nothing here answers, and the caller must never see them.
+        if (query.MaxDistance is { } maxDistance)
+        {
+            candidates = candidates
+                .Where(chunk => chunk.Embedding.CosineDistance(vector) <= maxDistance);
+        }
+
         // Ordering by cosine distance is what lets Postgres use the HNSW index;
         // the similarity in the projection is only for display and does not
         // affect the plan.
