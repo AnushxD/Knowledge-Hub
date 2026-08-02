@@ -17,6 +17,7 @@ import {
   Folder,
   IngestionStatus,
   KnowledgeSource,
+  KnowledgeSourceSummary,
   LibraryStats,
   MatchStrategy,
   Person,
@@ -288,7 +289,11 @@ export class HttpKnowledgeGateway extends KnowledgeGateway {
     );
   }
 
-  knowledgeSources(): Observable<KnowledgeSource[]> {
+  knowledgeSourceStatuses(): Observable<KnowledgeSource[]> {
+    return this.http.get<KnowledgeSource[]>(`${this.base}/sources/status`);
+  }
+
+  knowledgeSources(): Observable<KnowledgeSourceSummary[]> {
     // Passed through as-is: the API already returns the three states and an
     // actionable detail line, and a client that reinterpreted them would be a
     // second place for "what does inactive mean" to drift.

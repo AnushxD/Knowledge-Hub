@@ -64,6 +64,10 @@ against the org's actual server — see "Blockers".
   throwaway database: wrong current and too-short new are both refused with the
   real reason, the session survives the change, the old password stops working,
   and the sixth attempt is a 429.
+- **The sources screen renders immediately.** It took ~3s with two remote MCP
+  servers configured, because every status is a handshake with a server
+  somewhere else (measured: 2.2–3.1s). Split into `/api/sources` (2–35ms, draws
+  the page) and `/api/sources/status` (unchanged, fills the badges).
 - **Test address speaks MCP**, not HTTP: it reports the server's tool list,
   which repositories it says it indexes, and which tool searching would pick,
   with a button to fill that field in. It tells "answered but not MCP" apart

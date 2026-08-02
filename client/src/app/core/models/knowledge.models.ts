@@ -303,10 +303,20 @@ export interface UploadTask {
 export type KnowledgeSourceState = 'active' | 'inactive' | 'unavailable';
 
 /** One body of knowledge the assistant may ground an answer in. */
-export interface KnowledgeSource {
+/**
+ * A source's identity, with no word on whether it is working.
+ *
+ * Fetched on its own because the state costs an MCP handshake per remote
+ * server — seconds — while this is already in hand. The screen draws from it
+ * and fills states in as they arrive.
+ */
+export interface KnowledgeSourceSummary {
   name: string;
   displayName: string;
   description: string;
+}
+
+export interface KnowledgeSource extends KnowledgeSourceSummary {
   state: KnowledgeSourceState;
   /** Why it is in that state, in one actionable sentence. */
   detail: string;

@@ -337,10 +337,17 @@
     }
 
     <p class="mt-5 text-[12px] text-subtle">
-      {{ activeCount() }} of {{ rows().length }}
-      {{ rows().length === 1 ? 'source is' : 'sources are' }} contributing to answers. A source that
-      fails mid-question is left out of that answer and named in the reply, rather than failing the
-      whole question.
+      <!-- Not a count until every source has answered: "0 of 3 contributing"
+           while the checks are still running would be false, and this line is
+           read as a summary of the ones above it. -->
+      @if (checkingStates()) {
+        Checking {{ rows().length }} {{ rows().length === 1 ? 'source' : 'sources' }}…
+      } @else {
+        {{ activeCount() }} of {{ rows().length }}
+        {{ rows().length === 1 ? 'source is' : 'sources are' }} contributing to answers.
+      }
+      A source that fails mid-question is left out of that answer and named in the reply, rather
+      than failing the whole question.
     </p>
   }
 </div>

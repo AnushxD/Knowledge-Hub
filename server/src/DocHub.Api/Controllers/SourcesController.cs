@@ -14,12 +14,24 @@ public sealed class SourcesController(
     IRepositorySourceAdmin repositorySource) : ControllerBase
 {
     /// <summary>
-    /// The bodies of knowledge the assistant may ground an answer in, and
-    /// whether each is contributing right now.
+    /// The bodies of knowledge the assistant may ground an answer in. Cheap —
+    /// no source is contacted; ask <c>status</c> for whether each is working.
     /// </summary>
     [HttpGet]
+    [ProducesResponseType<IReadOnlyList<KnowledgeSourceSummaryViewModel>>(StatusCodes.Status200OK)]
+    public async Task<IReadOnlyList<KnowledgeSourceSummaryViewModel>> List(CancellationToken ct) =>
+        await knowledge.ListSourcesAsync(ct);
+
+    /// <summary>
+    /// Each source's live state.
+    ///
+    /// Separate from the list because it costs an MCP handshake per remote
+    /// server — seconds, on a deployment with a couple of them — and the screen
+    /// has no reason to stay blank while that happens.
+    /// </summary>
+    [HttpGet("status")]
     [ProducesResponseType<IReadOnlyList<KnowledgeSourceViewModel>>(StatusCodes.Status200OK)]
-    public async Task<IReadOnlyList<KnowledgeSourceViewModel>> List(CancellationToken ct) =>
+    public async Task<IReadOnlyList<KnowledgeSourceViewModel>> Status(CancellationToken ct) =>
         await knowledge.DescribeSourcesAsync(ct);
 
     // ---- repository source administration -----------------------------------

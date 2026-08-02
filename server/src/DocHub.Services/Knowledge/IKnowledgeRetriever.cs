@@ -27,9 +27,26 @@ public interface IKnowledgeRetriever
         CancellationToken ct = default);
 
     /// <summary>
+    /// Which sources exist, without asking any of them how they are.
+    ///
+    /// Costs nothing beyond reading the table, so the sources screen renders
+    /// from this and then fills in states from
+    /// <see cref="DescribeSourcesAsync"/>. Splitting the two is the difference
+    /// between a screen that appears at once and one that waits on the slowest
+    /// server in the deployment.
+    /// </summary>
+    Task<IReadOnlyList<KnowledgeSourceSummaryViewModel>> ListSourcesAsync(
+        CancellationToken ct = default);
+
+    /// <summary>
     /// Each source and its current state, for the sources screen. Reports
     /// rather than searches — a screen that had to ask a question to draw
     /// itself would be both slow and misleading.
+    ///
+    /// One MCP handshake per remote server, so this takes as long as the
+    /// slowest of them. Deliberately not cached: the screen exists to say
+    /// whether a source is working *now*, and a remembered "active" for a
+    /// server that has since died is the one answer it must never give.
     /// </summary>
     Task<IReadOnlyList<KnowledgeSourceViewModel>> DescribeSourcesAsync(
         CancellationToken ct = default);

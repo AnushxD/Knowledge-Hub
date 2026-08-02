@@ -238,6 +238,12 @@ Recorded so they are not re-litigated. Each is a trade already reasoned through.
   source. A second database-backed source must run sequentially with it.
 - `KnowledgeSourceState` has three values, not a boolean: `inactive` (off by
   design) must not render like `unavailable` (should work, doesn't).
+- **Listing sources and checking them are separate calls.** A state costs an
+  MCP handshake per remote server — seconds — while the list is a table read.
+  `/api/sources` draws the screen, `/api/sources/status` fills the badges in,
+  and until one arrives a row says "Checking…" rather than borrowing one of the
+  three real states. Statuses are deliberately not cached: the screen exists to
+  say whether a source works *now*.
 - **Repository servers are data, not configuration.** `repository_source_settings`
   *is* the list of them, added and removed in the UI, one knowledge source each.
   Which code a team searches changes as the team's code moves; that is

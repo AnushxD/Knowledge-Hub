@@ -241,6 +241,19 @@ public record ChangeRoleRequest
 
 // ---- knowledge sources ------------------------------------------------------
 
+/// <summary>
+/// A source's identity, with no word on whether it is working.
+///
+/// Separate from <see cref="KnowledgeSourceViewModel"/> because the two cost
+/// wildly different amounts: the identity is already in hand, while the state
+/// is a round trip to every remote server. Sent on its own so the screen can
+/// draw itself immediately and fill the states in as they arrive.
+/// </summary>
+public record KnowledgeSourceSummaryViewModel(
+    string Name,
+    string DisplayName,
+    string Description);
+
 /// <summary>One body of knowledge the assistant can ground an answer in.</summary>
 /// <param name="Name">Stable identifier, matching what appears in the logs.</param>
 /// <param name="State">

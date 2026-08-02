@@ -85,6 +85,23 @@ internal sealed class CompositeKnowledgeSource(
         return new GroundingResult(passages, degradations);
     }
 
+    public async Task<IReadOnlyList<KnowledgeSourceSummaryViewModel>> ListSourcesAsync(
+        CancellationToken ct = default)
+    {
+        var sources = await catalog.ResolveAsync(ct);
+
+        // Ordered by name, and by name in both phases: the states arrive a
+        // second or two later, and re-sorting the list under someone who has
+        // started reading it is worse than not leading with the problems.
+        return
+        [
+            .. sources
+                .Select(source => new KnowledgeSourceSummaryViewModel(
+                    source.Name, source.DisplayName, source.Description))
+                .OrderBy(source => source.DisplayName, StringComparer.OrdinalIgnoreCase),
+        ];
+    }
+
     public async Task<IReadOnlyList<KnowledgeSourceViewModel>> DescribeSourcesAsync(
         CancellationToken ct = default)
     {
@@ -130,19 +147,13 @@ internal sealed class CompositeKnowledgeSource(
                 status.Detail);
         }));
 
-        // Working sources first, then anything needing attention, rather than
-        // whatever order dependency injection happened to hand over. The screen
-        // is read top-down to answer "what is grounding my answers right now".
+        // The same order as ListSourcesAsync, so the screen can match these on
+        // to rows it has already drawn without anything moving. Sorting by
+        // state was the older behaviour, from when this was the only call and
+        // nothing had been rendered yet.
         return
         [
-            .. described
-                .OrderBy(source => source.State switch
-                {
-                    "active" => 0,
-                    "inactive" => 1,
-                    _ => 2,
-                })
-                .ThenBy(source => source.DisplayName, StringComparer.OrdinalIgnoreCase)
+            .. described.OrderBy(source => source.DisplayName, StringComparer.OrdinalIgnoreCase),
         ];
     }
 

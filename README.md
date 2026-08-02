@@ -1006,7 +1006,8 @@ requests are same-origin and CORS never applies.
 | `GET` | `/api/chat/sessions` | Conversation history |
 | `GET` | `/api/chat/sessions/{id}` | One conversation with citations |
 | `DELETE` | `/api/chat/sessions/{id}` | Delete a conversation |
-| `GET` | `/api/sources` | Knowledge sources the assistant may ground answers in, and each one's state |
+| `GET` | `/api/sources` | Knowledge sources the assistant may ground answers in. Contacts nothing, so it answers instantly |
+| `GET` | `/api/sources/status` | Each source's live state. One MCP handshake per remote server, so it takes as long as the slowest |
 | `GET`/`POST` | `/api/sources/repositories` | The MCP repository servers, and adding one (Admin only) |
 | `GET`/`PUT`/`DELETE` | `/api/sources/repositories/{name}` | One server. PUT changes everything but its name; DELETE removes it (Admin only) |
 | `POST` | `/api/sources/repositories/test` | Check an address answers before adding it (Admin only) |

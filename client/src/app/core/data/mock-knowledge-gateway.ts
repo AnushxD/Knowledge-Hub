@@ -19,6 +19,7 @@ import {
   Folder,
   IngestionStatus,
   KnowledgeSource,
+  KnowledgeSourceSummary,
   LibraryStats,
   Person,
   RepositoryProbe,
@@ -1202,29 +1203,46 @@ export class MockKnowledgeGateway extends KnowledgeGateway {
     }).pipe(delay(400));
   }
 
-  knowledgeSources(): Observable<KnowledgeSource[]> {
-    // Mirrors what a default local deployment really reports, including the
-    // inactive repository source. A mock that showed everything green would
-    // make the screen look finished while hiding the state it exists to show.
-    return of<KnowledgeSource[]>([
-      {
-        name: 'documents',
-        displayName: 'Documents',
-        description: 'Everything uploaded to the hub, searched by keyword and by meaning together.',
-        state: 'active',
-        detail:
-          'Searched on every question. Only documents that finished ingestion are retrievable — anything still processing or failed is neither searchable nor citable.',
-      },
-      {
-        name: 'repositories',
-        displayName: 'Repositories',
-        description: "Source code and READMEs from the team's repositories, reached over MCP.",
-        state: 'inactive',
-        detail:
-          'No repository servers have been added, so answers are grounded in documents only. An administrator can add one on this screen.',
-      },
-    ]).pipe(delay(120));
+  knowledgeSources(): Observable<KnowledgeSourceSummary[]> {
+    // Instant, as the API is: this call contacts nothing.
+    return of<KnowledgeSourceSummary[]>(
+      MockKnowledgeGateway.Sources.map(({ name, displayName, description }) => ({
+        name,
+        displayName,
+        description,
+      })),
+    ).pipe(delay(40));
   }
+
+  knowledgeSourceStatuses(): Observable<KnowledgeSource[]> {
+    // Slow on purpose — a real deployment pays an MCP handshake per remote
+    // server here, and the screen has to stay usable while it does.
+    return of<KnowledgeSource[]>(MockKnowledgeGateway.Sources).pipe(delay(1800));
+  }
+
+  /**
+   * Mirrors what a default local deployment really reports, including the
+   * inactive repository source. A mock that showed everything green would make
+   * the screen look finished while hiding the state it exists to show.
+   */
+  private static readonly Sources: KnowledgeSource[] = [
+    {
+      name: 'documents',
+      displayName: 'Documents',
+      description: 'Everything uploaded to the hub, searched by keyword and by meaning together.',
+      state: 'active',
+      detail:
+        'Searched on every question. Only documents that finished ingestion are retrievable — anything still processing or failed is neither searchable nor citable.',
+    },
+    {
+      name: 'repositories',
+      displayName: 'Repositories',
+      description: "Source code and READMEs from the team's repositories, reached over MCP.",
+      state: 'inactive',
+      detail:
+        'No repository servers have been added, so answers are grounded in documents only. An administrator can add one on this screen.',
+    },
+  ];
 
   chatSessions(): Observable<ChatSession[]> {
     return this.read(() => []);

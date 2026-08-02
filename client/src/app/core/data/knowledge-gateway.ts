@@ -13,6 +13,7 @@ import {
   DocumentSummary,
   Folder,
   KnowledgeSource,
+  KnowledgeSourceSummary,
   LibraryStats,
   Person,
   RepositoryProbe,
@@ -122,7 +123,14 @@ export abstract class KnowledgeGateway {
    * each is contributing right now. Reported rather than searched — the screen
    * must not have to ask a question to draw itself.
    */
-  abstract knowledgeSources(): Observable<KnowledgeSource[]>;
+  abstract knowledgeSources(): Observable<KnowledgeSourceSummary[]>;
+
+  /**
+   * Each source's live state. Separate from the list because it costs a round
+   * trip to every remote server, and the screen should not wait on that to
+   * appear.
+   */
+  abstract knowledgeSourceStatuses(): Observable<KnowledgeSource[]>;
 
   // ---- repository source administration (Admin only; the API enforces it) ---
 
