@@ -3,8 +3,8 @@
 Session state only. Architecture, conventions, design decisions and workflow
 live in `CLAUDE.md` and are not repeated here.
 
-**Last updated:** 2026-08-01 · **Branch:** `main`, clean and pushed · **Tests:** 205 green
-(17 Api · 42 Integrations · 17 DataAccess · 129 Services)
+**Last updated:** 2026-08-02 · **Branch:** `main`, clean and pushed · **Tests:** 205 green
+(17 Api · 42 Integrations · 17 DataAccess · 129 Services) · **CI:** green
 
 ---
 
@@ -133,10 +133,10 @@ Nothing. Working tree clean, everything pushed.
 **Behaviour**
 - Local generation is slow — roughly 5–15 tok/s on CPU. A GPU is the single
   biggest difference to how the assistant feels.
-- Citation reliability after the `num_ctx` fix has not been re-judged. That fix
-  meant the 3B model could see all six passages for the first time; whether it
-  is still the weak link is an open question. `llama3.1:8b` and `qwen2.5:7b`
-  follow the format better if it is.
+- **`llama3.2:3b` is the weak link and the decision is taken** — see Next steps
+  item 1. It writes uncited sentences beside cited ones and invents reference
+  lists, which no amount of post-hoc verification can repair. Four guards now
+  sit between it and the screen; the fifth fix is a better model.
 
 **Unproven, not unbuilt**
 - **IIS runs it, with two settings still untested.** The site was deployed to
@@ -183,7 +183,36 @@ Nothing. Working tree clean, everything pushed.
 
 ## Next steps
 
-### 1. Finish proving the IIS host
+### 1. Move the answer model to `qwen2.5:7b` — decided
+
+The assistant still fabricates, and four grounding guards have not stopped it
+because the problem is upstream of them: `llama3.2:3b` does not follow the
+instruction it is given. Asked "arsenal" it produced one cited sentence, three
+uncited ones from its own training, and an invented **References** block naming
+Wikipedia and BBC Sport — sources that exist nowhere in this system.
+
+```bash
+docker compose exec ollama ollama pull qwen2.5:7b
+```
+
+Then set `Llm:Model` to `qwen2.5:7b` and restart the API. Nothing is re-indexed:
+generation and retrieval are separate, and the embedding model is untouched.
+
+- **Size** 4.7 GB, against 2.0 GB for `llama3.2:3b` (Ollama registry, Q4_K_M).
+  Keep both while comparing; `ollama rm llama3.2:3b` afterwards.
+- **Speed** roughly 2–2.5× slower on CPU, so a 10s answer becomes 20–25s.
+  `Llm:KeepAlive` is already 30m, so the larger load is paid once.
+- **Why this one** slightly smaller and faster than `llama3.1:8b`, which is the
+  fallback if it still misbehaves.
+- **How to judge it** re-ask the two questions that exposed the fabrications:
+  "how to make orange juice" should refuse outright, and "arsenal" should either
+  answer only from the live-score passage or refuse. An answer with uncited
+  sentences or an invented reference list means the model is still the problem.
+- **The real fix for speed** is Ollama natively rather than in Docker: Docker on
+  macOS cannot reach Metal, so it is CPU-only whatever the model. See
+  "Answers take tens of seconds" in `README.md`.
+
+### 2. Finish proving the IIS host
 
 It is deployed, people can sign in, and answers stream. What is left is the two
 checks under **Unproven, not unbuilt** above — a large upload, and a session
@@ -193,20 +222,18 @@ one-line fix in `web.config` or the environment if it does not.
 The **Hosting on the org Windows machine (IIS)** section of `README.md` is the
 runbook, including where those settings live.
 
-### 2. Point the MCP client at the org's two servers
+### 3. Point the MCP client at the org's two servers
 
-The client is written and tested and now searches a list of servers rather than
-one. What remains is configuration and one round of reality.
+Adding them is now a UI action, and the client adapts to whatever they declare.
 
-1. **Add both from the UI**, on **Knowledge sources**. No configuration step:
-   `RepositoryProvider` defaults to `mcp`. Search tool is `search_codebase` for
-   both — the one tool of the 13 with "search" in its name, so discovery would
-   find it anyway, but naming it stops a future `search_docs` quietly taking
-   over. **Test address** confirms the tool list before saving.
-2. **Check the input schema first.** We call the tool with `query` and
-   `maxResults`. If it names them differently the call fails outright — a
-   `tools/list` against either server settles it, and the change is two keys in
-   `SearchAsync`.
+1. **Add both on Knowledge sources.** No configuration step —
+   `RepositoryProvider` defaults to `mcp`. Set the search tool to
+   `search_codebase` on each: it is the one tool of the 13 with "search" in its
+   name, so discovery would find it anyway, but naming it stops a future
+   `search_docs` quietly taking over. **Test address** reports the live tool
+   list before you save.
+2. ~~Check the argument names.~~ Handled: arguments are read from the tool's own
+   input schema, so a tool taking `q` is sent `q`.
 3. **Confirm `search_codebase` returns verbatim source text**, not summaries.
    The assistant cites what it is handed, so a summarising server would have it
    quoting text that exists nowhere. This cannot be detected from our side.
@@ -218,10 +245,22 @@ one. What remains is configuration and one round of reality.
    is the first genuine test of the failure isolation, which names the missing
    source on the answer itself, and now names *which* of the two it was.
 
-### 3. Smaller, whenever
+### 4. Undecided, raised and not acted on
 
-- Re-judge answer quality on `llama3.2:3b` now that the context window is right;
-  upgrade the model only if it is still weak.
+- **The search screen does not search MCP sources.** Measured: "arsenal" gives
+  the assistant a passage and the Search screen zero results. Search is
+  documents-only because its results link to `/docs/:id?chunk=n` and an MCP
+  passage has no document — but the Sources screen presents those servers as
+  sources, so the split surprises people.
+- **A sentence-level grounding guard**: refuse when most sentences carry no
+  verified marker. Deferred deliberately in favour of changing the model first —
+  a fourth guard on a model that ignores its instructions is the wrong layer.
+- **Every question pays an MCP handshake per server** (~2–3s each, measured, in
+  parallel). Fixing it means caching connections, which reverses the deliberate
+  "a client per operation" decision.
+- **Reset a forgotten local password.** `sanush@carestack.com` was requested but
+  is not in the local database, which holds `dev@dochub.local`,
+  `admin@documenthub.local`, `vera@dochub.local` and `anush@test.com`.
 - Revisit vector-store scale — HNSW parameters and whether pgvector still fits.
 - Pick a registry if images should be pushed.
 
@@ -239,7 +278,11 @@ one. What remains is configuration and one round of reality.
 
 ## Edge cases already handled — do not re-solve
 
-Empty retrieval refusal · fabricated citation markers · vector-branch outage
+Empty retrieval refusal · fabricated citation markers · an answer that cites
+nothing verifiable · a citation whose passage says nothing about the sentence ·
+a source echoing the query back as if it were agreement · a retrieved passage
+that is merely the nearest of many bad ones · a server's "nothing matched" read
+as content · vector-branch outage
 degrading to keyword-only · `DbContext` concurrency across search branches · SSE
 validation before headers · unresolved markers rendered as plain text · a
 knowledge source failing mid-question · a source that never replies · duplicate
@@ -253,15 +296,25 @@ the row action menu clipped on the last list item.
 
 ## Context recovery prompt
 
-> Read `CLAUDE.md` then `SESSION.md` at the repo root before doing anything else.
-> This is DocHub — an ASP.NET Core + Angular documentation hub with local-Ollama
-> RAG. **v1 is complete**: roadmap phases 1–6 are done, tested and pushed to
-> `main` — do not re-analyse or rebuild them. All 156 tests pass. `CLAUDE.md`
-> holds the architecture, design decisions, conventions and workflow and is
-> authoritative; `SESSION.md` holds current state. **Phase 7, the real MCP
-> client, is built and tested against an in-process MCP server** — what remains
-> is pointing it at the org's server, whose tool schema and auth are unknown.
-> Follow "Next steps" in `SESSION.md`.
-> Respect the grounding, security and layering rules in `CLAUDE.md`. Build and
-> test before each commit, and commit + push each finished chunk to `main`
-> without asking.
+> Read `CLAUDE.md` then `SESSION.md` at the repo root before doing anything
+> else. This is Document Hub — an ASP.NET Core 10 + Angular 22 documentation
+> hub with local-Ollama RAG, deployed on the org's Windows machine under IIS.
+> `CLAUDE.md` is authoritative for architecture, design decisions, conventions
+> and workflow; `SESSION.md` is current state. **v1 and phase 7 are complete —
+> do not re-analyse or rebuild them.** 205 tests pass, `main` is clean and
+> pushed, and CI is green.
+>
+> **Start with "Next steps" item 1: move the answer model to `qwen2.5:7b`.**
+> That decision is already made — pull it, set `Llm:Model`, restart, then judge
+> it by re-asking "how to make orange juice" (must refuse) and "arsenal" (must
+> answer only from the retrieved passage, or refuse). The reason is in that
+> section: `llama3.2:3b` writes uncited sentences and invents reference lists,
+> and four grounding guards have not fixed what is a model problem.
+>
+> Respect the grounding, security and layering rules in `CLAUDE.md` — in
+> particular that an answer is refused rather than shown when it cannot be tied
+> to retrieved passages. Verify with `dotnet build`, `dotnet test` and a client
+> typecheck before each commit, commit and push each finished chunk to `main`
+> without asking, and **check CI after pushing** — the container-image job runs
+> only on the server and was red for thirteen runs without anyone noticing.
+> Docker must be up: `docker compose up -d --wait`.
