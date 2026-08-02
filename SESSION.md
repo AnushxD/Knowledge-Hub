@@ -3,8 +3,8 @@
 Session state only. Architecture, conventions, design decisions and workflow
 live in `CLAUDE.md` and are not repeated here.
 
-**Last updated:** 2026-08-02 · **Branch:** `main`, clean and pushed · **Tests:** 205 green
-(17 Api · 42 Integrations · 17 DataAccess · 129 Services) · **CI:** green
+**Last updated:** 2026-08-02 · **Branch:** `main`, clean and pushed · **Tests:** 207 green
+(17 Api · 42 Integrations · 17 DataAccess · 131 Services) · **CI:** green
 
 ---
 
@@ -89,6 +89,30 @@ against the org's actual server — see "Blockers".
   searchable. Only `search`-style tools are usable — `get_answer` and the
   analysis tools return no passage a citation could point at.
 
+- **The answer model is `qwen2.5:7b`.** `llama3.2:3b` is removed. Judged against
+  the two questions that exposed the fabrications, and the result is a genuine
+  improvement that does not go all the way:
+  - "how to make orange juice" — **refuses, reliably**, and refuses *itself*,
+    emitting the refusal phrase rather than being converted into one by a guard.
+    The 3B, re-measured the same day, wrote a full recipe from its own training,
+    kept one citation through verification and had it **shown as a grounded
+    answer**. That was the catastrophic case and it is fixed.
+  - "arsenal" — **still answered rather than refused, three runs out of three**,
+    each padding passage content with sentences from training (Arsène Wenger, a
+    volcano in Costa Rica). Uncited sentences beside cited ones is the original
+    complaint about the 3B, and a 7B does not fix it.
+  - Cost, measured: prompt evaluation roughly halves, 101–111 tok/s → 50–58
+    tok/s, and it dominates — about 70s of a 110s answer is reading the prompt,
+    not writing the answer. Reload after an idle spell is ~8s, against ~3s.
+- **A citation marker after the full stop was never really checked.** The
+  support check judged it against the empty span between the punctuation and the
+  marker, and a citation with nothing to weigh is kept by default. `qwen2.5:7b`
+  closed an answer with an invented footnote — `[1] This response is based on
+  common associations` — which passed as verified and carried a wholly fabricated
+  answer onto the screen. A trailing marker is now judged on the sentence it
+  follows, which is where the prompt says it may sit. The short-sentence
+  exemption that protects "Yes [1]." is unchanged.
+
 **It is deployed.** As of 2026-08-01 the site runs on the org Windows machine
 under IIS: people sign in and the assistant streams — the half of phase 6 that
 had only ever been simulated. Two of its settings still have not been exercised
@@ -131,12 +155,19 @@ Nothing. Working tree clean, everything pushed.
 ## Known issues
 
 **Behaviour**
-- Local generation is slow — roughly 5–15 tok/s on CPU. A GPU is the single
-  biggest difference to how the assistant feels.
-- **`llama3.2:3b` is the weak link and the decision is taken** — see Next steps
-  item 1. It writes uncited sentences beside cited ones and invents reference
-  lists, which no amount of post-hoc verification can repair. Four guards now
-  sit between it and the screen; the fifth fix is a better model.
+- Local generation is slow, and slower since the model change — prompt
+  evaluation measured at 50–58 tok/s on CPU, and it is the larger half of the
+  wait. A GPU is still the single biggest difference to how the assistant feels.
+- **A better model was not the whole fix.** `qwen2.5:7b` refuses an off-topic
+  question outright, which `llama3.2:3b` did not, but it still pads a thin answer
+  with uncited sentences drawn from training — measured on "arsenal", three runs
+  out of three. Changing the model was the experiment `CLAUDE.md` asked for
+  before adding a sentence-level guard; it has now been run, and the answer is
+  that the guard is still the missing piece. See Next steps item 1.
+- **The answer model needs ~6 GB resident** at `ContextTokens: 8192`. On the
+  Mac's 7.75 GB Docker VM the runner was **OOM-killed** (`signal: killed`) while
+  a second answer model was still loaded on its 30m keep-alive. One answer model
+  at a time, or give Docker more memory. `llama3.1:8b` would be tighter still.
 
 **Unproven, not unbuilt**
 - **IIS runs it, with two settings still untested.** The site was deployed to
@@ -178,39 +209,46 @@ Nothing. Working tree clean, everything pushed.
   (password `viewer-local-dev-pw`), an "Activity Demo" folder, and ~5 test
   documents (`vpn-guide.md`, `runbook.pdf`, `expense-policy.docx`, duplicates).
   All harmless; delete if unwanted.
+- **The seeded admin's password is not the one in `appsettings.Development.json`.**
+  `dev@dochub.local` refuses `SeedAdminPassword`, so it has been changed since it
+  was seeded. `dotnet run -- seed-admin` resets it — it is idempotent and is the
+  documented recovery path — but it invalidates that user's existing sessions, so
+  it was left alone; `vera@dochub.local` was used for verification instead.
+- Verifying against a spare port needs `--no-launch-profile`: `launchSettings.json`
+  pins `applicationUrl` to 5080 and silently overrides `ASPNETCORE_URLS`.
 
 ---
 
 ## Next steps
 
-### 1. Move the answer model to `qwen2.5:7b` — decided
+### 1. The sentence-level grounding guard — now the missing piece
 
-The assistant still fabricates, and four grounding guards have not stopped it
-because the problem is upstream of them: `llama3.2:3b` does not follow the
-instruction it is given. Asked "arsenal" it produced one cited sentence, three
-uncited ones from its own training, and an invented **References** block naming
-Wikipedia and BBC Sport — sources that exist nowhere in this system.
+Deferred once already, deliberately, in favour of changing the model first. That
+experiment has been run: `qwen2.5:7b` is a real improvement — an off-topic
+question is now refused outright instead of answered — but asked "arsenal" it
+still writes uncited sentences from its own training beside the cited ones,
+three runs out of three, and the answer is shown.
 
-```bash
-docker compose exec ollama ollama pull qwen2.5:7b
-```
+The remaining hole is that **one surviving citation is enough** to satisfy the
+cites-nothing refusal, however much of the answer around it is uncited. The
+guard would refuse when most sentences carry no verified marker, rather than
+when none do.
 
-Then set `Llm:Model` to `qwen2.5:7b` and restart the API. Nothing is re-indexed:
-generation and retrieval are separate, and the embedding model is untouched.
+Two things to weigh before building it, both of which argue for keeping it
+crude:
 
-- **Size** 4.7 GB, against 2.0 GB for `llama3.2:3b` (Ollama registry, Q4_K_M).
-  Keep both while comparing; `ollama rm llama3.2:3b` afterwards.
-- **Speed** roughly 2–2.5× slower on CPU, so a 10s answer becomes 20–25s.
-  `Llm:KeepAlive` is already 30m, so the larger load is paid once.
-- **Why this one** slightly smaller and faster than `llama3.1:8b`, which is the
-  fallback if it still misbehaves.
-- **How to judge it** re-ask the two questions that exposed the fabrications:
-  "how to make orange juice" should refuse outright, and "arsenal" should either
-  answer only from the live-score passage or refuse. An answer with uncited
-  sentences or an invented reference list means the model is still the problem.
-- **The real fix for speed** is Ollama natively rather than in Docker: Docker on
-  macOS cannot reach Metal, so it is CPU-only whatever the model. See
-  "Answers take tens of seconds" in `README.md`.
+- The support check is deliberately weak and exempts a sentence with fewer than
+  three substantial words. That is what protects "Yes [1].", and it is also why
+  a short list item like "Arendal in Norway [2]" keeps a citation it has not
+  earned. A sentence-level count inherits that weakness.
+- The cost of a false refusal is a real answer withheld. `CLAUDE.md`'s first
+  product goal already chose that trade, but the threshold should be measured
+  against real answers rather than picked.
+
+`llama3.1:8b` remains the untried alternative. It is **larger** than the current
+model, and the Mac's 7.75 GB Docker VM already OOM-killed a 7B with a second
+model resident — so it needs more Docker memory, or Ollama natively, before it
+is worth an hour of downloading.
 
 ### 2. Finish proving the IIS host
 
@@ -252,9 +290,6 @@ Adding them is now a UI action, and the client adapts to whatever they declare.
   documents-only because its results link to `/docs/:id?chunk=n` and an MCP
   passage has no document — but the Sources screen presents those servers as
   sources, so the split surprises people.
-- **A sentence-level grounding guard**: refuse when most sentences carry no
-  verified marker. Deferred deliberately in favour of changing the model first —
-  a fourth guard on a model that ignores its instructions is the wrong layer.
 - **Every question pays an MCP handshake per server** (~2–3s each, measured, in
   parallel). Fixing it means caching connections, which reverses the deliberate
   "a client per operation" decision.
@@ -280,7 +315,8 @@ Adding them is now a UI action, and the client adapts to whatever they declare.
 
 Empty retrieval refusal · fabricated citation markers · an answer that cites
 nothing verifiable · a citation whose passage says nothing about the sentence ·
-a source echoing the query back as if it were agreement · a retrieved passage
+a model's invented footnote counted as a verified citation · a source echoing
+the query back as if it were agreement · a retrieved passage
 that is merely the nearest of many bad ones · a server's "nothing matched" read
 as content · vector-branch outage
 degrading to keyword-only · `DbContext` concurrency across search branches · SSE
@@ -301,15 +337,21 @@ the row action menu clipped on the last list item.
 > hub with local-Ollama RAG, deployed on the org's Windows machine under IIS.
 > `CLAUDE.md` is authoritative for architecture, design decisions, conventions
 > and workflow; `SESSION.md` is current state. **v1 and phase 7 are complete —
-> do not re-analyse or rebuild them.** 205 tests pass, `main` is clean and
+> do not re-analyse or rebuild them.** 207 tests pass, `main` is clean and
 > pushed, and CI is green.
 >
-> **Start with "Next steps" item 1: move the answer model to `qwen2.5:7b`.**
-> That decision is already made — pull it, set `Llm:Model`, restart, then judge
-> it by re-asking "how to make orange juice" (must refuse) and "arsenal" (must
-> answer only from the retrieved passage, or refuse). The reason is in that
-> section: `llama3.2:3b` writes uncited sentences and invents reference lists,
-> and four grounding guards have not fixed what is a model problem.
+> **Start with "Next steps" item 1: the sentence-level grounding guard.** The
+> answer model is already `qwen2.5:7b` and `llama3.2:3b` is gone — that swap is
+> done, do not redo it. It fixed the worst case ("how to make orange juice" is
+> refused outright) but not the one that matters most: asked "arsenal" the model
+> still pads passage content with uncited sentences from its own training, and a
+> single surviving citation is enough to get the whole answer shown. Changing the
+> model was the experiment that had to come first, and it has been run.
+>
+> Judge any change with those same two questions, against a spare port —
+> `dotnet run --project server/src/DocHub.Api --no-build --no-launch-profile
+> --urls http://localhost:5099`, since `launchSettings.json` otherwise pins 5080,
+> where a user-run API may already be listening.
 >
 > Respect the grounding, security and layering rules in `CLAUDE.md` — in
 > particular that an answer is refused rather than shown when it cannot be tied

@@ -125,11 +125,16 @@ image, so pull them once:
 docker compose exec ollama ollama pull nomic-embed-text
 ```
 ```bash
-docker compose exec ollama ollama pull llama3.2:3b
+docker compose exec ollama ollama pull qwen2.5:7b
 ```
 
-About 2.3 GB in total, with no API key or account needed. Everything stays on
+About 5 GB in total, with no API key or account needed. Everything stays on
 your machine — neither your documents nor your questions are sent anywhere.
+
+Give Docker enough memory for the answer model: it needs roughly 6 GB resident
+at the default context size, and a runner that cannot fit is killed outright
+rather than slowed down. If you have another answer model still loaded from a
+previous session, `docker compose exec ollama ollama stop <model>` frees it.
 
 On CPU-only Docker expect the assistant to produce roughly 5–15 tokens a
 second, so an answer streams in over several seconds. That is the cost of
@@ -397,7 +402,7 @@ Key settings, one strongly-typed Options class per external dependency:
 | `Ingestion:TargetTokens` | Chunk size target (default 800) |
 | `Ingestion:OverlapTokens` | Tokens repeated between chunks (default 120) |
 | `Llm:Provider` | `ollama` — the model that writes answers |
-| `Llm:Model` | Answer model (default `llama3.2:3b`) |
+| `Llm:Model` | Answer model (default `qwen2.5:7b`) |
 | `Llm:Temperature` | Low by default (0.1); sampling variety is how a model starts inventing |
 | `Llm:ContextTokens` | Context window offered to the model (default 8192). Ollama's own default is 2048 and it discards the overflow silently — too low and the assistant answers without seeing the passages it was told to cite |
 | `Llm:KeepAlive` | How long Ollama keeps the answer model in memory (default `30m`, `-1` for always). Ollama's own default is 5 minutes, so the first question after a quiet spell pays a full reload first |
@@ -535,7 +540,7 @@ dotnet ef database update --project server/src/DocHub.DataAccess --startup-proje
 dotnet run --project server/src/DocHub.Api -- init-storage
 ```
 ```bash
-docker compose exec ollama ollama pull nomic-embed-text && docker compose exec ollama ollama pull llama3.2:3b
+docker compose exec ollama ollama pull nomic-embed-text && docker compose exec ollama ollama pull qwen2.5:7b
 ```
 
 **Re-index a document** after it fails, or after changing the chunking
@@ -700,7 +705,7 @@ put the files:
 ollama pull nomic-embed-text
 ```
 ```powershell
-ollama pull llama3.2:3b
+ollama pull qwen2.5:7b
 ```
 
 #### 3. Create the database
@@ -1056,7 +1061,24 @@ says which one:
 - `no migrations have been applied` → run step 4
 - `container does not exist` → run step 5
 - `the 'nomic-embed-text' model is not installed` → run step 6
-- `the 'llama3.2:3b' model is not installed` → run step 6
+- `the 'qwen2.5:7b' model is not installed` → run step 6
+
+### The model pull stops short of finishing
+
+`ollama pull` downloads in parallel parts and one of them can stall near the
+end — the command keeps running, the blob stays `-partial`, and `ollama list`
+never shows the model. Interrupt it and run the same pull again: it resumes from
+the parts already on disk rather than starting over.
+
+### The assistant fails with "model runner has unexpectedly stopped"
+
+Or `llama-server process has terminated: signal: killed`. The runner was killed
+for want of memory, not a bug in the model. The answer model needs roughly 6 GB
+resident at the default `Llm:ContextTokens`, and a second answer model left
+loaded on its keep-alive is enough to push it over. `ollama ps` shows what is
+resident and `ollama stop <model>` frees it; otherwise give Docker more memory
+or lower `Llm:ContextTokens` — and `Chat:PassageCount` with it, or the prompt
+simply overflows again.
 
 ### Answers take tens of seconds
 
@@ -1065,16 +1087,17 @@ rest is Ollama reading the prompt and writing the answer. The log line after
 every answer says which:
 
 ```
-Answered with ollama/llama3.2:3b: load 3030ms, prompt 862 tokens in 5056ms (170 tok/s), generated 85 tokens in 4604ms
+Answered with ollama/qwen2.5:7b: load 131ms, prompt 4098 tokens in 72593ms (56 tok/s), generated 287 tokens in 36533ms
 ```
 
 Read it in this order:
 
 - **`load` is non-zero** — the model was evicted and reloaded before answering.
   Ollama's default is to unload after 5 minutes idle, so the first question
-  after a quiet spell pays it. `Llm:KeepAlive` and `Embeddings:KeepAlive`
-  default to `30m` to avoid this; raise them, or `-1` to keep models loaded.
-- **`prompt … tok/s` is low (roughly 100–200)** — inference is on the CPU. This
+  after a quiet spell pays it — measured at about 8 seconds for this model.
+  `Llm:KeepAlive` and `Embeddings:KeepAlive` default to `30m` to avoid this;
+  raise them, or `-1` to keep models loaded.
+- **`prompt … tok/s` is low (roughly 50–200)** — inference is on the CPU. This
   is the big one, and it is hardware, not configuration:
 
   | Where Ollama runs | GPU |

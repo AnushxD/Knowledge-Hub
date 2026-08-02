@@ -142,7 +142,7 @@ internal sealed class OllamaLlmProvider(
                 .Select(model => model.Name ?? string.Empty)
                 .ToList() ?? [];
 
-            // Ollama reports "llama3.2:3b" exactly as pulled, but a model pulled
+            // Ollama reports "qwen2.5:7b" exactly as pulled, but a model pulled
             // without a tag comes back as ":latest" — compare on the name.
             var hasModel = installed.Any(name =>
                 name.Equals(options.Model, StringComparison.OrdinalIgnoreCase) ||

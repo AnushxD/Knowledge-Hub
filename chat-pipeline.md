@@ -494,7 +494,7 @@ posts to Ollama's `/api/chat` with `stream: true`:
 
 ```json
 {
-  "model": "llama3.2:3b",
+  "model": "qwen2.5:7b",
   "messages": [
     { "role": "system", "content": "<the grounded prompt>" },
     { "role": "user",   "content": "<earlier question>" },
@@ -554,13 +554,15 @@ flowchart TD
     G -->|no| H["discarded"]
     G -->|yes| I{"already seen?"}
     I -->|yes| H
-    I -->|no| J["Citation(marker, kind, title, heading,<br/>documentId?, chunkId?, url?, sourceName?)"]
+    I -->|no| S{"does the passage support<br/>the sentence citing it?<br/>(a trailing marker is judged<br/>on the sentence it follows)"}
+    S -->|no| H
+    S -->|yes| J["Citation(marker, kind, title, heading,<br/>documentId?, chunkId?, url?, sourceName?)"]
 
     J --> K["order by marker"]
     H --> L["StripUnresolvedMarkers<br/>deletes them from the text"]
     K --> L
     L --> M{"citations empty?"}
-    M -->|yes| M1["log warning:<br/>'cited nothing verifiable'"]
+    M -->|yes| M1["log warning, then<br/>IsRefusal = true<br/>text replaced by the refusal"]
     M -->|no| N["persist"]
     M1 --> N
     D --> N
@@ -580,6 +582,15 @@ better supported than it is. So markers outside range are dropped from the
 citation list *and* deleted from the answer text by
 [`StripUnresolvedMarkers`](server/src/DocHub.Services/Chat/GroundedPrompt.cs:153).
 An unfollowable citation never reaches the screen.
+
+**A marker that resolves is still checked against the sentence citing it.** The
+range check proves the marker points at a passage the model was given, not that
+the passage has anything to do with the claim. A marker placed *after* the full
+stop belongs to the sentence it trails — the prompt allows either position — and
+attributing it to the empty span between the two left the check with nothing to
+weigh, which passed by default. That is how an invented footnote,
+`[1] This response is based on common associations`, once counted as a verified
+citation and carried a fabricated answer onto the screen.
 
 **Refusal detection is deliberately loose.**
 [`IsRefusal`](server/src/DocHub.Services/Chat/GroundedPrompt.cs:145) matches on
@@ -690,7 +701,7 @@ carries the same list.
 | `Chat:HistoryTurns` | 4 | Turns replayed for follow-ups like "what about the second one?". Higher crowds out passages |
 | `Chat:MaxQuestionLength` | 2000 | Rejects pasted documents |
 | `Knowledge:SourceTimeoutSeconds` | 10 | Per-source deadline. Not a latency target — the point past which waiting is worse than answering without that source |
-| `Llm:Model` | `llama3.2:3b` | `llama3.1:8b` / `qwen2.5:7b` follow the citation format noticeably better, at the cost of speed |
+| `Llm:Model` | `qwen2.5:7b` | Follows the citation format better than the 3B it replaced — it refuses an off-topic question outright instead of answering it — but still pads a thin answer with uncited sentences. `llama3.1:8b` is the untried alternative |
 | `Llm:ContextTokens` | 8192 | Must hold rules + example + every passage + history. **Too low fails silently** |
 | `Llm:Temperature` | 0.1 | Higher invents details the sources do not contain |
 | `Llm:MaxOutputTokens` | 1024 | Ceiling on answer length; truncating mid-citation is worse than a slow reply |

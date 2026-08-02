@@ -15,7 +15,7 @@ public sealed class LlmOptions
 
     public string BaseUrl { get; set; } = "http://localhost:11434";
 
-    public string Model { get; set; } = "llama3.2:3b";
+    public string Model { get; set; } = "qwen2.5:7b";
 
     /// <summary>
     /// Ceiling on the answer length. Generous rather than tight: a grounded
@@ -63,13 +63,15 @@ public sealed class LlmOptions
     ///
     /// Ollama's own default is five minutes, which is shorter than the gaps
     /// between questions on an internal tool. Every gap longer than that costs
-    /// a full reload before the answer even starts — measured at roughly three
-    /// seconds for a 3B model, and worse for a larger one. That delay lands on
-    /// whoever asks the first question after a quiet spell, which is exactly
-    /// when the app feels slowest.
+    /// a full reload before the answer even starts — measured at roughly eight
+    /// seconds for the default 7B model. That delay lands on whoever asks the
+    /// first question after a quiet spell, which is exactly when the app feels
+    /// slowest.
     ///
-    /// The cost is memory: the model stays resident. On a box doing nothing
-    /// else, that is what the memory is for.
+    /// The cost is memory: the model stays resident, around 6 GB at the default
+    /// context size. On a box doing nothing else, that is what the memory is
+    /// for — but a second answer model held loaded alongside it is enough to
+    /// have the runner killed outright.
     /// </summary>
     public string KeepAlive { get; set; } = "30m";
 }

@@ -42,7 +42,7 @@ IIS; the development machine is a Mac.
 | Database | PostgreSQL 17 + pgvector | One database for relational data *and* embeddings |
 | File storage | Azure Blob Storage | Azurite emulator locally, real Azure or Azurite in prod |
 | Background jobs | Hangfire, Postgres-backed, in-process | Dashboard at `/jobs`, Admin only |
-| AI models | Ollama — `nomic-embed-text` (768-dim), `llama3.2:3b` | Free, key-less, local |
+| AI models | Ollama — `nomic-embed-text` (768-dim), `qwen2.5:7b` | Free, key-less, local |
 | Auth | ASP.NET Core Identity, session cookie | Optional Google sign-in; Entra ID later |
 | API docs | Swagger UI over `Microsoft.AspNetCore.OpenApi` | `/swagger`, dev only *and* Admin only |
 | CI/CD | GitHub Actions | |
@@ -430,7 +430,7 @@ pipeline never migrates a database as a side effect of deploying.
 ```bash
 docker compose up -d --wait                  # postgres, azurite, ollama
 docker compose exec ollama ollama pull nomic-embed-text
-docker compose exec ollama ollama pull llama3.2:3b
+docker compose exec ollama ollama pull qwen2.5:7b
 
 dotnet ef database update --project server/src/DocHub.DataAccess --startup-project server/src/DocHub.Api
 dotnet run --project server/src/DocHub.Api -- init-storage
