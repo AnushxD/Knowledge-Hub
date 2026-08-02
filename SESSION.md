@@ -3,8 +3,8 @@
 Session state only. Architecture, conventions, design decisions and workflow
 live in `CLAUDE.md` and are not repeated here.
 
-**Last updated:** 2026-08-01 · **Branch:** `main`, clean and pushed · **Tests:** 202 green
-(17 Api · 39 Integrations · 17 DataAccess · 129 Services)
+**Last updated:** 2026-08-01 · **Branch:** `main`, clean and pushed · **Tests:** 205 green
+(17 Api · 42 Integrations · 17 DataAccess · 129 Services)
 
 ---
 
@@ -75,6 +75,13 @@ against the org's actual server — see "Blockers".
   only. And citation checking was purely syntactic, so a model could invent an
   answer and hang resolving markers off it; a citation must now share wording
   with the sentence citing it, beyond what the question itself supplied.
+- **"Nothing matched" is no longer a passage.** The live-score server replies
+  `Search results for '…': {"result": []}` — prose wrapping JSON, so it never
+  parsed, so the whole blob became a citable passage. That single junk passage
+  is what defeated the empty-retrieval guard in the first place. The envelope is
+  now recognised (including `result`, and embedded in a sentence) and an empty
+  one yields nothing; entries in an unfamiliar shape still pass through, so real
+  results are never dropped.
 - **Test address speaks MCP**, not HTTP: it reports the server's tool list,
   which repositories it says it indexes, and which tool searching would pick,
   with a button to fill that field in. It tells "answered but not MCP" apart

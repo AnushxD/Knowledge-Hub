@@ -322,6 +322,12 @@ Recorded so they are not re-litigated. Each is a trade already reasoned through.
   produces confident fabrication. Refuse instead.
 - Every citation marker the model emits is verified against the passages
   actually supplied; unresolvable markers are stripped, never rendered as links.
+- **A source saying "nothing matched" contributes nothing.** A recognised
+  results envelope is honoured even when empty — `results`, `result`, `matches`,
+  `hits` or `items`, and the object is lifted out of any sentence wrapping it.
+  Treating a negative answer as a passage is what let an unrelated server ground
+  an answer. A *non-empty* envelope whose entries carry no `text` is the other
+  case and passes through as prose: dropping it would discard real results.
 - **Retrieval for the assistant has a relevance floor** (`Knowledge:MaxPassageDistance`,
   cosine, default 0.5). A vector index always has a nearest neighbour, so
   without one every question retrieves something and the model is handed

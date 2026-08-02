@@ -222,9 +222,10 @@ internal sealed class McpRepositoryKnowledgeSource(
         {
             if (string.IsNullOrWhiteSpace(block.Text)) continue;
 
-            if (TryParseJson(block.Text, out var parsed)
-                && TryReadHits(parsed, toolName, out var textHits))
+            if (TryReadEnvelope(block.Text, toolName, out var textHits))
             {
+                // Honoured even when empty: the server said it found nothing,
+                // and that is an answer, not an absence of one.
                 passages.AddRange(textHits);
                 continue;
             }
@@ -250,6 +251,44 @@ internal sealed class McpRepositoryKnowledgeSource(
         return passages;
     }
 
+
+    /// <summary>
+    /// Reads a results envelope out of a text block, whether the block is JSON
+    /// or JSON wrapped in a sentence.
+    ///
+    /// Servers announce themselves: <c>Search results for 'x':</c> followed by
+    /// the object. That is not parseable JSON, so treating the block as prose
+    /// was the only option — which meant a plain "no matches" arrived as a
+    /// passage of text for the model to cite. Taking the object out of the
+    /// sentence costs one substring and removes the whole class of problem.
+    ///
+    /// Nothing is guessed: the extracted span still has to parse and still has
+    /// to carry a recognised hit array, so a prose passage that merely contains
+    /// braces — a code snippet, say — falls through to being prose, as it
+    /// should.
+    /// </summary>
+    private bool TryReadEnvelope(
+        string text,
+        string toolName,
+        out IReadOnlyList<KnowledgeResult> hits)
+    {
+        if (TryParseJson(text, out var whole) && TryReadHits(whole, toolName, out hits))
+            return true;
+
+        var start = text.IndexOf('{');
+        var end = text.LastIndexOf('}');
+
+        if (start >= 0 && end > start
+            && TryParseJson(text[start..(end + 1)], out var embedded)
+            && TryReadHits(embedded, toolName, out hits))
+        {
+            return true;
+        }
+
+        hits = [];
+        return false;
+    }
+
     private bool TryReadHits(
         JsonElement payload,
         string toolName,
@@ -257,12 +296,8 @@ internal sealed class McpRepositoryKnowledgeSource(
     {
         hits = [];
 
-        if (payload.ValueKind != JsonValueKind.Object
-            || !TryGetProperty(payload, "results", out var array)
-            || array.ValueKind != JsonValueKind.Array)
-        {
+        if (payload.ValueKind != JsonValueKind.Object || !TryGetHitArray(payload, out var array))
             return false;
-        }
 
         var results = new List<KnowledgeResult>();
 
@@ -301,7 +336,22 @@ internal sealed class McpRepositoryKnowledgeSource(
         }
 
         hits = results;
-        return results.Count > 0;
+
+        // Three outcomes, and the middle one is the point.
+        //
+        // An *empty* array is an answer: the server understood and found
+        // nothing. Reporting that as unrecognised would send it to the prose
+        // fallback, which hands the model the raw JSON as though it were a
+        // passage worth citing — that is how a live-scores server became a
+        // source for a question about orange juice.
+        //
+        // A non-empty array whose entries carry no text is different: there is
+        // real content here in a shape this does not know how to take apart.
+        // Claiming it as zero hits would silently drop results the server did
+        // find, so it goes to the prose fallback intact.
+        if (array.GetArrayLength() > 0 && results.Count == 0) return false;
+
+        return true;
     }
 
     private static bool TryParseJson(string text, out JsonElement element)
@@ -331,6 +381,30 @@ internal sealed class McpRepositoryKnowledgeSource(
     /// servers to follow, and failing over "Results" against "results" would be
     /// a needlessly sharp edge.
     /// </summary>
+
+    /// <summary>
+    /// The array of hits in a results envelope, whatever the server called it.
+    ///
+    /// MCP standardises none of this. The documented shape is <c>results</c>,
+    /// but <c>result</c> is just as common — one server in use here answers
+    /// with it — and failing to recognise an envelope is not harmless: it sends
+    /// a perfectly clear "nothing matched" down the prose path to be treated as
+    /// content.
+    /// </summary>
+    private static bool TryGetHitArray(JsonElement payload, out JsonElement array)
+    {
+        foreach (var name in HitArrayNames)
+        {
+            if (TryGetProperty(payload, name, out array) && array.ValueKind == JsonValueKind.Array)
+                return true;
+        }
+
+        array = default;
+        return false;
+    }
+
+    private static readonly string[] HitArrayNames = ["results", "result", "matches", "hits", "items"];
+
     private static bool TryGetProperty(JsonElement element, string name, out JsonElement value)
     {
         if (element.TryGetProperty(name, out value)) return true;

@@ -203,6 +203,91 @@ public sealed class McpRepositorySourceTests
     }
 
     [Fact]
+    public async Task A_server_saying_nothing_matched_contributes_nothing()
+    {
+        await using var server = await FakeMcpServer.StartAsync<EmptyResultTools>();
+
+        var result = await SourceFor(server.Endpoint, toolName: "search_empty")
+            .SearchAsync(new KnowledgeQuery("how to make orange juice", null, 5));
+
+        // The shape was understood and it said no matches. Reading that as one
+        // passage of prose — the raw JSON, offered as something citable — is
+        // what let an unrelated server ground an answer.
+        Assert.Empty(result.Results);
+    }
+
+    [Fact]
+    public async Task A_results_envelope_is_recognised_whatever_the_server_calls_it()
+    {
+        await using var server = await FakeMcpServer.StartAsync<SingularResultTools>();
+
+        var passage = Assert.Single(
+            (await SourceFor(server.Endpoint, toolName: "search_singular")
+                .SearchAsync(new KnowledgeQuery("worker", null, 5))).Results);
+
+        // "result" rather than "results", which is what one real server uses.
+        Assert.Equal("src/Worker.cs", passage.Title);
+    }
+
+    [Fact]
+    public async Task Results_in_a_shape_we_cannot_take_apart_are_still_passed_through()
+    {
+        await using var server = await FakeMcpServer.StartAsync<UnfamiliarHitTools>();
+
+        var passage = Assert.Single(
+            (await SourceFor(server.Endpoint, toolName: "search_unfamiliar")
+                .SearchAsync(new KnowledgeQuery("Arsenal", null, 5))).Results);
+
+        // The server found something and described it in fields nothing here
+        // recognises. Reporting that as no results would silently discard real
+        // matches, so the whole reply survives as one passage — which is still
+        // verbatim, just not locatable.
+        Assert.Contains("Arsenal", passage.Text);
+    }
+
+    /// <summary>
+    /// A server whose hits carry no text field — real results, unfamiliar
+    /// shape. The live-scores server in use here answers like this.
+    /// </summary>
+    [McpServerToolType]
+    public sealed class UnfamiliarHitTools
+    {
+        [McpServerTool(Name = "search_unfamiliar")]
+        [Description("Answers with entries that have no text field.")]
+        public static string SearchUnfamiliar(string query, int maxResults) =>
+            $$"""
+            Search results for '{{query}}':
+
+            {"result": [{"name": "Arsenal", "country": "England", "type": "team"}]}
+            """;
+    }
+
+    /// <summary>A server that understood the query and found nothing.</summary>
+    [McpServerToolType]
+    public sealed class EmptyResultTools
+    {
+        [McpServerTool(Name = "search_empty")]
+        [Description("Finds nothing, and says so in the documented shape.")]
+        public static Response SearchEmpty(string query, int maxResults) => new([]);
+
+        public sealed record Response(IReadOnlyList<string> Result);
+    }
+
+    /// <summary>A server whose envelope is "result", not "results".</summary>
+    [McpServerToolType]
+    public sealed class SingularResultTools
+    {
+        [McpServerTool(Name = "search_singular")]
+        [Description("Answers in the documented shape under a singular key.")]
+        public static Response SearchSingular(string query, int maxResults) =>
+            new([new Hit("src/Worker.cs", "The worker restarts on a non-zero exit.")]);
+
+        public sealed record Response(IReadOnlyList<Hit> Result);
+
+        public sealed record Hit(string Path, string Text);
+    }
+
+    [Fact]
     public async Task A_tool_name_that_does_not_exist_says_which_ones_do()
     {
         await using var server = await FakeMcpServer.StartAsync();
