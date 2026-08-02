@@ -30,8 +30,8 @@ namespace DocHub.Integrations.Knowledge;
 /// <b>verbatim</b>.
 /// </item>
 /// <item>
-/// Or, failing that, plain text blocks — one passage each, with the tool name
-/// standing in for a path.
+/// Or, failing that, plain text blocks — one passage each, titled with the
+/// server's display name, since there is no path to point at.
 /// </item>
 /// </list>
 /// <para>
@@ -232,9 +232,14 @@ internal sealed class McpRepositoryKnowledgeSource(
             // Prose, or JSON in a shape we do not recognise. Passed through
             // whole rather than guessed at: the text is still verbatim, so it
             // can still ground an answer — it just cannot be located precisely.
+            //
+            // Titled with the server, not the tool that answered it. A citation
+            // is read by someone deciding whether to trust a sentence, and
+            // "search" tells them nothing while "Live scores" tells them where
+            // it came from.
             passages.Add(new KnowledgeResult(
                 KnowledgeResultKind.External,
-                toolName,
+                source.DisplayName,
                 "result",
                 block.Text,
                 0,
@@ -275,7 +280,10 @@ internal sealed class McpRepositoryKnowledgeSource(
                 continue;
             }
 
-            var path = Text(element, "path") ?? toolName;
+            // The path is the honest title when the server supplies one — it
+            // names the actual file. Falling back to the server rather than the
+            // tool, for the same reason as above.
+            var path = Text(element, "path") ?? source.DisplayName;
             var lines = Text(element, "lines") ?? "match";
             var url = Text(element, "url");
 

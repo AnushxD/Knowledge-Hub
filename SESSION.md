@@ -3,8 +3,8 @@
 Session state only. Architecture, conventions, design decisions and workflow
 live in `CLAUDE.md` and are not repeated here.
 
-**Last updated:** 2026-08-01 · **Branch:** `main`, clean and pushed · **Tests:** 193 green
-(17 Api · 38 Integrations · 15 DataAccess · 123 Services)
+**Last updated:** 2026-08-01 · **Branch:** `main`, clean and pushed · **Tests:** 194 green
+(17 Api · 39 Integrations · 15 DataAccess · 123 Services)
 
 ---
 

@@ -929,13 +929,20 @@ A citation carries a `kind`. A `document` citation resolves into the hub at
 passage lives, or renders without a link when the source could not say. That is
 why a repository passage can be cited at all — it has no document id to point at.
 
-The MCP tool is expected to take `query` and `maxResults`, and to return either
-structured content or a text block shaped
-`{ "results": [ { "path", "lines", "text", "url", "score" } ] }`. Anything else
-is treated as one passage of prose per text block. Whatever the shape, `text`
-must be the source **verbatim**: the assistant cites what it is handed, so a
-server returning summaries would have it quoting text that exists nowhere. That
-cannot be detected from this side, so it is a contract the server has to meet.
+The tool's arguments are read from its own schema, so a tool taking `q` is sent
+`q` and one taking `query` is sent `query`; a result limit is passed only if the
+tool declares one. It should return either structured content or a text block
+shaped `{ "results": [ { "path", "lines", "text", "url", "score" } ] }`.
+Anything else is treated as one passage of prose per text block.
+
+Citations are titled with the `path` when the server gives one, and with the
+server's display name when it does not — never with the tool's name, which
+tells a reader nothing about whether to trust the sentence it supports.
+
+Whatever the shape, `text` must be the source **verbatim**: the assistant cites
+what it is handed, so a server returning summaries would have it quoting text
+that exists nowhere. That cannot be detected from this side, so it is a contract
+the server has to meet.
 
 A document's Preview tab shows the file as itself: Markdown rendered, source
 files with a line-number gutter, PDFs in the browser's own viewer, images inline.

@@ -164,10 +164,42 @@ public sealed class McpRepositorySourceTests
 
         // Not every server returns the documented shape. Prose is still verbatim
         // text, so it can still ground an answer — it just cannot be located
-        // more precisely than "the tool said this".
+        // more precisely than "this server said this".
         Assert.Equal(FakeRepositoryTools.PlainNote, passage.Text);
         Assert.Equal(KnowledgeResultKind.External, passage.Kind);
         Assert.Null(passage.Url);
+
+        // Titled with the server, not the tool. "search_notes" means nothing to
+        // someone deciding whether to trust the sentence it supports.
+        Assert.Equal("Repositories", passage.Title);
+    }
+
+    [Fact]
+    public async Task A_hit_with_no_path_is_cited_to_the_server_rather_than_the_tool()
+    {
+        await using var server = await FakeMcpServer.StartAsync<PathlessTools>();
+
+        var source = SourceFor(server.Endpoint, toolName: "search_anything");
+
+        var passage = Assert.Single(
+            (await source.SearchAsync(new KnowledgeQuery("anything", null, 5))).Results);
+
+        Assert.Equal("Repositories", passage.Title);
+        Assert.Equal("Something worth citing.", passage.Text);
+    }
+
+    /// <summary>A server returning the documented shape, minus the path.</summary>
+    [McpServerToolType]
+    public sealed class PathlessTools
+    {
+        [McpServerTool(Name = "search_anything")]
+        [Description("Returns a hit that names no file.")]
+        public static Response SearchAnything(string query, int maxResults) =>
+            new([new Hit("Something worth citing.")]);
+
+        public sealed record Response(IReadOnlyList<Hit> Results);
+
+        public sealed record Hit(string Text);
     }
 
     [Fact]
