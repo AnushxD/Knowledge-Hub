@@ -64,110 +64,79 @@ internal sealed class FolderRepository(DocHubDbContext db) : IFolderRepository
     public Task<bool> ExistsAsync(Guid id, CancellationToken ct = default) =>
         db.Folders.AnyAsync(folder => folder.Id == id, ct);
 
-    public Task<bool> NameTakenAsync(
-        Guid? parentId,
-        string name,
-        Guid? excludingId = null,
-        CancellationToken ct = default) =>
-        db.Folders.AnyAsync(
-            folder => folder.ParentId == parentId
-                && folder.Name.ToLower() == name.ToLower()
-                && (excludingId == null || folder.Id != excludingId),
-            ct);
-
-    public async Task<FolderDto> CreateAsync(
-        Guid? parentId,
-        string name,
-        Guid ownerId,
+    public async Task<IReadOnlyDictionary<string, Guid>> ReconcileAsync(
+        IReadOnlyList<string> paths,
         CancellationToken ct = default)
     {
-        var parentPath = parentId is null
-            ? null
-            : await db.Folders
-                .Where(folder => folder.Id == parentId)
-                .Select(folder => folder.Path)
-                .FirstOrDefaultAsync(ct);
+        // Every ancestor of a wanted path is itself wanted, even when the tree
+        // listing never named it on its own. GitLab lists "a/b/c" as a tree
+        // entry, but a repository containing only "a/b/c/file.md" and nothing
+        // directly in "a" still needs "a" to hang the branch from.
+        var wanted = new HashSet<string>(StringComparer.Ordinal);
 
-        if (parentId is not null && parentPath is null)
-            throw new InvalidOperationException($"Parent folder {parentId} does not exist.");
-
-        var now = DateTimeOffset.UtcNow;
-        var folder = new Folder
+        foreach (var path in paths)
         {
-            // Version 7 GUIDs are time-ordered, so inserts stay at the right of
-            // the B-tree instead of fragmenting it like random v4 values do.
-            Id = Guid.CreateVersion7(),
-            ParentId = parentId,
-            Name = name,
-            Path = parentPath is null ? name : $"{parentPath}/{name}",
-            OwnerId = ownerId,
-            CreatedAt = now,
-            UpdatedAt = now,
-        };
+            var trimmed = path.Trim('/');
+            if (trimmed.Length == 0) continue;
 
-        db.Folders.Add(folder);
-        await db.SaveChangesAsync(ct);
-        return ToDto(folder, 0);
-    }
+            for (var cut = trimmed.IndexOf('/');
+                 cut >= 0;
+                 cut = trimmed.IndexOf('/', cut + 1))
+            {
+                wanted.Add(trimmed[..cut]);
+            }
 
-    public async Task<FolderDto?> RenameAsync(Guid id, string name, CancellationToken ct = default)
-    {
-        var folder = await db.Folders.FirstOrDefaultAsync(f => f.Id == id, ct);
-        if (folder is null) return null;
-
-        var oldPath = folder.Path;
-        var newPath = folder.ParentId is null
-            ? name
-            : $"{oldPath[..oldPath.LastIndexOf('/')]}/{name}";
-
-        folder.Name = name;
-        folder.Path = newPath;
-        folder.UpdatedAt = DateTimeOffset.UtcNow;
-
-        // The materialised path is denormalised, so the whole subtree has to be
-        // rewritten in the same transaction as the rename.
-        var descendants = await db.Folders
-            .Where(candidate => EF.Functions.Like(candidate.Path, oldPath + "/%"))
-            .ToListAsync(ct);
-
-        foreach (var descendant in descendants)
-        {
-            descendant.Path = string.Concat(newPath, descendant.Path.AsSpan(oldPath.Length));
-            descendant.UpdatedAt = folder.UpdatedAt;
+            wanted.Add(trimmed);
         }
 
+        var existing = await db.Folders.ToDictionaryAsync(
+            folder => folder.Path, folder => folder, StringComparer.Ordinal, ct);
+
+        // Shallowest first, so a folder's parent always exists by the time it
+        // is created and the ParentId can be filled in on the spot.
+        var now = DateTimeOffset.UtcNow;
+        var created = new List<Folder>();
+
+        foreach (var path in wanted.OrderBy(CountSegments).ThenBy(path => path, StringComparer.Ordinal))
+        {
+            if (existing.ContainsKey(path)) continue;
+
+            var cut = path.LastIndexOf('/');
+            var name = cut < 0 ? path : path[(cut + 1)..];
+            var parentPath = cut < 0 ? null : path[..cut];
+
+            var folder = new Folder
+            {
+                // Version 7 GUIDs are time-ordered, so inserts stay at the right
+                // of the B-tree instead of fragmenting it like random v4 values.
+                Id = Guid.CreateVersion7(),
+                ParentId = parentPath is null ? null : existing[parentPath].Id,
+                Name = name,
+                Path = path,
+                CreatedAt = now,
+                UpdatedAt = now,
+            };
+
+            existing[path] = folder;
+            created.Add(folder);
+        }
+
+        if (created.Count > 0) db.Folders.AddRange(created);
+
+        // Anything left is a directory that has gone from the repository. The
+        // cascade takes its subtree and the documents in it. Folders created
+        // moments ago cannot appear here — they were all added from `wanted`.
+        var departed = existing.Values
+            .Where(folder => !wanted.Contains(folder.Path))
+            .ToList();
+
+        if (departed.Count > 0) db.Folders.RemoveRange(departed);
+
         await db.SaveChangesAsync(ct);
-        return ToDto(folder, await CountDescendantDocumentsAsync(newPath, ct));
-    }
 
-    public async Task<IReadOnlyList<string>> DeleteAsync(Guid id, CancellationToken ct = default)
-    {
-        var folder = await db.Folders.FirstOrDefaultAsync(f => f.Id == id, ct);
-        if (folder is null) return [];
-
-        var scope = await db.Folders
-            .Where(candidate =>
-                candidate.Path == folder.Path ||
-                EF.Functions.Like(candidate.Path, folder.Path + "/%"))
-            .Select(candidate => candidate.Id)
-            .ToListAsync(ct);
-
-        // Collect blob paths before the cascade removes the rows — otherwise the
-        // files are orphaned in storage with nothing left pointing at them.
-        var currentBlobs = await db.Documents
-            .Where(document => scope.Contains(document.FolderId))
-            .Select(document => document.StoragePath)
-            .ToListAsync(ct);
-
-        var versionBlobs = await db.DocumentVersions
-            .Where(version => scope.Contains(version.Document!.FolderId))
-            .Select(version => version.StoragePath)
-            .ToListAsync(ct);
-
-        db.Folders.Remove(folder);
-        await db.SaveChangesAsync(ct);
-
-        return currentBlobs.Concat(versionBlobs).Distinct().ToList();
+        return existing
+            .Where(pair => wanted.Contains(pair.Key))
+            .ToDictionary(pair => pair.Key, pair => pair.Value.Id, StringComparer.Ordinal);
     }
 
     private Task<int> CountDescendantDocumentsAsync(string path, CancellationToken ct) =>
@@ -175,6 +144,8 @@ internal sealed class FolderRepository(DocHubDbContext db) : IFolderRepository
             document => document.Folder!.Path == path
                 || EF.Functions.Like(document.Folder!.Path, path + "/%"),
             ct);
+
+    private static int CountSegments(string path) => path.Count(character => character == '/');
 
     private static bool IsSelfOrDescendant(Folder candidate, Folder ancestor) =>
         candidate.Path == ancestor.Path || candidate.Path.StartsWith(ancestor.Path + "/", StringComparison.Ordinal);
@@ -184,7 +155,6 @@ internal sealed class FolderRepository(DocHubDbContext db) : IFolderRepository
         folder.ParentId,
         folder.Name,
         folder.Path,
-        folder.OwnerId,
         documentCount,
         folder.CreatedAt,
         folder.UpdatedAt);

@@ -1,39 +1,19 @@
 using DocHub.DataAccess.Dtos;
 using DocHub.DataAccess.Entities;
-using DocHub.Services.Activity;
 using DocHub.DataAccess.Repositories;
-using DocHub.Integrations.Storage;
-using DocHub.Services.Ingestion;
+using DocHub.Integrations.SourceControl;
+using DocHub.Services.Activity;
 using DocHub.Services.ViewModels;
-using Microsoft.Extensions.Logging;
 
 namespace DocHub.Services.Documents;
 
 internal sealed class DocumentService(
     IDocumentRepository documents,
-    IFolderRepository folders,
     IChunkRepository chunks,
     IChatRepository chat,
-    IFileStorage storage,
-    IIngestionQueue ingestion,
-    IActivityLog activity,
-    ICurrentUser currentUser,
-    ILogger<DocumentService> logger) : IDocumentService
+    ISourceRepositoryClient repository,
+    IActivityLog activity) : IDocumentService
 {
-    /// <summary>Mirrors the client-side guard; the server is the one that counts.</summary>
-    private const long MaxUploadBytes = 25 * 1024 * 1024;
-
-    /// <summary>
-    /// Executable and script types are refused outright. This is a knowingly
-    /// coarse guard for phase 1 — real content inspection and a virus scan
-    /// belong in the phase 5 security hardening.
-    /// </summary>
-    private static readonly HashSet<string> BlockedExtensions =
-        new(StringComparer.OrdinalIgnoreCase)
-        {
-            "exe", "dll", "bat", "cmd", "com", "msi", "sh", "ps1", "scr", "jar",
-        };
-
     public async Task<IReadOnlyList<DocumentViewModel>> QueryAsync(
         DocumentQueryRequest request,
         CancellationToken ct = default)
@@ -52,7 +32,6 @@ internal sealed class DocumentService(
             Statuses = statuses,
             Extensions = request.Extension?.Select(e => e.TrimStart('.').ToLowerInvariant()).ToList(),
             Tags = request.Tag,
-            OwnerId = request.OwnerId,
             StarredOnly = request.StarredOnly,
             Sort = Mapping.ParseSort(request.Sort),
             Skip = Math.Max(0, request.Skip),
@@ -61,7 +40,7 @@ internal sealed class DocumentService(
         };
 
         var results = await documents.QueryAsync(query, ct);
-        return [.. results.Select(document => document.ToViewModel())];
+        return [.. results.Select(ToViewModel)];
     }
 
     public async Task<DocumentDetailViewModel> GetAsync(Guid id, CancellationToken ct = default)
@@ -77,7 +56,8 @@ internal sealed class DocumentService(
         // DbContext.
         var citedInAnswers = await chat.CountAnswersCitingAsync(id, ct);
 
-        return detail.ToViewModel(sections, citedInAnswers);
+        return detail.ToViewModel(
+            repository.WebUrlFor(detail.Document.RepositoryPath), sections, citedInAnswers);
     }
 
     public async Task<DocumentContent> DownloadAsync(Guid id, CancellationToken ct = default)
@@ -85,106 +65,19 @@ internal sealed class DocumentService(
         var detail = await documents.GetByIdAsync(id, ct)
             ?? throw new NotFoundException("Document", id);
 
-        var file = await storage.OpenReadAsync(detail.StoragePath, ct)
-            // The row exists but the blob does not — a genuine inconsistency
-            // worth logging loudly rather than reporting as a plain 404.
-            ?? throw new InvalidOperationException(
-                $"Document {id} points at missing blob '{detail.StoragePath}'.");
+        var document = detail.Document;
+
+        var file = await repository.OpenFileAsync(document.RepositoryPath, ct)
+            // The row exists but the file does not. Ordinary rather than
+            // exceptional: the repository moved on and the hub has not synced
+            // since, so the honest answer is that this document is gone.
+            ?? throw new NotFoundException("Document", id);
 
         return new DocumentContent(
             file.Content,
-            file.ContentType,
-            detail.Document.FileName,
-            file.SizeBytes);
-    }
-
-    public async Task<DocumentViewModel> UploadAsync(
-        Guid folderId,
-        UploadRequest request,
-        CancellationToken ct = default)
-    {
-        if (!await folders.ExistsAsync(folderId, ct))
-            throw new NotFoundException("Folder", folderId);
-
-        var (fileName, extension) = ValidateUpload(request);
-
-        // Storage first: a blob with no row is a harmless orphan, whereas a row
-        // with no blob is a broken document the user can see and click.
-        var storagePath = await storage.SaveAsync(
-            request.Content, fileName, request.ContentType, ct);
-
-        try
-        {
-            var created = await documents.CreateAsync(
-                new NewDocumentDto
-                {
-                    FolderId = folderId,
-                    Title = Path.GetFileNameWithoutExtension(fileName),
-                    FileName = fileName,
-                    Extension = extension,
-                    ContentType = request.ContentType,
-                    SizeBytes = request.SizeBytes,
-                    StoragePath = storagePath,
-                    OwnerId = currentUser.Id,
-                },
-                ct);
-
-            logger.LogInformation(
-                "Uploaded document {DocumentId} ({FileName}) to folder {FolderId}",
-                created.Id, fileName, folderId);
-
-            await activity.RecordAsync(ActivityType.Uploaded, created.Title, created.Id, ct: ct);
-
-            // Queued rather than awaited: extracting and embedding a document
-            // takes seconds to minutes, and the upload response should not.
-            ingestion.Enqueue(created.Id);
-
-            return created.ToViewModel();
-        }
-        catch
-        {
-            // Do not leave a blob behind for a document that was never created.
-            await storage.DeleteManyAsync([storagePath], ct);
-            throw;
-        }
-    }
-
-    public async Task<DocumentViewModel> AddVersionAsync(
-        Guid id,
-        UploadRequest request,
-        CancellationToken ct = default)
-    {
-        if (await documents.GetStoragePathAsync(id, ct) is null)
-            throw new NotFoundException("Document", id);
-
-        var (fileName, _) = ValidateUpload(request);
-
-        var storagePath = await storage.SaveAsync(
-            request.Content, fileName, request.ContentType, ct);
-
-        try
-        {
-            var updated = await documents.AddVersionAsync(
-                id, storagePath, request.SizeBytes, request.Note, currentUser.Id, ct)
-                ?? throw new NotFoundException("Document", id);
-
-            // The previous blob is deliberately kept — an older DocumentVersion
-            // row still points at it, and version history has to remain
-            // retrievable.
-            logger.LogInformation(
-                "Added version {Version} to document {DocumentId}", updated.Version, id);
-
-            // AddVersionAsync already reset the document to Pending, since the
-            // stored chunks describe content that is no longer current.
-            ingestion.Enqueue(id);
-
-            return updated.ToViewModel();
-        }
-        catch
-        {
-            await storage.DeleteManyAsync([storagePath], ct);
-            throw;
-        }
+            document.ContentType,
+            document.FileName,
+            file.SizeBytes ?? document.SizeBytes);
     }
 
     public async Task<DocumentViewModel> UpdateAsync(
@@ -218,49 +111,7 @@ internal sealed class DocumentService(
         if (!starOnly)
             await activity.RecordAsync(ActivityType.Updated, updated.Title, updated.Id, ct: ct);
 
-        return updated.ToViewModel();
-    }
-
-    public async Task<DocumentViewModel> MoveAsync(
-        Guid id,
-        Guid folderId,
-        CancellationToken ct = default)
-    {
-        if (!await folders.ExistsAsync(folderId, ct))
-            throw new NotFoundException("Folder", folderId);
-
-        var moved = await documents.MoveAsync(id, folderId, ct)
-            ?? throw new NotFoundException("Document", id);
-
-        await activity.RecordAsync(ActivityType.Moved, moved.Title, moved.Id, ct: ct);
-
-        return moved.ToViewModel();
-    }
-
-    public async Task DeleteAsync(Guid id, CancellationToken ct = default)
-    {
-        // Read the title before destroying the row. "Who deleted what" is the
-        // entry most likely to be asked about later, and it is worthless
-        // without the name.
-        var doomed = await documents.GetByIdAsync(id, ct);
-
-        var orphanedBlobs = await documents.DeleteAsync(id, ct);
-
-        if (orphanedBlobs.Count == 0)
-            throw new NotFoundException("Document", id);
-
-        await storage.DeleteManyAsync(orphanedBlobs, ct);
-
-        await activity.RecordAsync(
-            ActivityType.Deleted,
-            doomed?.Document.Title ?? "a document",
-            // No target id: the document is gone, and a link to it would only
-            // ever lead to "not found".
-            targetId: null,
-            ct: ct);
-
-        logger.LogInformation(
-            "Deleted document {DocumentId} and {BlobCount} stored files", id, orphanedBlobs.Count);
+        return ToViewModel(updated);
     }
 
     public async Task<LibraryStatsViewModel> GetStatsAsync(CancellationToken ct = default) =>
@@ -269,40 +120,6 @@ internal sealed class DocumentService(
     public Task<IReadOnlyList<string>> GetTagsAsync(CancellationToken ct = default) =>
         documents.GetAllTagsAsync(ct);
 
-    public async Task<IReadOnlyList<UserViewModel>> GetOwnersAsync(CancellationToken ct = default)
-    {
-        var owners = await documents.GetOwnersAsync(ct);
-        return [.. owners.Select(owner => owner.ToViewModel())];
-    }
-
-    /// <summary>
-    /// Returns the sanitised file name and its extension, or throws with a
-    /// message the user can act on.
-    /// </summary>
-    private static (string FileName, string Extension) ValidateUpload(UploadRequest request)
-    {
-        if (request.SizeBytes <= 0)
-            throw new ValidationException("The uploaded file is empty.");
-
-        if (request.SizeBytes > MaxUploadBytes)
-            throw new ValidationException(
-                $"Files cannot exceed {MaxUploadBytes / 1024 / 1024} MB.");
-
-        // Strip any directory component a client may have sent; only the leaf
-        // name is ever stored or echoed back.
-        var fileName = Path.GetFileName(request.FileName?.Trim() ?? string.Empty);
-
-        if (string.IsNullOrWhiteSpace(fileName))
-            throw new ValidationException("A file name is required.");
-
-        var extension = Path.GetExtension(fileName).TrimStart('.').ToLowerInvariant();
-
-        if (string.IsNullOrEmpty(extension))
-            throw new ValidationException("The file must have an extension.");
-
-        if (BlockedExtensions.Contains(extension))
-            throw new ValidationException($".{extension} files are not allowed.");
-
-        return (fileName, extension);
-    }
+    private DocumentViewModel ToViewModel(DocumentDto document) =>
+        document.ToViewModel(repository.WebUrlFor(document.RepositoryPath));
 }

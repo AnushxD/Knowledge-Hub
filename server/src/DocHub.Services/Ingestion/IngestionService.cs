@@ -1,11 +1,10 @@
 using System.Diagnostics;
 using DocHub.DataAccess.Dtos;
 using DocHub.DataAccess.Entities;
-using DocHub.Services.Activity;
-using DocHub.DataAccess.Entities;
 using DocHub.DataAccess.Repositories;
 using DocHub.Integrations.Embeddings;
-using DocHub.Integrations.Storage;
+using DocHub.Integrations.SourceControl;
+using DocHub.Services.Activity;
 using DocHub.Services.Ingestion.Extraction;
 using DocHub.Services.ViewModels;
 using Microsoft.Extensions.Logging;
@@ -15,7 +14,7 @@ namespace DocHub.Services.Ingestion;
 internal sealed class IngestionService(
     IDocumentRepository documents,
     IChunkRepository chunks,
-    IFileStorage storage,
+    ISourceRepositoryClient repository,
     ITextExtractorRegistry extractors,
     ITextChunker chunker,
     IEmbeddingProvider embeddings,
@@ -31,8 +30,8 @@ internal sealed class IngestionService(
 
         if (detail is null)
         {
-            // Deleted between being queued and being picked up. Nothing to do,
-            // and nothing wrong — do not fail the job over it.
+            // Removed by a sync between being queued and being picked up.
+            // Nothing to do, and nothing wrong — do not fail the job over it.
             logger.LogInformation(
                 "Skipping ingestion for {DocumentId}: the document no longer exists.", documentId);
             return;
@@ -43,8 +42,10 @@ internal sealed class IngestionService(
 
         if (extractor is null)
         {
+            // Sync filters these out, so reaching here means the extractor set
+            // shrank under a document that was already mirrored.
             await FailAsync(documentId,
-                $".{document.Extension} files cannot be indexed yet. Supported types: "
+                $".{document.Extension} files cannot be indexed. Supported types: "
                 + string.Join(", ", extractors.SupportedExtensions.Select(e => "." + e)),
                 ct);
             return;
@@ -55,7 +56,8 @@ internal sealed class IngestionService(
 
         try
         {
-            var text = await ExtractAsync(extractor, detail.StoragePath, document.Extension, ct);
+            var (text, sizeBytes) = await ExtractAsync(
+                extractor, document.RepositoryPath, document.Extension, ct);
 
             if (text.IsEmpty)
             {
@@ -86,29 +88,35 @@ internal sealed class IngestionService(
 
             await chunks.ReplaceAsync(
                 documentId,
-                document.Version,
+                document.BlobSha,
                 [.. chunked.Select((chunk, index) => new NewChunkDto(
                     chunk.Ordinal, chunk.Text, chunk.SectionRef, chunk.TokenCount, vectors[index]))],
                 ct);
 
             await documents.SetStatusAsync(
-                documentId, IngestionStatus.Indexed, chunkCount: chunked.Count, ct: ct);
+                documentId,
+                IngestionStatus.Indexed,
+                chunkCount: chunked.Count,
+                sizeBytes: sizeBytes,
+                ct: ct);
 
-            // Attributed to the owner, not to a signed-in user: ingestion runs
-            // on a background worker where nobody is signed in, and inventing a
-            // system identity would put a name in the feed nobody recognises.
-            await activity.RecordAsync(
-                ActivityType.Indexed, document.Title, documentId, document.Owner.Id, ct);
+            // No actor: the file came from the repository and the job runs on a
+            // background worker where nobody is signed in.
+            await activity.RecordForAsync(
+                actorId: null, ActivityType.Indexed, document.Title, documentId, ct);
 
             logger.LogInformation(
-                "Indexed document {DocumentId} ({FileName}): {ChunkCount} chunks in {ElapsedMs}ms "
+                "Indexed document {DocumentId} ({Path}): {ChunkCount} chunks in {ElapsedMs}ms "
                 + "using {Provider}",
-                documentId, document.FileName, chunked.Count,
+                documentId, document.RepositoryPath, chunked.Count,
                 stopwatch.ElapsedMilliseconds, embeddings.Name);
         }
-        catch (TextExtractionException exception)
+        catch (Exception exception)
+            when (exception is TextExtractionException or FileTooLargeException)
         {
-            // The file itself is the problem; retrying will fail identically.
+            // The file itself is the problem; retrying will fail identically
+            // until the repository holds a different revision of it — which
+            // arrives as a sync, and a sync requeues.
             logger.LogWarning(exception,
                 "Extraction failed permanently for document {DocumentId}", documentId);
 
@@ -116,11 +124,11 @@ internal sealed class IngestionService(
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
-            // Transient by assumption — the model was down, Postgres blipped.
-            // The failure is recorded so the user is not left staring at a
-            // document stuck on "indexing", and then rethrown so the worker's
-            // retry policy gets its turn. A later attempt that succeeds
-            // overwrites this status with Indexed.
+            // Transient by assumption — GitLab was unreachable, the model was
+            // down, Postgres blipped. The failure is recorded so the user is not
+            // left staring at a document stuck on "indexing", and then rethrown
+            // so the worker's retry policy gets its turn. A later attempt that
+            // succeeds overwrites this status with Indexed.
             logger.LogError(exception,
                 "Ingestion failed for document {DocumentId}; leaving it for retry", documentId);
 
@@ -139,20 +147,28 @@ internal sealed class IngestionService(
         queue.Enqueue(documentId);
         logger.LogInformation("Requeued document {DocumentId} for ingestion", documentId);
 
-        return reset.ToViewModel();
+        return reset.ToViewModel(repository.WebUrlFor(reset.RepositoryPath));
     }
 
-    private async Task<ExtractedText> ExtractAsync(
+    /// <returns>
+    /// The extracted text and the size of the file it came from. The size is
+    /// reported by the repository rather than measured here — the extractors
+    /// consume the stream, and a file's length is not knowable afterwards
+    /// without buffering the whole thing to find out.
+    /// </returns>
+    private async Task<(ExtractedText Text, long SizeBytes)> ExtractAsync(
         ITextExtractor extractor,
-        string storagePath,
+        string repositoryPath,
         string extension,
         CancellationToken ct)
     {
-        await using var file = await storage.OpenReadAsync(storagePath, ct)
+        await using var file = await repository.OpenFileAsync(repositoryPath, ct)
             ?? throw new TextExtractionException(
-                $"The stored file '{storagePath}' is missing, so there is nothing to index.");
+                $"'{repositoryPath}' is no longer in the repository, so there is nothing to "
+                + "index. The next sync will remove it.");
 
-        return await extractor.ExtractAsync(file.Content, extension, ct);
+        var text = await extractor.ExtractAsync(file.Content, extension, ct);
+        return (text, file.SizeBytes ?? 0);
     }
 
     private async Task FailAsync(Guid documentId, string reason, CancellationToken ct)
@@ -160,17 +176,13 @@ internal sealed class IngestionService(
         await documents.SetStatusAsync(documentId, IngestionStatus.Failed, reason, ct: ct);
 
         // A failed document is invisible to search and the assistant, so the
-        // feed is where its owner is most likely to notice it at all.
+        // feed is where anyone is most likely to notice it at all.
         var failed = await documents.GetByIdAsync(documentId, ct);
 
         if (failed is not null)
         {
-            await activity.RecordAsync(
-                ActivityType.Failed,
-                failed.Document.Title,
-                documentId,
-                failed.Document.Owner.Id,
-                ct);
+            await activity.RecordForAsync(
+                actorId: null, ActivityType.Failed, failed.Document.Title, documentId, ct);
         }
     }
 
@@ -181,6 +193,7 @@ internal sealed class IngestionService(
     private static string Summarise(Exception exception) => exception switch
     {
         EmbeddingException => $"Embedding failed: {exception.Message}",
+        SourceRepositoryException => $"Could not read the file: {exception.Message}",
         _ => $"Ingestion failed: {exception.Message}",
     };
 }

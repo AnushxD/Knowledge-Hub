@@ -10,7 +10,7 @@ internal sealed class ChunkRepository(DocHubDbContext db) : IChunkRepository
 {
     public async Task ReplaceAsync(
         Guid documentId,
-        int documentVersion,
+        string sourceBlobSha,
         IReadOnlyList<NewChunkDto> chunks,
         CancellationToken ct = default)
     {
@@ -33,7 +33,7 @@ internal sealed class ChunkRepository(DocHubDbContext db) : IChunkRepository
             Text = chunk.Text,
             SectionRef = chunk.SectionRef,
             TokenCount = chunk.TokenCount,
-            DocumentVersion = documentVersion,
+            SourceBlobSha = sourceBlobSha,
             Embedding = new Vector(chunk.Embedding),
             CreatedAt = now,
         }));
@@ -176,9 +176,6 @@ internal sealed class ChunkRepository(DocHubDbContext db) : IChunkRepository
                 chunk.Document!.Folder!.Path == path ||
                 EF.Functions.Like(chunk.Document!.Folder!.Path, path + "/%"));
         }
-
-        if (query.OwnerId is { } ownerId)
-            chunks = chunks.Where(chunk => chunk.Document!.OwnerId == ownerId);
 
         if (query.Extensions is { Count: > 0 } extensions)
             chunks = chunks.Where(chunk => extensions.Contains(chunk.Document!.Extension));

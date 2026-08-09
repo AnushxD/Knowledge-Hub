@@ -2,49 +2,82 @@ using DocHub.DataAccess.Repositories;
 
 namespace DocHub.DataAccess.Tests;
 
+/// <summary>
+/// Reconciling the folder table against the repository's directories.
+///
+/// <c>ReconcileAsync</c> is authoritative over the whole tree — anything absent
+/// from its list is taken to have left the repository — so these tests each
+/// hand it the complete set they expect to exist afterwards, and assert on
+/// their own directories rather than on the size of the table.
+/// </summary>
 [Collection(nameof(PostgresCollection))]
 public sealed class FolderRepositoryTests(PostgresFixture fixture)
 {
-    private static readonly Guid Owner = DocHubDbContext.SystemUserId;
-
-    /// <summary>Unique per test so tests sharing the database cannot collide.</summary>
-    private static string Unique(string name) => $"{name}-{Guid.NewGuid():N}"[..24];
+    private static string Unique(string name) => $"{name}-{Guid.NewGuid():N}"[..20];
 
     [Fact]
-    public async Task CreateAsync_builds_the_materialised_path_from_the_parent()
+    public async Task Reconciling_creates_every_intermediate_level()
     {
         await using var db = fixture.CreateContext();
         var repository = new FolderRepository(db);
 
-        var root = await repository.CreateAsync(null, Unique("Engineering"), Owner);
-        var child = await repository.CreateAsync(root.Id, "Onboarding", Owner);
-        var grandchild = await repository.CreateAsync(child.Id, "Environment", Owner);
+        var root = Unique("Deep");
+        var map = await repository.ReconcileAsync([$"{root}/one/two/three"]);
 
-        Assert.Equal(root.Name, root.Path);
-        Assert.Equal($"{root.Name}/Onboarding", child.Path);
-        Assert.Equal($"{root.Name}/Onboarding/Environment", grandchild.Path);
+        // GitLab lists "a/b/c" as a tree entry; a repository whose only file is
+        // deep inside never names the levels above it on their own. Without
+        // filling them in, the sidebar cannot draw the branch.
+        Assert.Equal(
+            [root, $"{root}/one", $"{root}/one/two", $"{root}/one/two/three"],
+            map.Keys.Where(path => path.StartsWith(root, StringComparison.Ordinal))
+                .OrderBy(path => path.Length));
+
+        var stored = await repository.GetByIdAsync(map[$"{root}/one/two"]);
+        Assert.Equal("two", stored!.Name);
+        Assert.Equal(map[$"{root}/one"], stored.ParentId);
     }
 
     [Fact]
-    public async Task RenameAsync_rewrites_the_paths_of_the_whole_subtree()
+    public async Task Reconciling_twice_changes_nothing()
     {
         await using var db = fixture.CreateContext();
         var repository = new FolderRepository(db);
 
-        var root = await repository.CreateAsync(null, Unique("Ops"), Owner);
-        var child = await repository.CreateAsync(root.Id, "Deployment", Owner);
-        var grandchild = await repository.CreateAsync(child.Id, "IIS", Owner);
+        var root = Unique("Idem");
+        var first = await repository.ReconcileAsync([$"{root}/child"]);
+        var second = await repository.ReconcileAsync([$"{root}/child"]);
 
-        var renamed = await repository.RenameAsync(root.Id, "Operations");
+        // Every sync reconciles. If this were not idempotent, a folder's id
+        // would change under the documents pointing at it.
+        Assert.Equal(first[$"{root}/child"], second[$"{root}/child"]);
+    }
 
-        Assert.NotNull(renamed);
-        Assert.Equal("Operations", renamed.Path);
+    [Fact]
+    public async Task A_directory_absent_from_the_tree_is_removed()
+    {
+        await using var db = fixture.CreateContext();
+        var repository = new FolderRepository(db);
 
-        var reloadedChild = await repository.GetByIdAsync(child.Id);
-        var reloadedGrandchild = await repository.GetByIdAsync(grandchild.Id);
+        var root = Unique("Prune");
+        var before = await repository.ReconcileAsync([$"{root}/kept", $"{root}/gone"]);
 
-        Assert.Equal("Operations/Deployment", reloadedChild!.Path);
-        Assert.Equal("Operations/Deployment/IIS", reloadedGrandchild!.Path);
+        await repository.ReconcileAsync([$"{root}/kept"]);
+
+        Assert.NotNull(await repository.GetByIdAsync(before[$"{root}/kept"]));
+        Assert.Null(await repository.GetByIdAsync(before[$"{root}/gone"]));
+    }
+
+    [Fact]
+    public async Task The_same_name_is_allowed_under_different_parents()
+    {
+        await using var db = fixture.CreateContext();
+        var repository = new FolderRepository(db);
+
+        var a = Unique("A");
+        var b = Unique("B");
+        var map = await repository.ReconcileAsync([$"{a}/shared", $"{b}/shared"]);
+
+        Assert.NotEqual(map[$"{a}/shared"], map[$"{b}/shared"]);
     }
 
     [Fact]
@@ -53,13 +86,14 @@ public sealed class FolderRepositoryTests(PostgresFixture fixture)
         await using var db = fixture.CreateContext();
         var repository = new FolderRepository(db);
 
-        var root = await repository.CreateAsync(null, Unique("Product"), Owner);
-        var child = await repository.CreateAsync(root.Id, "Specs", Owner);
-        var leaf = await repository.CreateAsync(child.Id, "Drafts", Owner);
+        var root = Unique("Crumb");
+        var map = await repository.ReconcileAsync([$"{root}/child/leaf"]);
 
-        var breadcrumb = await repository.GetBreadcrumbAsync(leaf.Id);
+        var breadcrumb = await repository.GetBreadcrumbAsync(map[$"{root}/child/leaf"]);
 
-        Assert.Equal([root.Id, child.Id, leaf.Id], breadcrumb.Select(folder => folder.Id));
+        Assert.Equal(
+            [map[root], map[$"{root}/child"], map[$"{root}/child/leaf"]],
+            breadcrumb.Select(folder => folder.Id));
     }
 
     [Fact]
@@ -71,27 +105,11 @@ public sealed class FolderRepositoryTests(PostgresFixture fixture)
         // "Eng" is a string prefix of "Engineering" — a naive LIKE would treat
         // it as an ancestor. The "/" guard is what prevents that.
         var suffix = Guid.NewGuid().ToString("N")[..6];
-        await repository.CreateAsync(null, $"Eng{suffix}", Owner);
-        var longer = await repository.CreateAsync(null, $"Eng{suffix}ineering", Owner);
+        var map = await repository.ReconcileAsync([$"Eng{suffix}", $"Eng{suffix}ineering"]);
 
-        var breadcrumb = await repository.GetBreadcrumbAsync(longer.Id);
+        var breadcrumb = await repository.GetBreadcrumbAsync(map[$"Eng{suffix}ineering"]);
 
         Assert.Single(breadcrumb);
-        Assert.Equal(longer.Id, breadcrumb[0].Id);
-    }
-
-    [Fact]
-    public async Task NameTakenAsync_only_considers_siblings()
-    {
-        await using var db = fixture.CreateContext();
-        var repository = new FolderRepository(db);
-
-        var rootA = await repository.CreateAsync(null, Unique("A"), Owner);
-        var rootB = await repository.CreateAsync(null, Unique("B"), Owner);
-        await repository.CreateAsync(rootA.Id, "Shared", Owner);
-
-        Assert.True(await repository.NameTakenAsync(rootA.Id, "Shared"));
-        Assert.True(await repository.NameTakenAsync(rootA.Id, "shared"));
-        Assert.False(await repository.NameTakenAsync(rootB.Id, "Shared"));
+        Assert.Equal(map[$"Eng{suffix}ineering"], breadcrumb[0].Id);
     }
 }

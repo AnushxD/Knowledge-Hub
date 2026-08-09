@@ -6,6 +6,7 @@ using DocHub.DataAccess;
 using DocHub.Integrations;
 using DocHub.Services;
 using DocHub.Services.Ingestion;
+using DocHub.Services.Repository;
 using Hangfire;
 using Hangfire.PostgreSql;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
@@ -50,6 +51,7 @@ builder.Services.AddHangfireServer(options =>
 });
 
 builder.Services.AddScoped<IIngestionQueue, HangfireIngestionQueue>();
+builder.Services.AddScoped<IRepositorySyncQueue, HangfireRepositorySyncQueue>();
 
 builder.Services
     .AddControllers()

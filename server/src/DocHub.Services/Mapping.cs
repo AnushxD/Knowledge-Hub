@@ -17,7 +17,12 @@ internal static class Mapping
     public static UserViewModel ToViewModel(this UserDto user) =>
         new(user.Id, user.Name, user.Email, Initials(user.Name));
 
-    public static DocumentViewModel ToViewModel(this DocumentDto document) =>
+    /// <param name="webUrl">
+    /// Where the file lives in GitLab. Passed in rather than derived here: it
+    /// needs the repository client, and mapping stays a pure function of its
+    /// arguments.
+    /// </param>
+    public static DocumentViewModel ToViewModel(this DocumentDto document, Uri webUrl) =>
         new(
             document.Id,
             document.FolderId,
@@ -26,34 +31,28 @@ internal static class Mapping
             document.FileName,
             document.Extension,
             document.SizeBytes,
-            document.Version,
+            document.RepositoryPath,
+            webUrl.ToString(),
+            document.CommitSha,
             document.Tags,
-            document.Owner.ToViewModel(),
             // Lower-cased so the JSON contract is stable regardless of how the
             // enum is spelled in C#.
             document.Status.ToString().ToLowerInvariant(),
             document.FailureReason,
             document.ChunkCount,
             document.IsStarred,
+            document.LastSyncedAt,
             document.CreatedAt,
             document.UpdatedAt);
 
-    public static DocumentVersionViewModel ToViewModel(this DocumentVersionDto version) =>
-        new(
-            version.VersionNumber,
-            version.SizeBytes,
-            version.Note,
-            version.ChangedBy.ToViewModel(),
-            version.ChangedAt);
-
     public static DocumentDetailViewModel ToViewModel(
         this DocumentDetailDto detail,
+        Uri webUrl,
         IReadOnlyList<ChunkMatchDto> sections,
         int citedInAnswers) =>
         new(
-            detail.Document.ToViewModel(),
+            detail.Document.ToViewModel(webUrl),
             [.. detail.Breadcrumb.Select(ToViewModel)],
-            [.. detail.Versions.Select(ToViewModel)],
             [.. sections.Select(ToViewModel)],
             citedInAnswers);
 
@@ -73,7 +72,7 @@ internal static class Mapping
             stats.InPipeline,
             stats.Failed,
             stats.Folders,
-            stats.StorageBytes,
+            stats.ContentBytes,
             stats.Chunks);
 
     public static IngestionStatus? ParseStatus(string value) =>

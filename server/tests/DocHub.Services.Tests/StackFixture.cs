@@ -1,11 +1,10 @@
-using Azure.Storage.Blobs;
 using DocHub.DataAccess;
 using DocHub.DataAccess.Entities;
 using DocHub.DataAccess.Repositories;
 using DocHub.Integrations.Embeddings;
 using DocHub.Integrations.Knowledge;
 using DocHub.Integrations.Llm;
-using DocHub.Integrations.Storage;
+using DocHub.Integrations.SourceControl;
 using DocHub.Services;
 using DocHub.Services.Activity;
 using DocHub.Services.Chat;
@@ -14,7 +13,9 @@ using DocHub.Services.Folders;
 using DocHub.Services.Ingestion;
 using DocHub.Services.Ingestion.Extraction;
 using DocHub.Services.Knowledge;
+using DocHub.Services.Repository;
 using DocHub.Services.Search;
+using DocHub.Services.ViewModels;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -22,54 +23,34 @@ using Microsoft.Extensions.Options;
 namespace DocHub.Services.Tests;
 
 /// <summary>
-/// Wires the real Service layer to the real repositories and the real blob
-/// storage — the whole stack minus HTTP.
+/// Wires the real Service layer to the real repositories against real Postgres
+/// — the whole stack minus HTTP and minus GitLab.
 ///
-/// Mocking the repository or storage here would only prove the mocks behave;
-/// the interesting bugs live in the seams between layers, such as whether a
-/// deleted folder actually frees the blobs its documents owned.
+/// Mocking the repositories here would only prove the mocks behave; the
+/// interesting bugs live in the seams between layers, such as whether a
+/// directory leaving the repository actually takes its documents' chunks with
+/// it. GitLab itself is the one thing faked, by an in-memory tree that hashes
+/// its own content — see <see cref="FakeSourceRepository"/>.
 /// </summary>
 public sealed class StackFixture : IAsyncLifetime
 {
     private const string DefaultDb =
         "Host=localhost;Port=5432;Database=documenthub_services_test;Username=documenthub;Password=documenthub_local_dev";
 
-    private readonly string _containerName = $"svc-{Guid.NewGuid():N}";
-
     private string ConnectionString { get; } =
         Environment.GetEnvironmentVariable("DOCHUB_TEST_DB") ?? DefaultDb;
-
-    private string BlobConnection { get; } =
-        Environment.GetEnvironmentVariable("DOCHUB_TEST_BLOBS") ?? "UseDevelopmentStorage=true";
-
-    private BlobServiceClient _blobClient = null!;
-
-    public IFileStorage Storage { get; private set; } = null!;
 
     public async Task InitializeAsync()
     {
         await using var db = CreateContext();
         await db.Database.EnsureDeletedAsync();
         await db.Database.MigrateAsync();
-
-        _blobClient = new BlobServiceClient(BlobConnection);
-        Storage = new AzureBlobFileStorage(
-            _blobClient,
-            Options.Create(new FileStorageOptions
-            {
-                ConnectionString = BlobConnection,
-                ContainerName = _containerName,
-            }),
-            NullLogger<AzureBlobFileStorage>.Instance);
-
-        await Storage.EnsureReadyAsync();
     }
 
     public async Task DisposeAsync()
     {
         await using var db = CreateContext();
         await db.Database.EnsureDeletedAsync();
-        await _blobClient.GetBlobContainerClient(_containerName).DeleteIfExistsAsync();
     }
 
     private DocHubDbContext CreateContext() =>
@@ -101,8 +82,17 @@ public sealed class StackFixture : IAsyncLifetime
         var documentRepo = new DocumentRepository(db);
         var chunkRepo = new ChunkRepository(db);
         var chatRepo = new ChatRepository(db);
+        var syncStateRepo = new RepositorySyncStateRepository(db);
         var user = new TestCurrentUser();
         var queue = new RecordingIngestionQueue();
+        var repository = new FakeSourceRepository();
+        var gitLabOptions = Options.Create(new GitLabOptions
+        {
+            BaseUrl = "https://gitlab.test",
+            ProjectPath = repository.ProjectPath,
+            Branch = repository.Branch,
+            WebhookSecret = "test-secret",
+        });
 
         var ingestionOptions = Options.Create(new IngestionOptions());
 
@@ -169,23 +159,33 @@ public sealed class StackFixture : IAsyncLifetime
             Options.Create(knowledgeOptions),
             NullLogger<CompositeKnowledgeSource>.Instance);
 
+        var ingestion = new IngestionService(
+            documentRepo, chunkRepo, repository, extractors,
+            new TextChunker(ingestionOptions), embeddings, queue, activity,
+            NullLogger<IngestionService>.Instance);
+
+        var syncQueue = new RecordingSyncQueue();
+
+        var mirror = new RepositoryMirrorService(
+            repository, documentRepo, folderRepo, syncStateRepo, ingestion, queue, activity,
+            gitLabOptions, NullLogger<RepositoryMirrorService>.Instance);
+
         return new Scope(
             db,
-            new FolderService(
-                folderRepo, Storage, activity, user, NullLogger<FolderService>.Instance),
-            new DocumentService(
-                documentRepo, folderRepo, chunkRepo, chatRepo, Storage, queue, activity, user,
-                NullLogger<DocumentService>.Instance),
-            new IngestionService(
-                documentRepo, chunkRepo, Storage, extractors,
-                new TextChunker(ingestionOptions), embeddings, queue, activity,
-                NullLogger<IngestionService>.Instance),
+            repository,
+            new FolderService(folderRepo),
+            new DocumentService(documentRepo, chunkRepo, chatRepo, repository, activity),
+            ingestion,
+            mirror,
+            new RepositoryWebhook(
+                syncQueue, repository, gitLabOptions, NullLogger<RepositoryWebhook>.Instance),
             searchService,
             new ChatService(
                 chatRepo, knowledge, llm, user,
                 Options.Create(new ChatOptions()), NullLogger<ChatService>.Instance),
             chunkRepo,
             queue,
+            syncQueue,
             llm,
             knowledge,
             user,
@@ -245,19 +245,61 @@ public sealed class StackFixture : IAsyncLifetime
 
     public sealed record Scope(
         DocHubDbContext Db,
+        FakeSourceRepository Repository,
         IFolderService Folders,
         IDocumentService Documents,
         IIngestionService Ingestion,
+        IRepositoryMirrorService Mirror,
+        IRepositoryWebhook Webhook,
         ISearchService Search,
         IChatService Chat,
         IChunkRepository Chunks,
         RecordingIngestionQueue Queue,
+        RecordingSyncQueue SyncQueue,
         ScriptedLlmProvider Llm,
         IKnowledgeRetriever Knowledge,
         TestCurrentUser User,
         IRepositorySourceSettingRepository SourceSettings,
         IActivityLog Activity) : IAsyncDisposable
     {
+        /// <summary>
+        /// Commits a file to the fake repository and mirrors it, returning the
+        /// document that resulted.
+        ///
+        /// The path is relative to the mirrored tree, so "guides/vpn.md" lands
+        /// in the folder "docs/guides" — the project's own leaf name is the
+        /// visible root, exactly as it is against a real GitLab.
+        /// </summary>
+        public async Task<DocumentViewModel> PublishAsync(string path, string content)
+        {
+            Repository.Put(path, content);
+            await Mirror.SyncAsync(actorId: null);
+
+            var documents = await Documents.QueryAsync(new DocumentQueryRequest { Take = 500 });
+
+            return documents.Single(document => document.RepositoryPath == path.Trim('/'));
+        }
+
+        /// <summary>
+        /// A folder holding nothing retrieval can see, for the tests that need
+        /// a question to find no passages.
+        ///
+        /// A directory with no files in it cannot exist any more — folders are
+        /// derived from file paths — so this mirrors one file and leaves it
+        /// Pending. Retrieval only ever sees Indexed documents, so the effect is
+        /// the same and the setup is one the product can actually reach.
+        /// </summary>
+        public async Task<Guid> EmptyFolderAsync(string directory) =>
+            (await PublishAsync($"{directory}/not-indexed.md", "Nothing here yet.")).FolderId;
+
+        /// <summary>Commits a file, mirrors it, and puts it all the way through ingestion.</summary>
+        public async Task<DocumentViewModel> PublishIndexedAsync(string path, string content)
+        {
+            var document = await PublishAsync(path, content);
+            await Ingestion.IngestAsync(document.Id);
+            return document;
+        }
+
         public ValueTask DisposeAsync() => Db.DisposeAsync();
     }
 
@@ -287,8 +329,18 @@ public sealed class StackFixture : IAsyncLifetime
         public void Enqueue(Guid documentId) => queued.Add(documentId);
     }
 
-    public static Stream FileOf(string content) =>
-        new MemoryStream(System.Text.Encoding.UTF8.GetBytes(content));
+    /// <summary>
+    /// Records what would have been queued instead of running it, so a test can
+    /// assert that a webhook led to a sync without a job server.
+    /// </summary>
+    public sealed class RecordingSyncQueue : IRepositorySyncQueue
+    {
+        private readonly List<Guid?> queued = [];
+
+        public IReadOnlyList<Guid?> Queued => queued;
+
+        public void Enqueue(Guid? actorId) => queued.Add(actorId);
+    }
 }
 
 [CollectionDefinition(nameof(StackCollection))]

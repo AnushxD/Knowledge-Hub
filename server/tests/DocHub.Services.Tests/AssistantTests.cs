@@ -16,10 +16,6 @@ namespace DocHub.Services.Tests;
 [Collection(nameof(StackCollection))]
 public sealed class AssistantTests(StackFixture fixture)
 {
-    private static UploadRequest Upload(string body, string fileName) =>
-        new(StackFixture.FileOf(body), fileName, "text/markdown",
-            System.Text.Encoding.UTF8.GetByteCount(body));
-
     private static string Unique(string name) => $"{name}-{Guid.NewGuid():N}"[..22];
 
     private const string VpnGuide = """
@@ -30,13 +26,11 @@ public sealed class AssistantTests(StackFixture fixture)
         the client is downloaded from the IT portal.
         """;
 
-    /// <summary>Uploads and indexes a document, returning the folder it landed in.</summary>
+    /// <summary>Mirrors and indexes a document, returning the folder it landed in.</summary>
     private static async Task<Guid> IndexAsync(StackFixture.Scope scope, string body, string name)
     {
-        var folder = await scope.Folders.CreateAsync(new CreateFolderRequest(null, Unique(name)));
-        var document = await scope.Documents.UploadAsync(folder.Id, Upload(body, $"{name}.md"));
-        await scope.Ingestion.IngestAsync(document.Id);
-        return folder.Id;
+        var document = await scope.PublishIndexedAsync($"{Unique(name)}/{name}.md", body);
+        return document.FolderId;
     }
 
     /// <summary>Drains the answer stream into the events a caller would see.</summary>
@@ -231,16 +225,11 @@ public sealed class AssistantTests(StackFixture fixture)
     {
         await using var scope = fixture.NewScope();
 
-        var folder = await scope.Folders.CreateAsync(new CreateFolderRequest(null, Unique("cited")));
-        var document = await scope.Documents.UploadAsync(folder.Id, Upload(VpnGuide, "vpn.md"));
-        await scope.Ingestion.IngestAsync(document.Id);
+        var document = await scope.PublishIndexedAsync($"{Unique("cited")}/vpn.md", VpnGuide);
 
         // A second document in a folder of its own, so it is never retrieved.
-        var otherFolder = await scope.Folders.CreateAsync(
-            new CreateFolderRequest(null, Unique("uncited")));
-        var other = await scope.Documents.UploadAsync(
-            otherFolder.Id, Upload("## Expenses\n\nClaim within 30 days.", "expenses.md"));
-        await scope.Ingestion.IngestAsync(other.Id);
+        var other = await scope.PublishIndexedAsync(
+            $"{Unique("uncited")}/expenses.md", "## Expenses\n\nClaim within 30 days.");
 
         Assert.Equal(0, (await scope.Documents.GetAsync(document.Id)).CitedInAnswers);
 
@@ -251,7 +240,7 @@ public sealed class AssistantTests(StackFixture fixture)
             await AskAsync(scope, new AskRequest
             {
                 Question = "How do I reach internal systems?",
-                FolderId = folder.Id,
+                FolderId = document.FolderId,
             });
         }
 
@@ -269,18 +258,17 @@ public sealed class AssistantTests(StackFixture fixture)
     {
         await using var scope = fixture.NewScope();
 
-        var folder = await scope.Folders.CreateAsync(new CreateFolderRequest(null, Unique("refuse")));
-        var document = await scope.Documents.UploadAsync(folder.Id, Upload(VpnGuide, "vpn.md"));
-        await scope.Ingestion.IngestAsync(document.Id);
+        var document = await scope.PublishIndexedAsync($"{Unique("refuse")}/vpn.md", VpnGuide);
 
-        // An empty folder retrieves nothing, so the assistant declines without
-        // ever calling the model — and a declined answer cites nobody.
-        var empty = await scope.Folders.CreateAsync(new CreateFolderRequest(null, Unique("empty")));
+        // A folder with nothing indexed in it retrieves nothing, so the
+        // assistant declines without ever calling the model — and a declined
+        // answer cites nobody.
+        var empty = await scope.EmptyFolderAsync(Unique("empty"));
 
         var (events, _) = await AskAsync(scope, new AskRequest
         {
             Question = "How do I reach internal systems?",
-            FolderId = empty.Id,
+            FolderId = empty,
         });
 
         Assert.True(Assert.IsType<ChatEvent.Completed>(events[^1]).IsRefusal);
@@ -331,13 +319,13 @@ public sealed class AssistantTests(StackFixture fixture)
     {
         await using var scope = fixture.NewScope();
 
-        // An empty folder: retrieval finds nothing to ground an answer in.
-        var folder = await scope.Folders.CreateAsync(new CreateFolderRequest(null, Unique("Bare")));
+        // Nothing indexed here: retrieval finds nothing to ground an answer in.
+        var folder = await scope.EmptyFolderAsync(Unique("Bare"));
 
         var (events, answer) = await AskAsync(scope, new AskRequest
         {
             Question = "What is the escalation path for a sev-one incident?",
-            FolderId = folder.Id,
+            FolderId = folder,
         });
 
         // Asking a model to answer with no sources is exactly the situation

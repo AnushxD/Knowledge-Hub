@@ -6,20 +6,35 @@ using Microsoft.Extensions.Logging;
 namespace DocHub.Services.Activity;
 
 /// <summary>
-/// Records what people do, and reads it back for the dashboard.
+/// Records what happened, and reads it back for the dashboard.
 ///
-/// Deliberately fire-and-forget from the caller's point of view: recording
-/// that a document was uploaded must never be the reason the upload fails.
-/// The trail is worth having, but it is not worth more than the work it
-/// describes.
+/// Deliberately fire-and-forget from the caller's point of view: recording that
+/// a file changed must never be the reason the sync fails. The trail is worth
+/// having, but it is not worth more than the work it describes.
 /// </summary>
 public interface IActivityLog
 {
+    /// <summary>Records something the signed-in caller did.</summary>
     Task RecordAsync(
         ActivityType type,
         string target,
         Guid? targetId = null,
-        Guid? actorId = null,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Records something with an explicit actor, for work that happens away
+    /// from a request.
+    /// </summary>
+    /// <param name="actorId">
+    /// Null when nobody caused it — a webhook sync, or an ingestion job the
+    /// sync queued. Naming the seeded administrator instead would put a person
+    /// against work that account did not do.
+    /// </param>
+    Task RecordForAsync(
+        Guid? actorId,
+        ActivityType type,
+        string target,
+        Guid? targetId = null,
         CancellationToken ct = default);
 
     Task<IReadOnlyList<ActivityEventViewModel>> RecentAsync(
@@ -32,25 +47,29 @@ internal sealed class ActivityLog(
     ICurrentUser currentUser,
     ILogger<ActivityLog> logger) : IActivityLog
 {
-    public async Task RecordAsync(
+    public Task RecordAsync(
         ActivityType type,
         string target,
         Guid? targetId = null,
-        Guid? actorId = null,
+        CancellationToken ct = default) =>
+        RecordForAsync(currentUser.Id, type, target, targetId, ct);
+
+    public async Task RecordForAsync(
+        Guid? actorId,
+        ActivityType type,
+        string target,
+        Guid? targetId = null,
         CancellationToken ct = default)
     {
         try
         {
-            // An explicit actor covers the unattended case: ingestion runs on a
-            // background worker with nobody signed in, so it records the
-            // document's owner rather than inventing a system identity.
-            await activity.AppendAsync(type, actorId ?? currentUser.Id, target, targetId, ct);
+            await activity.AppendAsync(type, actorId, target, targetId, ct);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
             // Swallowed on purpose, and loudly. The alternative is a failed
-            // audit write rolling back a successful upload, which trades a
-            // missing feed entry for lost work.
+            // audit write rolling back a successful sync, which trades a
+            // missing feed entry for a repository that has to be mirrored again.
             logger.LogError(
                 exception, "Could not record {Type} activity for {Target}", type, target);
         }
@@ -65,7 +84,7 @@ internal sealed class ActivityLog(
         return [.. events.Select(entry => new ActivityEventViewModel(
             entry.Id,
             Describe(entry.Type),
-            entry.Actor.ToViewModel(),
+            entry.Actor?.ToViewModel(),
             entry.Target,
             entry.TargetId,
             entry.At))];
@@ -78,14 +97,13 @@ internal sealed class ActivityLog(
     /// </summary>
     private static string Describe(ActivityType type) => type switch
     {
-        ActivityType.Uploaded => "uploaded",
+        ActivityType.Added => "added",
+        ActivityType.Changed => "changed",
         ActivityType.Updated => "updated",
-        ActivityType.Moved => "moved",
-        ActivityType.Deleted => "deleted",
+        ActivityType.Removed => "removed",
         ActivityType.Indexed => "indexed",
         ActivityType.Failed => "failed",
-        ActivityType.FolderCreated => "folder-created",
-        ActivityType.FolderDeleted => "folder-deleted",
+        ActivityType.Synced => "synced",
         _ => "updated",
     };
 }

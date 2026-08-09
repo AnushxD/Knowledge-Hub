@@ -33,11 +33,12 @@ public class DocumentChunk
     public int TokenCount { get; set; }
 
     /// <summary>
-    /// Document version this chunk was extracted from. A re-ingest replaces
-    /// every chunk, so this is really a debugging aid: a stale value means
-    /// chunks outlived the upload that produced them.
+    /// Git blob this chunk was extracted from. A re-ingest replaces every
+    /// chunk, so this is really a diagnostic: a value that disagrees with the
+    /// document's own blob means chunks outlived the revision that produced
+    /// them, and search is answering from content the repository no longer has.
     /// </summary>
-    public int DocumentVersion { get; set; }
+    public required string SourceBlobSha { get; set; }
 
     /// <summary>
     /// Embedding of <see cref="Text"/>. The dimension is fixed by the schema

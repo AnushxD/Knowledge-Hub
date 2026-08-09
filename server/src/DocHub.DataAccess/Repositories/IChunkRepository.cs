@@ -19,7 +19,7 @@ public interface IChunkRepository
     /// </summary>
     Task ReplaceAsync(
         Guid documentId,
-        int documentVersion,
+        string sourceBlobSha,
         IReadOnlyList<NewChunkDto> chunks,
         CancellationToken ct = default);
 

@@ -37,9 +37,6 @@ internal sealed class DocumentRepository(DocHubDbContext db) : IDocumentReposito
         if (query.StarredOnly)
             documents = documents.Where(document => document.IsStarred);
 
-        if (query.OwnerId is { } ownerId)
-            documents = documents.Where(document => document.OwnerId == ownerId);
-
         if (query.Statuses is { Count: > 0 } statuses)
             documents = documents.Where(document => statuses.Contains(document.Status));
 
@@ -53,11 +50,13 @@ internal sealed class DocumentRepository(DocHubDbContext db) : IDocumentReposito
         if (!string.IsNullOrWhiteSpace(query.Text))
         {
             var text = $"%{query.Text.Trim()}%";
-            // Case-insensitive LIKE. This is plain substring matching, not the
-            // real thing — hybrid keyword + vector search arrives in phase 2.
+            // Plain substring matching over names and metadata, which is all
+            // this listing is for. Content is searched properly on the search
+            // screen, through the hybrid index.
             documents = documents.Where(document =>
                 EF.Functions.ILike(document.Title, text) ||
                 EF.Functions.ILike(document.FileName, text) ||
+                EF.Functions.ILike(document.RepositoryPath, text) ||
                 (document.Description != null && EF.Functions.ILike(document.Description, text)));
         }
 
@@ -79,13 +78,13 @@ internal sealed class DocumentRepository(DocHubDbContext db) : IDocumentReposito
 
     public async Task<DocumentDetailDto?> GetByIdAsync(Guid id, CancellationToken ct = default)
     {
-        var location = await db.Documents
+        var folderPath = await db.Documents
             .AsNoTracking()
             .Where(candidate => candidate.Id == id)
-            .Select(candidate => new { candidate.StoragePath, FolderPath = candidate.Folder!.Path })
+            .Select(candidate => candidate.Folder!.Path)
             .FirstOrDefaultAsync(ct);
 
-        if (location is null) return null;
+        if (folderPath is null) return null;
 
         var dto = await db.Documents
             .AsNoTracking()
@@ -93,7 +92,6 @@ internal sealed class DocumentRepository(DocHubDbContext db) : IDocumentReposito
             .Select(Projection)
             .FirstAsync(ct);
 
-        var folderPath = location.FolderPath;
         var breadcrumb = await db.Folders
             .AsNoTracking()
             .Where(folder =>
@@ -102,36 +100,24 @@ internal sealed class DocumentRepository(DocHubDbContext db) : IDocumentReposito
             .OrderBy(folder => folder.Path.Length)
             .Select(folder => new FolderDto(
                 folder.Id, folder.ParentId, folder.Name, folder.Path,
-                folder.OwnerId, 0, folder.CreatedAt, folder.UpdatedAt))
+                0, folder.CreatedAt, folder.UpdatedAt))
             .ToListAsync(ct);
 
-        var versions = await db.DocumentVersions
-            .AsNoTracking()
-            .Where(version => version.DocumentId == id)
-            .OrderByDescending(version => version.VersionNumber)
-            .Select(version => new DocumentVersionDto(
-                version.VersionNumber,
-                version.StoragePath,
-                version.SizeBytes,
-                version.Note,
-                new UserDto(
-                    version.ChangedBy!.Id,
-                    version.ChangedBy.Name,
-                    // Nullable on IdentityUser, required by our column — the
-                    // fallback satisfies the compiler and can never be hit.
-                    version.ChangedBy.Email ?? string.Empty,
-                    version.ChangedBy.Role),
-                version.ChangedAt))
-            .ToListAsync(ct);
-
-        return new DocumentDetailDto(dto, location.StoragePath, breadcrumb, versions);
+        return new DocumentDetailDto(dto, breadcrumb);
     }
 
-    public Task<string?> GetStoragePathAsync(Guid id, CancellationToken ct = default) =>
+    public Task<string?> GetRepositoryPathAsync(Guid id, CancellationToken ct = default) =>
         db.Documents
             .Where(document => document.Id == id)
-            .Select(document => document.StoragePath)
+            .Select(document => document.RepositoryPath)
             .FirstOrDefaultAsync(ct);
+
+    public async Task<IReadOnlyList<MirroredFileDto>> GetMirrorAsync(CancellationToken ct = default) =>
+        await db.Documents
+            .AsNoTracking()
+            .Select(document => new MirroredFileDto(
+                document.Id, document.RepositoryPath, document.BlobSha, document.Title))
+            .ToListAsync(ct);
 
     public async Task<DocumentDto> CreateAsync(
         NewDocumentDto input,
@@ -143,33 +129,19 @@ internal sealed class DocumentRepository(DocHubDbContext db) : IDocumentReposito
             Id = Guid.CreateVersion7(),
             FolderId = input.FolderId,
             Title = input.Title,
-            Description = input.Description,
             FileName = input.FileName,
             Extension = input.Extension,
             ContentType = input.ContentType,
-            SizeBytes = input.SizeBytes,
-            StoragePath = input.StoragePath,
-            Version = 1,
-            Tags = [.. input.Tags],
-            OwnerId = input.OwnerId,
+            RepositoryPath = input.RepositoryPath,
+            BlobSha = input.BlobSha,
+            CommitSha = input.CommitSha,
+            // Unknown until the file is fetched; ingestion fills it in.
+            SizeBytes = 0,
             Status = IngestionStatus.Pending,
+            LastSyncedAt = now,
             CreatedAt = now,
             UpdatedAt = now,
         };
-
-        // Version 1 is written alongside the document, so history is complete
-        // from the first upload rather than starting at the first edit.
-        document.Versions.Add(new DocumentVersion
-        {
-            Id = Guid.CreateVersion7(),
-            DocumentId = document.Id,
-            VersionNumber = 1,
-            StoragePath = input.StoragePath,
-            SizeBytes = input.SizeBytes,
-            Note = "Initial upload",
-            ChangedById = input.OwnerId,
-            ChangedAt = now,
-        });
 
         db.Documents.Add(document);
         await db.SaveChangesAsync(ct);
@@ -177,43 +149,48 @@ internal sealed class DocumentRepository(DocHubDbContext db) : IDocumentReposito
         return await RequireDtoAsync(document.Id, ct);
     }
 
-    public async Task<DocumentDto?> AddVersionAsync(
+    public async Task<DocumentDto?> SetContentAsync(
         Guid id,
-        string storagePath,
-        long sizeBytes,
-        string? note,
-        Guid changedById,
+        string blobSha,
+        string? commitSha,
         CancellationToken ct = default)
     {
         var document = await db.Documents.FirstOrDefaultAsync(candidate => candidate.Id == id, ct);
         if (document is null) return null;
 
         var now = DateTimeOffset.UtcNow;
-        document.Version += 1;
-        document.StoragePath = storagePath;
-        document.SizeBytes = sizeBytes;
+        document.BlobSha = blobSha;
+        document.CommitSha = commitSha;
+        document.LastSyncedAt = now;
         document.UpdatedAt = now;
 
         // New content means the old chunks are stale, so the document drops
-        // back to Pending and is re-ingested.
+        // back to Pending and is re-ingested. The size goes with them: it
+        // described the previous revision.
         document.Status = IngestionStatus.Pending;
         document.FailureReason = null;
         document.ChunkCount = null;
-
-        db.DocumentVersions.Add(new DocumentVersion
-        {
-            Id = Guid.CreateVersion7(),
-            DocumentId = document.Id,
-            VersionNumber = document.Version,
-            StoragePath = storagePath,
-            SizeBytes = sizeBytes,
-            Note = note,
-            ChangedById = changedById,
-            ChangedAt = now,
-        });
+        document.SizeBytes = 0;
 
         await db.SaveChangesAsync(ct);
         return await RequireDtoAsync(id, ct);
+    }
+
+    public async Task TouchAsync(
+        IReadOnlyList<Guid> ids,
+        DateTimeOffset at,
+        CancellationToken ct = default)
+    {
+        if (ids.Count == 0) return;
+
+        // One UPDATE rather than loading a repository's worth of entities to
+        // set a single timestamp on each. UpdatedAt is deliberately untouched:
+        // nothing about the document changed, only when it was last looked at.
+        await db.Documents
+            .Where(document => ids.Contains(document.Id))
+            .ExecuteUpdateAsync(
+                setters => setters.SetProperty(document => document.LastSyncedAt, at),
+                ct);
     }
 
     public async Task<DocumentDto?> UpdateMetadataAsync(
@@ -239,6 +216,7 @@ internal sealed class DocumentRepository(DocHubDbContext db) : IDocumentReposito
         IngestionStatus status,
         string? failureReason = null,
         int? chunkCount = null,
+        long? sizeBytes = null,
         CancellationToken ct = default)
     {
         var document = await db.Documents.FirstOrDefaultAsync(candidate => candidate.Id == id, ct);
@@ -255,39 +233,48 @@ internal sealed class DocumentRepository(DocHubDbContext db) : IDocumentReposito
             : null;
         // A chunk count only means anything once ingestion has finished.
         document.ChunkCount = status == IngestionStatus.Indexed ? chunkCount : null;
+        if (sizeBytes is { } size) document.SizeBytes = size;
         document.UpdatedAt = DateTimeOffset.UtcNow;
 
         await db.SaveChangesAsync(ct);
         return await RequireDtoAsync(id, ct);
     }
 
-    public async Task<DocumentDto?> MoveAsync(Guid id, Guid folderId, CancellationToken ct = default)
+    public async Task<int> DeleteManyAsync(
+        IReadOnlyList<Guid> ids,
+        CancellationToken ct = default)
     {
-        var document = await db.Documents.FirstOrDefaultAsync(candidate => candidate.Id == id, ct);
-        if (document is null) return null;
+        if (ids.Count == 0) return 0;
 
-        document.FolderId = folderId;
-        document.UpdatedAt = DateTimeOffset.UtcNow;
-        await db.SaveChangesAsync(ct);
-        return await RequireDtoAsync(id, ct);
-    }
+        // The chunks go with them by cascade, which is what keeps a file that
+        // left the repository from staying answerable through search.
+        var removed = await db.Documents
+            .Where(document => ids.Contains(document.Id))
+            .ExecuteDeleteAsync(ct);
 
-    public async Task<IReadOnlyList<string>> DeleteAsync(Guid id, CancellationToken ct = default)
-    {
-        var document = await db.Documents.FirstOrDefaultAsync(candidate => candidate.Id == id, ct);
-        if (document is null) return [];
+        // ExecuteDelete goes straight to the database and leaves the change
+        // tracker still believing these rows exist. The next SaveChanges on
+        // this context — during one sync that is the folder reconciliation and
+        // then the sync record itself — would cascade or update a row that has
+        // gone, and fail the whole sync on a concurrency error. Detaching them
+        // is what keeps the two views of the world agreeing.
+        var doomed = ids.ToHashSet();
 
-        var blobs = await db.DocumentVersions
-            .Where(version => version.DocumentId == id)
-            .Select(version => version.StoragePath)
-            .ToListAsync(ct);
+        foreach (var entry in db.ChangeTracker.Entries<Document>()
+            .Where(entry => doomed.Contains(entry.Entity.Id))
+            .ToList())
+        {
+            entry.State = EntityState.Detached;
+        }
 
-        blobs.Add(document.StoragePath);
+        foreach (var entry in db.ChangeTracker.Entries<DocumentChunk>()
+            .Where(entry => doomed.Contains(entry.Entity.DocumentId))
+            .ToList())
+        {
+            entry.State = EntityState.Detached;
+        }
 
-        db.Documents.Remove(document);
-        await db.SaveChangesAsync(ct);
-
-        return blobs.Distinct().ToList();
+        return removed;
     }
 
     public async Task<LibraryStatsDto> GetStatsAsync(CancellationToken ct = default)
@@ -315,7 +302,7 @@ internal sealed class DocumentRepository(DocHubDbContext db) : IDocumentReposito
             InPipeline: CountOf(IngestionStatus.Pending) + CountOf(IngestionStatus.Indexing),
             Failed: CountOf(IngestionStatus.Failed),
             Folders: folders,
-            StorageBytes: byStatus.Sum(row => row.Bytes),
+            ContentBytes: byStatus.Sum(row => row.Bytes),
             Chunks: byStatus.Sum(row => row.Chunks));
     }
 
@@ -333,16 +320,6 @@ internal sealed class DocumentRepository(DocHubDbContext db) : IDocumentReposito
             .OrderBy(tag => tag, StringComparer.OrdinalIgnoreCase)
             .ToList();
     }
-
-    public async Task<IReadOnlyList<UserDto>> GetOwnersAsync(CancellationToken ct = default) =>
-        await db.Documents
-            .AsNoTracking()
-            .Select(document => document.Owner!)
-            .Distinct()
-            .OrderBy(owner => owner.Name)
-            .Select(owner => new UserDto(
-                owner.Id, owner.Name, owner.Email ?? string.Empty, owner.Role))
-            .ToListAsync(ct);
 
     private async Task<DocumentDto> RequireDtoAsync(Guid id, CancellationToken ct) =>
         await db.Documents
@@ -365,17 +342,15 @@ internal sealed class DocumentRepository(DocHubDbContext db) : IDocumentReposito
             document.Extension,
             document.ContentType,
             document.SizeBytes,
-            document.Version,
+            document.RepositoryPath,
+            document.BlobSha,
+            document.CommitSha,
             document.Tags,
-            new UserDto(
-                document.Owner!.Id,
-                document.Owner.Name,
-                document.Owner.Email ?? string.Empty,
-                document.Owner.Role),
             document.Status,
             document.FailureReason,
             document.ChunkCount,
             document.IsStarred,
+            document.LastSyncedAt,
             document.CreatedAt,
             document.UpdatedAt);
 }

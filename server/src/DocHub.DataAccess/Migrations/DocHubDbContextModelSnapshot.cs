@@ -31,7 +31,7 @@ namespace DocHub.DataAccess.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
-                    b.Property<Guid>("ActorId")
+                    b.Property<Guid?>("ActorId")
                         .HasColumnType("uuid");
 
                     b.Property<DateTimeOffset>("At")
@@ -145,8 +145,17 @@ namespace DocHub.DataAccess.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<string>("BlobSha")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
                     b.Property<int?>("ChunkCount")
                         .HasColumnType("integer");
+
+                    b.Property<string>("CommitSha")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
 
                     b.Property<string>("ContentType")
                         .IsRequired()
@@ -180,8 +189,13 @@ namespace DocHub.DataAccess.Migrations
                     b.Property<bool>("IsStarred")
                         .HasColumnType("boolean");
 
-                    b.Property<Guid>("OwnerId")
-                        .HasColumnType("uuid");
+                    b.Property<DateTimeOffset>("LastSyncedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("RepositoryPath")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
 
                     b.Property<long>("SizeBytes")
                         .HasColumnType("bigint");
@@ -190,11 +204,6 @@ namespace DocHub.DataAccess.Migrations
                         .IsRequired()
                         .HasMaxLength(32)
                         .HasColumnType("character varying(32)");
-
-                    b.Property<string>("StoragePath")
-                        .IsRequired()
-                        .HasMaxLength(1000)
-                        .HasColumnType("character varying(1000)");
 
                     b.PrimitiveCollection<string[]>("Tags")
                         .IsRequired()
@@ -208,14 +217,12 @@ namespace DocHub.DataAccess.Migrations
                     b.Property<DateTimeOffset>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<int>("Version")
-                        .HasColumnType("integer");
-
                     b.HasKey("Id");
 
                     b.HasIndex("FolderId");
 
-                    b.HasIndex("OwnerId");
+                    b.HasIndex("RepositoryPath")
+                        .IsUnique();
 
                     b.HasIndex("Status");
 
@@ -240,9 +247,6 @@ namespace DocHub.DataAccess.Migrations
                     b.Property<Guid>("DocumentId")
                         .HasColumnType("uuid");
 
-                    b.Property<int>("DocumentVersion")
-                        .HasColumnType("integer");
-
                     b.Property<Vector>("Embedding")
                         .IsRequired()
                         .HasColumnType("vector(768)");
@@ -259,6 +263,11 @@ namespace DocHub.DataAccess.Migrations
                     b.Property<string>("SectionRef")
                         .HasMaxLength(300)
                         .HasColumnType("character varying(300)");
+
+                    b.Property<string>("SourceBlobSha")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
 
                     b.Property<string>("Text")
                         .IsRequired()
@@ -284,46 +293,6 @@ namespace DocHub.DataAccess.Migrations
                     b.ToTable("document_chunks", (string)null);
                 });
 
-            modelBuilder.Entity("DocHub.DataAccess.Entities.DocumentVersion", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTimeOffset>("ChangedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("ChangedById")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("DocumentId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Note")
-                        .HasMaxLength(1000)
-                        .HasColumnType("character varying(1000)");
-
-                    b.Property<long>("SizeBytes")
-                        .HasColumnType("bigint");
-
-                    b.Property<string>("StoragePath")
-                        .IsRequired()
-                        .HasMaxLength(1000)
-                        .HasColumnType("character varying(1000)");
-
-                    b.Property<int>("VersionNumber")
-                        .HasColumnType("integer");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ChangedById");
-
-                    b.HasIndex("DocumentId", "VersionNumber")
-                        .IsUnique();
-
-                    b.ToTable("document_versions", (string)null);
-                });
-
             modelBuilder.Entity("DocHub.DataAccess.Entities.Folder", b =>
                 {
                     b.Property<Guid>("Id")
@@ -338,9 +307,6 @@ namespace DocHub.DataAccess.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
 
-                    b.Property<Guid>("OwnerId")
-                        .HasColumnType("uuid");
-
                     b.Property<Guid?>("ParentId")
                         .HasColumnType("uuid");
 
@@ -354,11 +320,10 @@ namespace DocHub.DataAccess.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("OwnerId");
-
                     b.HasIndex("ParentId");
 
-                    b.HasIndex("Path");
+                    b.HasIndex("Path")
+                        .IsUnique();
 
                     b.HasIndex("ParentId", "Name")
                         .IsUnique();
@@ -402,6 +367,52 @@ namespace DocHub.DataAccess.Migrations
                     b.HasKey("Name");
 
                     b.ToTable("repository_source_settings", (string)null);
+                });
+
+            modelBuilder.Entity("DocHub.DataAccess.Entities.RepositorySyncState", b =>
+                {
+                    b.Property<string>("ProjectPath")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<string>("Branch")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<string>("CommitSha")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("Error")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<int>("FilesAdded")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("FilesRemoved")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("FilesSkipped")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("FilesUpdated")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset?>("FinishedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Outcome")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<DateTimeOffset>("StartedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("ProjectPath", "Branch");
+
+                    b.ToTable("repository_sync_state", (string)null);
                 });
 
             modelBuilder.Entity("DocHub.DataAccess.Entities.User", b =>
@@ -575,8 +586,7 @@ namespace DocHub.DataAccess.Migrations
                     b.HasOne("DocHub.DataAccess.Entities.User", "Actor")
                         .WithMany()
                         .HasForeignKey("ActorId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.Navigation("Actor");
                 });
@@ -611,15 +621,7 @@ namespace DocHub.DataAccess.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("DocHub.DataAccess.Entities.User", "Owner")
-                        .WithMany("Documents")
-                        .HasForeignKey("OwnerId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
                     b.Navigation("Folder");
-
-                    b.Navigation("Owner");
                 });
 
             modelBuilder.Entity("DocHub.DataAccess.Entities.DocumentChunk", b =>
@@ -633,39 +635,12 @@ namespace DocHub.DataAccess.Migrations
                     b.Navigation("Document");
                 });
 
-            modelBuilder.Entity("DocHub.DataAccess.Entities.DocumentVersion", b =>
-                {
-                    b.HasOne("DocHub.DataAccess.Entities.User", "ChangedBy")
-                        .WithMany()
-                        .HasForeignKey("ChangedById")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("DocHub.DataAccess.Entities.Document", "Document")
-                        .WithMany("Versions")
-                        .HasForeignKey("DocumentId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("ChangedBy");
-
-                    b.Navigation("Document");
-                });
-
             modelBuilder.Entity("DocHub.DataAccess.Entities.Folder", b =>
                 {
-                    b.HasOne("DocHub.DataAccess.Entities.User", "Owner")
-                        .WithMany("Folders")
-                        .HasForeignKey("OwnerId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
                     b.HasOne("DocHub.DataAccess.Entities.Folder", "Parent")
                         .WithMany("Children")
                         .HasForeignKey("ParentId")
                         .OnDelete(DeleteBehavior.Cascade);
-
-                    b.Navigation("Owner");
 
                     b.Navigation("Parent");
                 });
@@ -705,8 +680,6 @@ namespace DocHub.DataAccess.Migrations
             modelBuilder.Entity("DocHub.DataAccess.Entities.Document", b =>
                 {
                     b.Navigation("Chunks");
-
-                    b.Navigation("Versions");
                 });
 
             modelBuilder.Entity("DocHub.DataAccess.Entities.Folder", b =>
@@ -714,13 +687,6 @@ namespace DocHub.DataAccess.Migrations
                     b.Navigation("Children");
 
                     b.Navigation("Documents");
-                });
-
-            modelBuilder.Entity("DocHub.DataAccess.Entities.User", b =>
-                {
-                    b.Navigation("Documents");
-
-                    b.Navigation("Folders");
                 });
 #pragma warning restore 612, 618
         }

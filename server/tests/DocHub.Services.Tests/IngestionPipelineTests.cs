@@ -4,17 +4,13 @@ using DocHub.Services.ViewModels;
 namespace DocHub.Services.Tests;
 
 /// <summary>
-/// The pipeline end to end against real Postgres and real blob storage, with
-/// only the embedding model faked — the seams between upload, extraction,
-/// chunk storage and status are exactly where this can go wrong.
+/// The pipeline end to end against real Postgres, with the repository and the
+/// embedding model faked — the seams between mirroring, extraction, chunk
+/// storage and status are exactly where this can go wrong.
 /// </summary>
 [Collection(nameof(StackCollection))]
 public sealed class IngestionPipelineTests(StackFixture fixture)
 {
-    private static UploadRequest Upload(string body, string fileName) =>
-        new(StackFixture.FileOf(body), fileName, "text/markdown",
-            System.Text.Encoding.UTF8.GetByteCount(body));
-
     private static string Unique(string name) => $"{name}-{Guid.NewGuid():N}"[..22];
 
     private const string Guide = """
@@ -34,15 +30,14 @@ public sealed class IngestionPipelineTests(StackFixture fixture)
         """;
 
     [Fact]
-    public async Task Uploading_queues_the_document_rather_than_indexing_inline()
+    public async Task Mirroring_queues_the_document_rather_than_indexing_inline()
     {
         await using var scope = fixture.NewScope();
-        var folder = await scope.Folders.CreateAsync(new CreateFolderRequest(null, Unique("Q")));
 
-        var created = await scope.Documents.UploadAsync(folder.Id, Upload(Guide, "vpn.md"));
+        var created = await scope.PublishAsync($"{Unique("Q")}/vpn.md", Guide);
 
-        // Embedding a document takes far longer than an upload should, so the
-        // response must come back before any of it has happened.
+        // Embedding a repository's worth of documents takes minutes, so a sync
+        // must come back before any of it has happened.
         Assert.Equal("pending", created.Status);
         Assert.Contains(created.Id, scope.Queue.Queued);
     }
@@ -51,10 +46,7 @@ public sealed class IngestionPipelineTests(StackFixture fixture)
     public async Task Ingestion_indexes_the_document_and_stores_its_chunks()
     {
         await using var scope = fixture.NewScope();
-        var folder = await scope.Folders.CreateAsync(new CreateFolderRequest(null, Unique("I")));
-        var created = await scope.Documents.UploadAsync(folder.Id, Upload(Guide, "vpn.md"));
-
-        await scope.Ingestion.IngestAsync(created.Id);
+        var created = await scope.PublishIndexedAsync($"{Unique("I")}/vpn.md", Guide);
 
         var detail = await scope.Documents.GetAsync(created.Id);
 
@@ -72,8 +64,6 @@ public sealed class IngestionPipelineTests(StackFixture fixture)
     public async Task A_document_with_an_enormous_heading_still_indexes()
     {
         await using var scope = fixture.NewScope();
-        var folder = await scope.Folders.CreateAsync(new CreateFolderRequest(null, Unique("H")));
-
         // A heading far longer than the section_ref column. This used to reach
         // Postgres unclamped and fail the insert with 22001, which failed the
         // whole document — on its label, with its content perfectly fine.
@@ -84,8 +74,7 @@ public sealed class IngestionPipelineTests(StackFixture fixture)
             reaching internal systems. Download the client from the IT portal and sign in.
             """;
 
-        var created = await scope.Documents.UploadAsync(folder.Id, Upload(body, "long.md"));
-        await scope.Ingestion.IngestAsync(created.Id);
+        var created = await scope.PublishIndexedAsync($"{Unique("H")}/long.md", body);
 
         var detail = await scope.Documents.GetAsync(created.Id);
 
@@ -103,10 +92,7 @@ public sealed class IngestionPipelineTests(StackFixture fixture)
     public async Task Re_ingesting_replaces_chunks_instead_of_appending_them()
     {
         await using var scope = fixture.NewScope();
-        var folder = await scope.Folders.CreateAsync(new CreateFolderRequest(null, Unique("R")));
-        var created = await scope.Documents.UploadAsync(folder.Id, Upload(Guide, "vpn.md"));
-
-        await scope.Ingestion.IngestAsync(created.Id);
+        var created = await scope.PublishIndexedAsync($"{Unique("R")}/vpn.md", Guide);
         var first = (await scope.Documents.GetAsync(created.Id)).Sections.Count;
 
         // A retried job must be safe to run twice.
@@ -117,34 +103,31 @@ public sealed class IngestionPipelineTests(StackFixture fixture)
     }
 
     [Fact]
-    public async Task An_unsupported_file_type_fails_with_a_reason_naming_what_is_supported()
+    public async Task A_type_no_extractor_can_read_never_becomes_a_document_at_all()
     {
         await using var scope = fixture.NewScope();
-        var folder = await scope.Folders.CreateAsync(new CreateFolderRequest(null, Unique("U")));
+        var directory = Unique("U");
 
-        var created = await scope.Documents.UploadAsync(
-            folder.Id,
-            new UploadRequest(StackFixture.FileOf("binary"), "diagram.png", "image/png", 6));
+        scope.Repository.Put($"{directory}/diagram.png", "binary");
+        scope.Repository.Put($"{directory}/notes.md", Guide);
+        await scope.Mirror.SyncAsync(actorId: null);
 
-        await scope.Ingestion.IngestAsync(created.Id);
+        var documents = await scope.Documents.QueryAsync(new DocumentQueryRequest { Take = 500 });
 
-        var detail = await scope.Documents.GetAsync(created.Id);
-
-        Assert.Equal("failed", detail.Document.Status);
-        Assert.Contains(".png", detail.Document.FailureReason);
-        Assert.Contains(".md", detail.Document.FailureReason);
-        Assert.Empty(detail.Sections);
+        // Under uploads this was a failed document, because a person had chosen
+        // to upload it and deserved to be told why it was not searchable. A
+        // repository chose nothing — it is simply full of files that are not
+        // documentation — so a permanent "failed" row for each would be noise
+        // that never clears.
+        Assert.DoesNotContain(documents, document => document.FileName == "diagram.png");
+        Assert.Contains(documents, document => document.FileName == "notes.md");
     }
 
     [Fact]
     public async Task A_file_with_no_extractable_text_fails_rather_than_indexing_nothing()
     {
         await using var scope = fixture.NewScope();
-        var folder = await scope.Folders.CreateAsync(new CreateFolderRequest(null, Unique("E")));
-
-        var created = await scope.Documents.UploadAsync(folder.Id, Upload("   \n  ", "empty.md"));
-
-        await scope.Ingestion.IngestAsync(created.Id);
+        var created = await scope.PublishIndexedAsync($"{Unique("E")}/empty.md", "   \n  ");
 
         var detail = await scope.Documents.GetAsync(created.Id);
         Assert.Equal("failed", detail.Document.Status);
@@ -152,18 +135,18 @@ public sealed class IngestionPipelineTests(StackFixture fixture)
     }
 
     [Fact]
-    public async Task A_new_version_invalidates_the_old_chunks_and_requeues()
+    public async Task A_new_revision_invalidates_the_old_chunks_and_requeues()
     {
         await using var scope = fixture.NewScope();
-        var folder = await scope.Folders.CreateAsync(new CreateFolderRequest(null, Unique("V")));
-        var created = await scope.Documents.UploadAsync(folder.Id, Upload(Guide, "vpn.md"));
-        await scope.Ingestion.IngestAsync(created.Id);
+        var path = $"{Unique("V")}/vpn.md";
+        var created = await scope.PublishIndexedAsync(path, Guide);
 
-        var updated = await scope.Documents.AddVersionAsync(
-            created.Id, Upload("# Rewritten\n\nCompletely different content about printers.", "vpn.md"));
+        scope.Repository.Put(path, "# Rewritten\n\nCompletely different content about printers.");
+        await scope.Mirror.SyncAsync(actorId: null);
 
-        // The stored chunks now describe content that is no longer current, so
-        // the document must drop out of search until it is re-ingested.
+        // The stored chunks now describe content the repository no longer has,
+        // so the document must drop out of search until it is re-ingested.
+        var updated = (await scope.Documents.GetAsync(created.Id)).Document;
         Assert.Equal("pending", updated.Status);
         Assert.Contains(created.Id, scope.Queue.Queued);
 
@@ -178,12 +161,8 @@ public sealed class IngestionPipelineTests(StackFixture fixture)
     public async Task Requeueing_clears_a_previous_failure()
     {
         await using var scope = fixture.NewScope();
-        var folder = await scope.Folders.CreateAsync(new CreateFolderRequest(null, Unique("F")));
-        var created = await scope.Documents.UploadAsync(
-            folder.Id,
-            new UploadRequest(StackFixture.FileOf("x"), "art.png", "image/png", 1));
+        var created = await scope.PublishIndexedAsync($"{Unique("F")}/blank.md", "   ");
 
-        await scope.Ingestion.IngestAsync(created.Id);
         Assert.Equal("failed", (await scope.Documents.GetAsync(created.Id)).Document.Status);
 
         var requeued = await scope.Ingestion.RequeueAsync(created.Id);
@@ -193,16 +172,16 @@ public sealed class IngestionPipelineTests(StackFixture fixture)
     }
 
     [Fact]
-    public async Task Deleting_a_document_takes_its_chunks_with_it()
+    public async Task A_file_that_leaves_the_repository_takes_its_chunks_with_it()
     {
         await using var scope = fixture.NewScope();
-        var folder = await scope.Folders.CreateAsync(new CreateFolderRequest(null, Unique("D")));
-        var created = await scope.Documents.UploadAsync(folder.Id, Upload(Guide, "vpn.md"));
-        await scope.Ingestion.IngestAsync(created.Id);
+        var path = $"{Unique("D")}/vpn.md";
+        var created = await scope.PublishIndexedAsync(path, Guide);
 
         Assert.NotEmpty(await scope.Chunks.GetForDocumentAsync(created.Id));
 
-        await scope.Documents.DeleteAsync(created.Id);
+        scope.Repository.Remove(path);
+        await scope.Mirror.SyncAsync(actorId: null);
 
         // Otherwise deleted content stays answerable through search.
         Assert.Empty(await scope.Chunks.GetForDocumentAsync(created.Id));

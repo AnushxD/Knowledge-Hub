@@ -1,14 +1,15 @@
-using DocHub.Api.Infrastructure.Auth;
 using DocHub.Services.Folders;
 using DocHub.Services.ViewModels;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace DocHub.Api.Controllers;
 
 /// <summary>
 /// Endpoints only — accepts and returns ViewModels, holds no business logic.
-/// Every rule (name uniqueness, cascade behaviour) lives in the service.
+///
+/// Read-only, and there is nothing to add: the tree is the repository's
+/// directory structure. Creating a folder here would be undone by the next
+/// sync, and the honest place to add one is a commit.
 /// </summary>
 [ApiController]
 [Route("api/folders")]
@@ -20,39 +21,4 @@ public sealed class FoldersController(IFolderService folders) : ControllerBase
     [ProducesResponseType<IReadOnlyList<FolderViewModel>>(StatusCodes.Status200OK)]
     public async Task<IReadOnlyList<FolderViewModel>> GetAll(CancellationToken ct) =>
         await folders.GetAllAsync(ct);
-
-    [Authorize(Policy = Policies.Contribute)]
-    [HttpPost]
-    [ProducesResponseType<FolderViewModel>(StatusCodes.Status201Created)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<ActionResult<FolderViewModel>> Create(
-        [FromBody] CreateFolderRequest request,
-        CancellationToken ct)
-    {
-        var created = await folders.CreateAsync(request, ct);
-        return CreatedAtAction(nameof(GetAll), new { id = created.Id }, created);
-    }
-
-    [Authorize(Policy = Policies.Contribute)]
-    [HttpPut("{id:guid}")]
-    [ProducesResponseType<FolderViewModel>(StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<FolderViewModel> Rename(
-        Guid id,
-        [FromBody] RenameFolderRequest request,
-        CancellationToken ct) =>
-        await folders.RenameAsync(id, request, ct);
-
-    /// <summary>Deletes the folder, its subtree, and every stored file beneath it.</summary>
-    [Authorize(Policy = Policies.Contribute)]
-    [HttpDelete("{id:guid}")]
-    [ProducesResponseType(StatusCodes.Status204NoContent)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
-    {
-        await folders.DeleteAsync(id, ct);
-        return NoContent();
-    }
 }

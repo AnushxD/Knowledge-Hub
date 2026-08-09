@@ -69,9 +69,9 @@ public sealed class DocHubDbContext(DbContextOptions<DocHubDbContext> options)
 
     public DbSet<Document> Documents => Set<Document>();
 
-    public DbSet<DocumentVersion> DocumentVersions => Set<DocumentVersion>();
-
     public DbSet<DocumentChunk> DocumentChunks => Set<DocumentChunk>();
+
+    public DbSet<RepositorySyncState> RepositorySyncStates => Set<RepositorySyncState>();
 
     public DbSet<ChatSession> ChatSessions => Set<ChatSession>();
 
@@ -145,6 +145,9 @@ public sealed class DocHubDbContext(DbContextOptions<DocHubDbContext> options)
             entity.HasOne(activity => activity.Actor)
                 .WithMany()
                 .HasForeignKey(activity => activity.ActorId)
+                // Optional: most of the feed is the repository changing under a
+                // webhook, where there is no actor to record.
+                .IsRequired(false)
                 // Accounts are disabled rather than deleted, so this never
                 // fires — but if one ever were, losing the audit trail with it
                 // is the opposite of what an audit trail is for.
@@ -181,19 +184,15 @@ public sealed class DocHubDbContext(DbContextOptions<DocHubDbContext> options)
             entity.HasOne(folder => folder.Parent)
                 .WithMany(folder => folder.Children)
                 .HasForeignKey(folder => folder.ParentId)
-                // Deleting a folder deletes its subtree; the service layer
-                // decides whether that is allowed before calling delete.
+                // A directory leaving the repository takes its subtree with it.
                 .OnDelete(DeleteBehavior.Cascade);
 
-            entity.HasOne(folder => folder.Owner)
-                .WithMany(user => user.Folders)
-                .HasForeignKey(folder => folder.OwnerId)
-                .OnDelete(DeleteBehavior.Restrict);
-
             entity.HasIndex(folder => folder.ParentId);
-            // Sibling names must be unique, so a path always identifies one folder.
+            // Sibling names must be unique, so a path always identifies one
+            // folder. A file system guarantees this already; the index is what
+            // makes sync's "find or create this directory" a single lookup.
             entity.HasIndex(folder => new { folder.ParentId, folder.Name }).IsUnique();
-            entity.HasIndex(folder => folder.Path);
+            entity.HasIndex(folder => folder.Path).IsUnique();
         });
 
         builder.Entity<Document>(entity =>
@@ -205,7 +204,10 @@ public sealed class DocHubDbContext(DbContextOptions<DocHubDbContext> options)
             entity.Property(document => document.FileName).HasMaxLength(500).IsRequired();
             entity.Property(document => document.Extension).HasMaxLength(32).IsRequired();
             entity.Property(document => document.ContentType).HasMaxLength(200).IsRequired();
-            entity.Property(document => document.StoragePath).HasMaxLength(1000).IsRequired();
+            entity.Property(document => document.RepositoryPath).HasMaxLength(2000).IsRequired();
+            // A git object id is 40 hex characters today and 64 under SHA-256.
+            entity.Property(document => document.BlobSha).HasMaxLength(64).IsRequired();
+            entity.Property(document => document.CommitSha).HasMaxLength(64);
             entity.Property(document => document.FailureReason)
                 .HasMaxLength(FailureReasonMaxLength);
 
@@ -224,36 +226,35 @@ public sealed class DocHubDbContext(DbContextOptions<DocHubDbContext> options)
                 .HasForeignKey(document => document.FolderId)
                 .OnDelete(DeleteBehavior.Cascade);
 
-            entity.HasOne(document => document.Owner)
-                .WithMany(user => user.Documents)
-                .HasForeignKey(document => document.OwnerId)
-                .OnDelete(DeleteBehavior.Restrict);
-
             entity.HasIndex(document => document.FolderId);
             entity.HasIndex(document => document.Status);
             entity.HasIndex(document => document.UpdatedAt);
             // GIN index so tag filtering stays fast as the library grows.
             entity.HasIndex(document => document.Tags).HasMethod("gin");
+
+            // The path is the document's identity, so the database is what
+            // guarantees one row per file rather than sync's own bookkeeping.
+            // Two rows for one path would mean the same passage cited twice
+            // under two different ids.
+            entity.HasIndex(document => document.RepositoryPath).IsUnique();
         });
 
-        builder.Entity<DocumentVersion>(entity =>
+        builder.Entity<RepositorySyncState>(entity =>
         {
-            entity.ToTable("document_versions");
-            entity.HasKey(version => version.Id);
-            entity.Property(version => version.StoragePath).HasMaxLength(1000).IsRequired();
-            entity.Property(version => version.Note).HasMaxLength(1000);
+            entity.ToTable("repository_sync_state");
+            entity.HasKey(state => new { state.ProjectPath, state.Branch });
+            entity.Property(state => state.ProjectPath).HasMaxLength(500);
+            entity.Property(state => state.Branch).HasMaxLength(300);
+            entity.Property(state => state.CommitSha).HasMaxLength(64);
+            entity.Property(state => state.Error).HasMaxLength(FailureReasonMaxLength);
 
-            entity.HasOne(version => version.Document)
-                .WithMany(document => document.Versions)
-                .HasForeignKey(version => version.DocumentId)
-                .OnDelete(DeleteBehavior.Cascade);
+            entity.Property(state => state.Outcome)
+                .HasConversion<string>()
+                .HasMaxLength(16)
+                .IsRequired();
 
-            entity.HasOne(version => version.ChangedBy)
-                .WithMany()
-                .HasForeignKey(version => version.ChangedById)
-                .OnDelete(DeleteBehavior.Restrict);
-
-            entity.HasIndex(version => new { version.DocumentId, version.VersionNumber }).IsUnique();
+            // Deliberately no seed row. No sync has run on a fresh database,
+            // and the screen should say that rather than show a zeroed one.
         });
 
         builder.Entity<DocumentChunk>(entity =>
@@ -262,6 +263,7 @@ public sealed class DocHubDbContext(DbContextOptions<DocHubDbContext> options)
             entity.HasKey(chunk => chunk.Id);
             entity.Property(chunk => chunk.Text).IsRequired();
             entity.Property(chunk => chunk.SectionRef).HasMaxLength(SectionRefMaxLength);
+            entity.Property(chunk => chunk.SourceBlobSha).HasMaxLength(64).IsRequired();
 
             entity.Property(chunk => chunk.Embedding)
                 .HasColumnType($"vector({EmbeddingDimensions})")

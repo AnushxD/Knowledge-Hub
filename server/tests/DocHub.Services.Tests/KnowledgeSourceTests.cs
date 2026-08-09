@@ -28,17 +28,11 @@ public sealed class KnowledgeSourceTests(StackFixture fixture)
 
     private static string Unique(string name) => $"{name}-{Guid.NewGuid():N}"[..22];
 
-    private static UploadRequest Upload(string body, string fileName) =>
-        new(StackFixture.FileOf(body), fileName, "text/markdown",
-            System.Text.Encoding.UTF8.GetByteCount(body));
-
-    /// <summary>Uploads and indexes a document, returning the folder it landed in.</summary>
+    /// <summary>Mirrors and indexes a document, returning the folder it landed in.</summary>
     private static async Task<Guid> IndexAsync(StackFixture.Scope scope, string name)
     {
-        var folder = await scope.Folders.CreateAsync(new CreateFolderRequest(null, Unique(name)));
-        var document = await scope.Documents.UploadAsync(folder.Id, Upload(RunbookBody, $"{name}.md"));
-        await scope.Ingestion.IngestAsync(document.Id);
-        return folder.Id;
+        var document = await scope.PublishIndexedAsync($"{Unique(name)}/{name}.md", RunbookBody);
+        return document.FolderId;
     }
 
     private static SearchRequest Ask(Guid folderId) =>
@@ -320,8 +314,8 @@ public sealed class KnowledgeSourceTests(StackFixture fixture)
 
         await using var scope = fixture.NewScope(broken);
 
-        // An empty folder, so the documents contribute nothing either.
-        var folder = await scope.Folders.CreateAsync(new CreateFolderRequest(null, Unique("Bare")));
+        // Nothing indexed here, so the documents contribute nothing either.
+        var folder = await scope.EmptyFolderAsync(Unique("Bare"));
 
         var answer = new System.Text.StringBuilder();
         var completed = default(ChatEvent.Completed);
@@ -329,7 +323,7 @@ public sealed class KnowledgeSourceTests(StackFixture fixture)
         await foreach (var @event in scope.Chat.AskAsync(new AskRequest
         {
             Question = "How do I restart the ingestion worker?",
-            FolderId = folder.Id,
+            FolderId = folder,
         }))
         {
             if (@event is ChatEvent.Token token) answer.Append(token.Text);

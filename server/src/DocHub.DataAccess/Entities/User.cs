@@ -3,14 +3,15 @@ using Microsoft.AspNetCore.Identity;
 namespace DocHub.DataAccess.Entities;
 
 /// <summary>
-/// A person who signs in, and who owns folders and documents.
+/// A person who signs in.
 ///
-/// This is the Identity user store rather than a table beside one. Keeping the
-/// credential and the domain owner as a single row means every existing
-/// <c>owner_id</c> foreign key still points at the same key after
-/// authentication arrives, and there is no pair of records that can drift apart
-/// — the failure mode being a document owned by a user who can no longer sign
-/// in, or two "users" for one person.
+/// This is the Identity user store rather than a table beside one, so there is
+/// no pair of records that can drift apart — the failure mode being two "users"
+/// for one person, only one of whom owns anything.
+///
+/// Documents and folders no longer point here: the repository owns them, and
+/// nobody in the hub does. What remains hanging off a user is what a user
+/// genuinely did — chat sessions, and the activity they caused.
 ///
 /// <see cref="IdentityUser{TKey}"/> supplies the id, email, password hash and
 /// the stamps Identity needs; everything declared here is ours.
@@ -30,10 +31,6 @@ public class User : IdentityUser<Guid>
     public string Role { get; set; } = Roles.Viewer;
 
     public DateTimeOffset CreatedAt { get; set; }
-
-    public ICollection<Folder> Folders { get; set; } = [];
-
-    public ICollection<Document> Documents { get; set; } = [];
 }
 
 /// <summary>

@@ -3,6 +3,7 @@ using DocHub.Integrations.Embeddings;
 using DocHub.Integrations.HealthChecks;
 using DocHub.Integrations.Knowledge;
 using DocHub.Integrations.Llm;
+using DocHub.Integrations.SourceControl;
 using DocHub.Integrations.Storage;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -155,8 +156,42 @@ public static class IntegrationsServiceCollectionExtensions
                 client.Timeout = TimeSpan.FromSeconds(5);
             });
 
+        services
+            .AddOptions<GitLabOptions>()
+            .Bind(configuration.GetSection(GitLabOptions.SectionName))
+            // Required, not optional. Every document in the hub comes from this
+            // repository, so an installation without one is not a degraded
+            // installation — it is an empty product, and finding that out at
+            // boot beats finding it out from a blank library screen.
+            .Validate(
+                options => Uri.TryCreate(options.BaseUrl, UriKind.Absolute, out var url)
+                    && (url.Scheme == Uri.UriSchemeHttp || url.Scheme == Uri.UriSchemeHttps),
+                "GitLab:BaseUrl must be an absolute http or https URL, such as "
+                + "'https://gitlab.example.org'.")
+            .Validate(
+                options => !string.IsNullOrWhiteSpace(options.ProjectPath),
+                "GitLab:ProjectPath must be the namespaced project path, such as 'team/docs'.")
+            .Validate(
+                options => !string.IsNullOrWhiteSpace(options.Branch),
+                "GitLab:Branch must name the branch to mirror.")
+            .Validate(
+                options => options.MaxFileBytes > 0,
+                "GitLab:MaxFileBytes must be greater than zero.")
+            .ValidateOnStart();
+
+        var gitLabOptions = configuration
+            .GetSection(GitLabOptions.SectionName)
+            .Get<GitLabOptions>() ?? new GitLabOptions();
+
+        services
+            .AddHttpClient<ISourceRepositoryClient, GitLabRepositoryClient>(client =>
+            {
+                client.Timeout = TimeSpan.FromSeconds(gitLabOptions.TimeoutSeconds);
+            });
+
         services.AddHealthChecks()
             .AddCheck<BlobStorageHealthCheck>("blob-storage", tags: ["ready", "storage"])
+            .AddCheck<SourceRepositoryHealthCheck>("repository", tags: ["ready", "repository"])
             .AddCheck<EmbeddingProviderHealthCheck>("embeddings", tags: ["ready", "ai"])
             .AddCheck<LlmProviderHealthCheck>("assistant-model", tags: ["ready", "ai"]);
 

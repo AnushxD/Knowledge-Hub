@@ -42,6 +42,7 @@ public static class DataAccessServiceCollectionExtensions
         services.AddScoped<IActivityRepository, ActivityRepository>();
         services.AddScoped<IRepositorySourceSettingRepository,
             RepositorySourceSettingRepository>();
+        services.AddScoped<IRepositorySyncStateRepository, RepositorySyncStateRepository>();
 
         services.AddHealthChecks()
             .AddCheck<PostgresHealthCheck>("postgres", tags: ["ready", "db"]);

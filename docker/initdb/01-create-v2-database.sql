@@ -1,0 +1,13 @@
+-- Creates the V2 database alongside the V1 one the container already makes
+-- from POSTGRES_DB.
+--
+-- Runs only when the postgres volume is created for the first time, which is
+-- how Postgres's entrypoint works. On a machine that already has the volume
+-- from V1, create it by hand once:
+--
+--   docker compose exec postgres createdb -U documenthub documenthub_v2
+--
+-- Creating the database is the operator's job either way — the API never does
+-- it, and `dotnet ef database update` expects it to exist. This file only
+-- spares a fresh clone one command.
+CREATE DATABASE documenthub_v2 OWNER documenthub;

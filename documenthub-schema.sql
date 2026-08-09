@@ -1,4 +1,10 @@
--- Document Hub — idempotent database setup script.
+-- Document Hub V1 — idempotent database setup script.
+--
+-- FROZEN AT RELEASE 1 (tag v1.0.0). V2 mirrors a GitLab repository instead of
+-- accepting uploads, and restarted the migration chain against a separate
+-- database — see `documenthub-v2-schema.sql`. This file is kept so a V1
+-- deployment can still be stood up or repaired, and is no longer regenerated;
+-- do not run it and the V2 script against the same database.
 --
 -- Applies every EF Core migration to a fresh (or partially migrated) Postgres
 -- database and seeds the default administrator. Safe to run repeatedly: each

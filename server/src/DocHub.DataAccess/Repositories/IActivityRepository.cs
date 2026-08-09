@@ -7,9 +7,13 @@ namespace DocHub.DataAccess.Repositories;
 /// <summary>Appends to, and reads back, the activity trail.</summary>
 public interface IActivityRepository
 {
+    /// <param name="actorId">
+    /// Null when nobody caused it — a webhook sync runs with no one signed in,
+    /// and naming an account that did not do the work is worse than naming none.
+    /// </param>
     Task AppendAsync(
         ActivityType type,
-        Guid actorId,
+        Guid? actorId,
         string target,
         Guid? targetId,
         CancellationToken ct = default);
@@ -22,7 +26,7 @@ internal sealed class ActivityRepository(DocHubDbContext db) : IActivityReposito
 {
     public async Task AppendAsync(
         ActivityType type,
-        Guid actorId,
+        Guid? actorId,
         string target,
         Guid? targetId,
         CancellationToken ct = default)
@@ -53,11 +57,13 @@ internal sealed class ActivityRepository(DocHubDbContext db) : IActivityReposito
             .Select(activity => new ActivityEventDto(
                 activity.Id,
                 activity.Type,
-                new UserDto(
-                    activity.Actor!.Id,
-                    activity.Actor.Name,
-                    activity.Actor.Email ?? string.Empty,
-                    activity.Actor.Role),
+                activity.Actor == null
+                    ? null
+                    : new UserDto(
+                        activity.Actor.Id,
+                        activity.Actor.Name,
+                        activity.Actor.Email ?? string.Empty,
+                        activity.Actor.Role),
                 activity.Target,
                 activity.TargetId,
                 activity.At))

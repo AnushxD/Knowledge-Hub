@@ -15,14 +15,50 @@ namespace DocHub.DataAccess.Tests;
 [Collection(nameof(PostgresCollection))]
 public sealed class ChunkRepositoryTests(PostgresFixture fixture)
 {
-    private static readonly Guid Owner = DocHubDbContext.SystemUserId;
-
     /// <summary>A unit vector along one axis, so two of them are exactly orthogonal.</summary>
     private static float[] Axis(int index)
     {
         var vector = new float[DocHubDbContext.EmbeddingDimensions];
         vector[index] = 1f;
         return vector;
+    }
+
+
+    /// <summary>
+    /// A directory and a document in it, added straight to the tables.
+    ///
+    /// Not through <c>ReconcileAsync</c>: that is authoritative over the whole
+    /// tree and would delete every other test's directories in this shared
+    /// database. Reconciliation has its own tests.
+    /// </summary>
+    private static async Task<DocumentDto> SeedAsync(DocHubDbContext db, string name)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var directory = $"{name}-{Guid.NewGuid():N}"[..20];
+
+        db.Folders.Add(new Folder
+        {
+            Id = Guid.CreateVersion7(),
+            Name = directory,
+            Path = directory,
+            CreatedAt = now,
+            UpdatedAt = now,
+        });
+
+        await db.SaveChangesAsync();
+
+        var folderId = db.Folders.Single(folder => folder.Path == directory).Id;
+
+        return await new DocumentRepository(db).CreateAsync(new NewDocumentDto
+        {
+            FolderId = folderId,
+            Title = name,
+            FileName = $"{name.ToLowerInvariant()}.md",
+            Extension = "md",
+            ContentType = "text/markdown",
+            RepositoryPath = $"{directory}/{name.ToLowerInvariant()}.md",
+            BlobSha = Guid.NewGuid().ToString("N"),
+        });
     }
 
     [Fact]
@@ -33,32 +69,19 @@ public sealed class ChunkRepositoryTests(PostgresFixture fixture)
         var documents = new DocumentRepository(db);
         var chunks = new ChunkRepository(db);
 
-        var folder = await folders.CreateAsync(null, $"Floor-{Guid.NewGuid():N}"[..20], Owner);
-
-        var document = await documents.CreateAsync(new NewDocumentDto
-        {
-            FolderId = folder.Id,
-            Title = "Floor",
-            FileName = "floor.md",
-            Extension = "md",
-            ContentType = "text/markdown",
-            SizeBytes = 32,
-            StoragePath = $"documents/{Guid.NewGuid():N}.md",
-            OwnerId = Owner,
-            Tags = [],
-        });
+        var document = await SeedAsync(db, "Floor");
 
         await documents.SetStatusAsync(document.Id, IngestionStatus.Indexed, chunkCount: 2);
 
         // Identical to the query, and orthogonal to it: cosine distance 0 and 1.
-        await chunks.ReplaceAsync(document.Id, document.Version, [
+        await chunks.ReplaceAsync(document.Id, document.BlobSha, [
             new NewChunkDto(0, "The near one.", "near", 3, Axis(0)),
             new NewChunkDto(1, "The far one.", "far", 3, Axis(1)),
         ]);
 
         // Scoped to this test's own folder: the suite shares a database, so an
         // unscoped vector search would find every other test's chunks too.
-        var query = new ChunkSearchDto { Text = "anything", Limit = 10, FolderId = folder.Id };
+        var query = new ChunkSearchDto { Text = "anything", Limit = 10, FolderId = document.FolderId };
 
         // Without a floor the far chunk comes back, because a nearest-neighbour
         // search always has a nearest neighbour however far away it is. That is
@@ -81,24 +104,11 @@ public sealed class ChunkRepositoryTests(PostgresFixture fixture)
         var documents = new DocumentRepository(db);
         var chunks = new ChunkRepository(db);
 
-        var folder = await folders.CreateAsync(null, $"None-{Guid.NewGuid():N}"[..20], Owner);
-
-        var document = await documents.CreateAsync(new NewDocumentDto
-        {
-            FolderId = folder.Id,
-            Title = "None",
-            FileName = "none.md",
-            Extension = "md",
-            ContentType = "text/markdown",
-            SizeBytes = 32,
-            StoragePath = $"documents/{Guid.NewGuid():N}.md",
-            OwnerId = Owner,
-            Tags = [],
-        });
+        var document = await SeedAsync(db, "None");
 
         await documents.SetStatusAsync(document.Id, IngestionStatus.Indexed, chunkCount: 1);
 
-        await chunks.ReplaceAsync(document.Id, document.Version, [
+        await chunks.ReplaceAsync(document.Id, document.BlobSha, [
             new NewChunkDto(0, "Nothing like the question.", "far", 4, Axis(1)),
         ]);
 
@@ -109,7 +119,7 @@ public sealed class ChunkRepositoryTests(PostgresFixture fixture)
             {
                 Text = "anything",
                 Limit = 10,
-                FolderId = folder.Id,
+                FolderId = document.FolderId,
                 MaxDistance = 0.5,
             },
             Axis(0));

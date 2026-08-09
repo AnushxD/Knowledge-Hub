@@ -14,31 +14,20 @@ namespace DocHub.Services.Tests;
 [Collection(nameof(StackCollection))]
 public sealed class HybridSearchTests(StackFixture fixture)
 {
-    private static UploadRequest Upload(string body, string fileName) =>
-        new(StackFixture.FileOf(body), fileName, "text/markdown",
-            System.Text.Encoding.UTF8.GetByteCount(body));
-
+    /// <summary>
+    /// A directory of its own per test. The fixture's database is shared across
+    /// the collection, so a ranking assertion that was not scoped to one folder
+    /// would depend on whatever every other test happened to index.
+    /// </summary>
     private static string Unique(string name) => $"{name}-{Guid.NewGuid():N}"[..22];
-
-    /// <summary>Uploads and fully indexes a document, returning its id.</summary>
-    private static async Task<Guid> IndexAsync(
-        StackFixture.Scope scope,
-        Guid folderId,
-        string fileName,
-        string body)
-    {
-        var created = await scope.Documents.UploadAsync(folderId, Upload(body, fileName));
-        await scope.Ingestion.IngestAsync(created.Id);
-        return created.Id;
-    }
 
     [Fact]
     public async Task An_exact_term_is_found_by_the_keyword_branch()
     {
         await using var scope = fixture.NewScope();
-        var folder = await scope.Folders.CreateAsync(new CreateFolderRequest(null, Unique("K")));
+        var directory = Unique("K");
 
-        var id = await IndexAsync(scope, folder.Id, "vpn.md", """
+        var document = await scope.PublishIndexedAsync($"{directory}/vpn.md", """
             ## Connection problems
 
             If the connection is refused your account may not yet be enrolled. Raise a ticket
@@ -47,14 +36,14 @@ public sealed class HybridSearchTests(StackFixture fixture)
             """);
 
         var response = await scope.Search.SearchAsync(
-            new SearchRequest { Query = "GP1102", FolderId = folder.Id });
+            new SearchRequest { Query = "GP1102", FolderId = document.FolderId });
 
         // An identifier is exactly what vector search has no reason to consider
         // close to anything — this is why the keyword branch exists.
         Assert.True(response.Diagnostics.KeywordMatches > 0);
 
         var hit = response.Results.First();
-        Assert.Equal(id, hit.DocumentId);
+        Assert.Equal(document.Id, hit.DocumentId);
         Assert.Contains(hit.MatchedBy, new[] { "keyword", "both" });
     }
 
@@ -62,16 +51,16 @@ public sealed class HybridSearchTests(StackFixture fixture)
     public async Task A_chunk_both_branches_find_outranks_one_only_a_single_branch_found()
     {
         await using var scope = fixture.NewScope();
-        var folder = await scope.Folders.CreateAsync(new CreateFolderRequest(null, Unique("B")));
+        var directory = Unique("B");
 
-        await IndexAsync(scope, folder.Id, "printers.md", """
+        var printers = await scope.PublishIndexedAsync($"{directory}/printers.md", """
             ## Printer maintenance
 
             Printer maintenance covers replacing toner and clearing jams on every office
             printer. The printer maintenance schedule is published quarterly by facilities.
             """);
 
-        await IndexAsync(scope, folder.Id, "unrelated.md", """
+        await scope.PublishIndexedAsync($"{directory}/unrelated.md", """
             ## Catering
 
             Catering requests for meetings go through the office manager with two days of
@@ -84,7 +73,7 @@ public sealed class HybridSearchTests(StackFixture fixture)
         var response = await scope.Search.SearchAsync(new SearchRequest
         {
             Query = "printer maintenance",
-            FolderId = folder.Id,
+            FolderId = printers.FolderId,
         });
 
         Assert.NotEmpty(response.Results);
@@ -102,9 +91,9 @@ public sealed class HybridSearchTests(StackFixture fixture)
     public async Task Both_branches_run_on_one_request_scoped_context_without_colliding()
     {
         await using var scope = fixture.NewScope();
-        var folder = await scope.Folders.CreateAsync(new CreateFolderRequest(null, Unique("P")));
+        var directory = Unique("P");
 
-        await IndexAsync(scope, folder.Id, "backup.md", """
+        var backup = await scope.PublishIndexedAsync($"{directory}/backup.md", """
             ## Nightly backup
 
             The nightly backup runs at two in the morning and writes a full snapshot to the
@@ -114,7 +103,7 @@ public sealed class HybridSearchTests(StackFixture fixture)
         var response = await scope.Search.SearchAsync(new SearchRequest
         {
             Query = "nightly backup",
-            FolderId = folder.Id,
+            FolderId = backup.FolderId,
         });
 
         // Both branches share the request's DbContext, which cannot serve two
@@ -131,14 +120,14 @@ public sealed class HybridSearchTests(StackFixture fixture)
     public async Task Only_indexed_documents_are_searchable()
     {
         await using var scope = fixture.NewScope();
-        var folder = await scope.Folders.CreateAsync(new CreateFolderRequest(null, Unique("S")));
+        var directory = Unique("S");
 
-        // Uploaded but never ingested, so it is still Pending.
-        await scope.Documents.UploadAsync(folder.Id, Upload("""
+        // Mirrored but never ingested, so it is still Pending.
+        var pending = await scope.PublishAsync($"{directory}/quarantine.md", """
             ## Quarantine
 
             The quarantine procedure describes isolating a compromised workstation.
-            """, "quarantine.md"));
+            """);
 
         // Scoped to this folder, which holds nothing but the pending document.
         // Vector search has no relevance threshold — it returns the nearest
@@ -147,7 +136,7 @@ public sealed class HybridSearchTests(StackFixture fixture)
         var response = await scope.Search.SearchAsync(new SearchRequest
         {
             Query = "quarantine procedure",
-            FolderId = folder.Id,
+            FolderId = pending.FolderId,
         });
 
         // A document still in the pipeline must not be findable or citable.
@@ -158,15 +147,17 @@ public sealed class HybridSearchTests(StackFixture fixture)
     public async Task A_failed_document_is_never_returned()
     {
         await using var scope = fixture.NewScope();
-        var folder = await scope.Folders.CreateAsync(new CreateFolderRequest(null, Unique("X")));
+        var directory = Unique("X");
 
-        var created = await scope.Documents.UploadAsync(
-            folder.Id,
-            new UploadRequest(StackFixture.FileOf("binary"), "poster.png", "image/png", 6));
-        await scope.Ingestion.IngestAsync(created.Id);
+        // An empty file is mirrored like any other, extracts to nothing, and so
+        // fails ingestion — the ordinary way a document ends up Failed now that
+        // sync never mirrors a type no extractor can read.
+        var created = await scope.PublishIndexedAsync($"{directory}/placeholder.md", string.Empty);
 
-        var response = await scope.Search.SearchAsync(new SearchRequest { Query = "poster" });
+        var response = await scope.Search.SearchAsync(
+            new SearchRequest { Query = "placeholder", FolderId = created.FolderId });
 
+        Assert.Equal("failed", (await scope.Documents.GetAsync(created.Id)).Document.Status);
         Assert.DoesNotContain(response.Results, result => result.DocumentId == created.Id);
     }
 
@@ -174,9 +165,9 @@ public sealed class HybridSearchTests(StackFixture fixture)
     public async Task Results_carry_the_chunk_position_a_citation_links_to()
     {
         await using var scope = fixture.NewScope();
-        var folder = await scope.Folders.CreateAsync(new CreateFolderRequest(null, Unique("C")));
+        var directory = Unique("C");
 
-        var id = await IndexAsync(scope, folder.Id, "runbook.md", """
+        var runbook = await scope.PublishIndexedAsync($"{directory}/runbook.md", """
             ## Escalation
 
             Escalate to the on-call engineer if the incident is still unresolved after thirty
@@ -185,11 +176,11 @@ public sealed class HybridSearchTests(StackFixture fixture)
 
         var response = await scope.Search.SearchAsync(new SearchRequest { Query = "escalate" });
 
-        var hit = Assert.Single(response.Results, result => result.DocumentId == id);
+        var hit = Assert.Single(response.Results, result => result.DocumentId == runbook.Id);
 
         // The chunk id has to address a real chunk of that document, or the
         // /docs/:id?chunk=N link lands nowhere.
-        var chunks = await scope.Chunks.GetForDocumentAsync(id);
+        var chunks = await scope.Chunks.GetForDocumentAsync(runbook.Id);
         Assert.Contains(chunks, chunk => chunk.Ordinal == hit.ChunkId);
 
         Assert.False(string.IsNullOrWhiteSpace(hit.Heading));
@@ -200,10 +191,8 @@ public sealed class HybridSearchTests(StackFixture fixture)
     public async Task A_folder_filter_restricts_results_to_that_subtree()
     {
         await using var scope = fixture.NewScope();
-        var engineering = await scope.Folders.CreateAsync(
-            new CreateFolderRequest(null, Unique("Eng")));
-        var operations = await scope.Folders.CreateAsync(
-            new CreateFolderRequest(null, Unique("Ops")));
+        var engineering = Unique("Eng");
+        var operations = Unique("Ops");
 
         const string Body = """
             ## Deployment window
@@ -212,24 +201,24 @@ public sealed class HybridSearchTests(StackFixture fixture)
             before the reporting jobs start.
             """;
 
-        var inEngineering = await IndexAsync(scope, engineering.Id, "deploy-eng.md", Body);
-        var inOperations = await IndexAsync(scope, operations.Id, "deploy-ops.md", Body);
+        var inEngineering = await scope.PublishIndexedAsync($"{engineering}/deploy.md", Body);
+        var inOperations = await scope.PublishIndexedAsync($"{operations}/deploy.md", Body);
 
         var response = await scope.Search.SearchAsync(new SearchRequest
         {
             Query = "deployment window",
-            FolderId = engineering.Id,
+            FolderId = inEngineering.FolderId,
         });
 
-        Assert.Contains(response.Results, result => result.DocumentId == inEngineering);
-        Assert.DoesNotContain(response.Results, result => result.DocumentId == inOperations);
+        Assert.Contains(response.Results, result => result.DocumentId == inEngineering.Id);
+        Assert.DoesNotContain(response.Results, result => result.DocumentId == inOperations.Id);
     }
 
     [Fact]
     public async Task An_extension_filter_excludes_other_file_types()
     {
         await using var scope = fixture.NewScope();
-        var folder = await scope.Folders.CreateAsync(new CreateFolderRequest(null, Unique("T")));
+        var directory = Unique("T");
 
         const string Body = """
             ## Retention
@@ -238,7 +227,7 @@ public sealed class HybridSearchTests(StackFixture fixture)
             ninety days before they are purged automatically.
             """;
 
-        var markdown = await IndexAsync(scope, folder.Id, "retention.md", Body);
+        var markdown = await scope.PublishIndexedAsync($"{directory}/retention.md", Body);
 
         var response = await scope.Search.SearchAsync(new SearchRequest
         {
@@ -246,7 +235,7 @@ public sealed class HybridSearchTests(StackFixture fixture)
             Extension = ["pdf"],
         });
 
-        Assert.DoesNotContain(response.Results, result => result.DocumentId == markdown);
+        Assert.DoesNotContain(response.Results, result => result.DocumentId == markdown.Id);
     }
 
     [Fact]
@@ -262,8 +251,7 @@ public sealed class HybridSearchTests(StackFixture fixture)
     public async Task Stop_words_are_not_returned_as_highlight_terms()
     {
         await using var scope = fixture.NewScope();
-        var folder = await scope.Folders.CreateAsync(new CreateFolderRequest(null, Unique("H")));
-        await IndexAsync(scope, folder.Id, "vpn.md", """
+        await scope.PublishIndexedAsync($"{Unique("H")}/vpn.md", """
             ## Enrolment
 
             Contact the service desk to have your account enrolled before the first remote

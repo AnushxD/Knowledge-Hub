@@ -117,7 +117,6 @@ internal sealed class SearchService(
                 .Select(extension => extension.TrimStart('.').ToLowerInvariant())
                 .ToList(),
             Tags = request.Tag?.Select(tag => tag.Trim().ToLowerInvariant()).ToList(),
-            OwnerId = request.OwnerId,
             // Deeper than the page size: fusion can only reorder what it was
             // given, so each branch has to offer more than the caller will see.
             Limit = Math.Max(take * 3, 40),

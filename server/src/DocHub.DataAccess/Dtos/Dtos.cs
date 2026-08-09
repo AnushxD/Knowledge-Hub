@@ -14,7 +14,6 @@ public record FolderDto(
     Guid? ParentId,
     string Name,
     string Path,
-    Guid OwnerId,
     int DocumentCount,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt);
@@ -28,39 +27,50 @@ public record DocumentDto(
     string Extension,
     string ContentType,
     long SizeBytes,
-    int Version,
+    string RepositoryPath,
+    string BlobSha,
+    string? CommitSha,
     IReadOnlyList<string> Tags,
-    UserDto Owner,
     IngestionStatus Status,
     string? FailureReason,
     int? ChunkCount,
     bool IsStarred,
+    DateTimeOffset LastSyncedAt,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt);
-
-public record DocumentVersionDto(
-    int VersionNumber,
-    string StoragePath,
-    long SizeBytes,
-    string? Note,
-    UserDto ChangedBy,
-    DateTimeOffset ChangedAt);
 
 /// <summary>A document plus everything the detail screen needs in one round trip.</summary>
 public record DocumentDetailDto(
     DocumentDto Document,
-    string StoragePath,
-    IReadOnlyList<FolderDto> Breadcrumb,
-    IReadOnlyList<DocumentVersionDto> Versions);
+    IReadOnlyList<FolderDto> Breadcrumb);
 
+/// <param name="ContentBytes">
+/// Total size of the files that have been fetched at least once. Not what the
+/// hub stores — it stores none of them — so it undercounts until everything has
+/// been through ingestion.
+/// </param>
 public record LibraryStatsDto(
     int Documents,
     int Indexed,
     int InPipeline,
     int Failed,
     int Folders,
-    long StorageBytes,
+    long ContentBytes,
     int Chunks);
+
+/// <summary>The last sync of one project and branch, or null if none has run.</summary>
+public record RepositorySyncStateDto(
+    string ProjectPath,
+    string Branch,
+    SyncOutcome Outcome,
+    string? CommitSha,
+    DateTimeOffset StartedAt,
+    DateTimeOffset? FinishedAt,
+    string? Error,
+    int FilesAdded,
+    int FilesUpdated,
+    int FilesRemoved,
+    int FilesSkipped);
 
 /// <summary>Filter for a document listing. Null members mean "no constraint".</summary>
 public record DocumentQueryDto
@@ -77,8 +87,6 @@ public record DocumentQueryDto
     public IReadOnlyList<string>? Extensions { get; init; }
 
     public IReadOnlyList<string>? Tags { get; init; }
-
-    public Guid? OwnerId { get; init; }
 
     public bool StarredOnly { get; init; }
 
@@ -98,7 +106,13 @@ public enum DocumentSort
     SizeDescending,
 }
 
-/// <summary>Everything needed to persist a freshly uploaded file.</summary>
+/// <summary>
+/// A mirrored file reduced to what sync compares — its identity, the revision
+/// held, and a name to put in the activity trail when it goes.
+/// </summary>
+public record MirroredFileDto(Guid Id, string RepositoryPath, string BlobSha, string Title);
+
+/// <summary>Everything needed to record a file found in the repository tree.</summary>
 public record NewDocumentDto
 {
     public required Guid FolderId { get; init; }
@@ -106,11 +120,9 @@ public record NewDocumentDto
     public required string FileName { get; init; }
     public required string Extension { get; init; }
     public required string ContentType { get; init; }
-    public required long SizeBytes { get; init; }
-    public required string StoragePath { get; init; }
-    public required Guid OwnerId { get; init; }
-    public string? Description { get; init; }
-    public IReadOnlyList<string> Tags { get; init; } = [];
+    public required string RepositoryPath { get; init; }
+    public required string BlobSha { get; init; }
+    public string? CommitSha { get; init; }
 }
 
 /// <summary>Editable metadata. Null members are left unchanged.</summary>
@@ -216,8 +228,6 @@ public record ChunkSearchDto
 
     public IReadOnlyList<string>? Tags { get; init; }
 
-    public Guid? OwnerId { get; init; }
-
     /// <summary>Candidates to pull from each branch before fusion.</summary>
     public int Limit { get; init; } = 40;
 
@@ -236,10 +246,11 @@ public record ChunkSearchDto
 }
 
 /// <summary>One entry in the activity trail, with its actor resolved.</summary>
+/// <param name="Actor">Null when the sync caused it and no one was signed in.</param>
 public sealed record ActivityEventDto(
     Guid Id,
     ActivityType Type,
-    UserDto Actor,
+    UserDto? Actor,
     string Target,
     Guid? TargetId,
     DateTimeOffset At);

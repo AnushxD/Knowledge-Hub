@@ -6,6 +6,7 @@ using DocHub.Services.Folders;
 using DocHub.Services.Ingestion;
 using DocHub.Services.Ingestion.Extraction;
 using DocHub.Services.Knowledge;
+using DocHub.Services.Repository;
 using DocHub.Services.Search;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -36,6 +37,8 @@ public static class ServicesServiceCollectionExtensions
         services.AddScoped<IFolderService, FolderService>();
         services.AddScoped<IDocumentService, DocumentService>();
         services.AddScoped<IIngestionService, IngestionService>();
+        services.AddScoped<IRepositoryMirrorService, RepositoryMirrorService>();
+        services.AddScoped<IRepositoryWebhook, RepositoryWebhook>();
         services.AddScoped<ISearchService, SearchService>();
         services.AddScoped<IChatService, ChatService>();
         services.AddScoped<IActivityLog, ActivityLog>();

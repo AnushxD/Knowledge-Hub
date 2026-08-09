@@ -14,6 +14,20 @@ public record FolderViewModel(
 
 public record UserViewModel(Guid Id, string Name, string Email, string Initials);
 
+/// <param name="SizeBytes">
+/// Zero until the file has been fetched at least once. The repository's tree
+/// listing carries no size, so this arrives with ingestion rather than with the
+/// document.
+/// </param>
+/// <param name="RepositoryPath">
+/// Where the file lives in the repository, relative to the mirrored sub-path.
+/// Shown instead of a folder chain the user could have made themselves, because
+/// this one they did not: it is the path their own repository uses.
+/// </param>
+/// <param name="WebUrl">
+/// The file in GitLab. The hub is read-only, so this is the only route from
+/// noticing something is wrong to fixing it.
+/// </param>
 public record DocumentViewModel(
     Guid Id,
     Guid FolderId,
@@ -22,22 +36,17 @@ public record DocumentViewModel(
     string FileName,
     string Extension,
     long SizeBytes,
-    int Version,
+    string RepositoryPath,
+    string WebUrl,
+    string? CommitSha,
     IReadOnlyList<string> Tags,
-    UserViewModel Owner,
     string Status,
     string? FailureReason,
     int? ChunkCount,
     bool IsStarred,
+    DateTimeOffset LastSyncedAt,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt);
-
-public record DocumentVersionViewModel(
-    int Version,
-    long SizeBytes,
-    string? Note,
-    UserViewModel ChangedBy,
-    DateTimeOffset ChangedAt);
 
 /// <param name="Sections">
 /// The document's indexed chunks, in reading order. Empty until ingestion
@@ -51,7 +60,6 @@ public record DocumentVersionViewModel(
 public record DocumentDetailViewModel(
     DocumentViewModel Document,
     IReadOnlyList<FolderViewModel> Breadcrumb,
-    IReadOnlyList<DocumentVersionViewModel> Versions,
     IReadOnlyList<DocumentSectionViewModel> Sections,
     int CitedInAnswers);
 
@@ -72,13 +80,17 @@ public record DocumentSectionViewModel(
     string Body,
     int TokenCount);
 
+/// <param name="ContentBytes">
+/// Total size of the files fetched so far. The hub stores none of them, so this
+/// is what the repository holds, not what the hub occupies.
+/// </param>
 public record LibraryStatsViewModel(
     int Documents,
     int Indexed,
     int InPipeline,
     int Failed,
     int Folders,
-    long StorageBytes,
+    long ContentBytes,
     int Chunks);
 
 // ---- search -----------------------------------------------------------------
@@ -138,7 +150,6 @@ public record SearchRequest
     public Guid? FolderId { get; init; }
     public string[]? Extension { get; init; }
     public string[]? Tag { get; init; }
-    public Guid? OwnerId { get; init; }
     public int Take { get; init; } = 20;
 }
 
@@ -146,9 +157,13 @@ public record SearchRequest
 
 /// <summary>One entry in the dashboard's activity feed.</summary>
 /// <param name="Type">
-/// "uploaded", "indexed", "deleted" and so on. A string rather than an enum on
-/// the wire: the client turns it into a verb, and an unknown value should read
-/// as a generic "updated" rather than break the feed.
+/// "added", "indexed", "removed" and so on. A string rather than an enum on the
+/// wire: the client turns it into a verb, and an unknown value should read as a
+/// generic "updated" rather than break the feed.
+/// </param>
+/// <param name="Actor">
+/// Null when the sync did it and nobody was signed in, which is most of this
+/// feed now. The client renders that as the repository rather than as a person.
 /// </param>
 /// <param name="TargetId">
 /// The document, when the entry has one, so the feed can link to it. Null for a
@@ -158,7 +173,7 @@ public record SearchRequest
 public record ActivityEventViewModel(
     Guid Id,
     string Type,
-    UserViewModel Actor,
+    UserViewModel? Actor,
     string Target,
     Guid? TargetId,
     DateTimeOffset At);
@@ -401,29 +416,11 @@ public record AskRequest
 
 // ---- requests ---------------------------------------------------------------
 
-public record CreateFolderRequest(Guid? ParentId, string Name);
-
-public record RenameFolderRequest(string Name);
-
 public record UpdateDocumentRequest(
     string? Title,
     string? Description,
     IReadOnlyList<string>? Tags,
     bool? IsStarred);
-
-public record MoveDocumentRequest(Guid FolderId);
-
-/// <summary>
-/// An uploaded file, decoupled from ASP.NET Core. The Service layer takes a
-/// plain stream so it never depends on IFormFile — that keeps services testable
-/// without spinning up the web stack.
-/// </summary>
-public record UploadRequest(
-    Stream Content,
-    string FileName,
-    string ContentType,
-    long SizeBytes,
-    string? Note = null);
 
 /// <summary>Filter for a document listing, as it arrives from the query string.</summary>
 public record DocumentQueryRequest
@@ -434,7 +431,6 @@ public record DocumentQueryRequest
     public string[]? Status { get; init; }
     public string[]? Extension { get; init; }
     public string[]? Tag { get; init; }
-    public Guid? OwnerId { get; init; }
     public bool StarredOnly { get; init; }
     public string? Sort { get; init; }
     public int Skip { get; init; }
@@ -443,3 +439,41 @@ public record DocumentQueryRequest
 
 /// <summary>A file being streamed back to the caller.</summary>
 public record DocumentContent(Stream Content, string ContentType, string FileName, long SizeBytes);
+
+// ---- repository -------------------------------------------------------------
+
+/// <summary>
+/// The repository being mirrored, and how the last attempt to mirror it went.
+///
+/// Drawn as one screen because the two questions a reader has are "where does
+/// this library come from" and "is it current", and answering only the first is
+/// how a stale mirror passes for a complete one.
+/// </summary>
+/// <param name="Outcome">
+/// "never", "running", "succeeded" or "failed". "never" is its own value rather
+/// than an absent record: a hub that has not synced yet looks exactly like a
+/// hub whose repository is empty, and those need different fixes.
+/// </param>
+/// <param name="CommitSha">
+/// The commit the mirror is current with. Null until a sync has succeeded, and
+/// deliberately not advanced by a failed one.
+/// </param>
+/// <param name="Skipped">
+/// Files in the tree no extractor can read. Reported because a repository is
+/// mostly code, and a number here is the difference between "the sync worked"
+/// and "the sync worked and most of the repository is not searchable".
+/// </param>
+public record RepositoryViewModel(
+    string ProjectPath,
+    string Branch,
+    string SubPath,
+    string WebUrl,
+    string Outcome,
+    string? CommitSha,
+    DateTimeOffset? StartedAt,
+    DateTimeOffset? FinishedAt,
+    string? Error,
+    int Added,
+    int Updated,
+    int Removed,
+    int Skipped);

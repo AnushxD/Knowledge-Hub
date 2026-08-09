@@ -1,5 +1,4 @@
 using DocHub.Api.Infrastructure.Auth;
-using DocHub.Services;
 using DocHub.Services.Documents;
 using DocHub.Services.Ingestion;
 using DocHub.Services.ViewModels;
@@ -15,7 +14,10 @@ public sealed class DocumentsController(
     IDocumentService documents,
     IIngestionService ingestion) : ControllerBase
 {
-    /// <summary>File types the ingestion pipeline can make searchable.</summary>
+    /// <summary>
+    /// File types the ingestion pipeline can make searchable. Shown so a reader
+    /// can tell why a file that is plainly in the repository is not in the hub.
+    /// </summary>
     [HttpGet("supported-types")]
     [ProducesResponseType<IReadOnlyList<string>>(StatusCodes.Status200OK)]
     public IReadOnlyList<string> SupportedTypes() => ingestion.SupportedExtensions;
@@ -50,12 +52,6 @@ public sealed class DocumentsController(
     public async Task<IReadOnlyList<string>> Tags(CancellationToken ct) =>
         await documents.GetTagsAsync(ct);
 
-    /// <summary>Everyone who owns at least one document, for the owner filter.</summary>
-    [HttpGet("owners")]
-    [ProducesResponseType<IReadOnlyList<UserViewModel>>(StatusCodes.Status200OK)]
-    public async Task<IReadOnlyList<UserViewModel>> Owners(CancellationToken ct) =>
-        await documents.GetOwnersAsync(ct);
-
     [HttpGet("{id:guid}")]
     [ProducesResponseType<DocumentDetailViewModel>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -63,7 +59,8 @@ public sealed class DocumentsController(
         await documents.GetAsync(id, ct);
 
     /// <summary>
-    /// Streams the stored file back.
+    /// Streams the file back, proxied live from the repository — the hub keeps
+    /// no copy.
     /// </summary>
     /// <param name="inline">
     /// Serve for display rather than download. Passing a file name to
@@ -73,9 +70,9 @@ public sealed class DocumentsController(
     ///
     /// Honoured only for the types in <see cref="InlineContentTypes"/>. Anything
     /// else falls back to a download **on purpose**: this endpoint is
-    /// same-origin with the session cookie, so displaying arbitrary uploaded
-    /// content here would let an uploaded SVG or HTML file run script against a
-    /// signed-in reader's session.
+    /// same-origin with the session cookie, so displaying arbitrary repository
+    /// content here would let an SVG or HTML file committed by anyone with push
+    /// access run script against a signed-in reader's session.
     /// </param>
     [HttpGet("{id:guid}/content")]
     [ProducesResponseType(StatusCodes.Status200OK)]
@@ -117,9 +114,9 @@ public sealed class DocumentsController(
     /// Types safe to render in the browser on our own origin.
     ///
     /// Deliberately a short allow-list of inert formats. <c>image/svg+xml</c> is
-    /// absent because an SVG is a script host, and no <c>text/*</c> type appears
-    /// because the client fetches text over XHR and renders it itself rather
-    /// than pointing a frame at this endpoint.
+    /// absent because an SVG is a script host — and a repository is full of
+    /// them — and no <c>text/*</c> type appears because the client fetches text
+    /// over XHR and renders it itself rather than pointing a frame here.
     /// </summary>
     private static readonly HashSet<string> InlineContentTypes =
         new(StringComparer.OrdinalIgnoreCase)
@@ -132,34 +129,6 @@ public sealed class DocumentsController(
             "image/bmp",
         };
 
-    /// <summary>Uploads a new document into a folder.</summary>
-    [Authorize(Policy = Policies.Contribute)]
-    [HttpPost]
-    [ProducesResponseType<DocumentViewModel>(StatusCodes.Status201Created)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<ActionResult<DocumentViewModel>> Upload(
-        [FromQuery] Guid folderId,
-        IFormFile file,
-        CancellationToken ct)
-    {
-        var created = await documents.UploadAsync(folderId, ToUploadRequest(file), ct);
-        return CreatedAtAction(nameof(Get), new { id = created.Id }, created);
-    }
-
-    /// <summary>Uploads a replacement file as a new version of an existing document.</summary>
-    [Authorize(Policy = Policies.Contribute)]
-    [HttpPost("{id:guid}/versions")]
-    [ProducesResponseType<DocumentViewModel>(StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<DocumentViewModel> AddVersion(
-        Guid id,
-        IFormFile file,
-        [FromQuery] string? note,
-        CancellationToken ct) =>
-        await documents.AddVersionAsync(id, ToUploadRequest(file, note), ct);
-
     [Authorize(Policy = Policies.Contribute)]
     [HttpPatch("{id:guid}")]
     [ProducesResponseType<DocumentViewModel>(StatusCodes.Status200OK)]
@@ -170,43 +139,4 @@ public sealed class DocumentsController(
         [FromBody] UpdateDocumentRequest request,
         CancellationToken ct) =>
         await documents.UpdateAsync(id, request, ct);
-
-    [Authorize(Policy = Policies.Contribute)]
-    [HttpPost("{id:guid}/move")]
-    [ProducesResponseType<DocumentViewModel>(StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<DocumentViewModel> Move(
-        Guid id,
-        [FromBody] MoveDocumentRequest request,
-        CancellationToken ct) =>
-        await documents.MoveAsync(id, request.FolderId, ct);
-
-    [Authorize(Policy = Policies.Contribute)]
-    [HttpDelete("{id:guid}")]
-    [ProducesResponseType(StatusCodes.Status204NoContent)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
-    {
-        await documents.DeleteAsync(id, ct);
-        return NoContent();
-    }
-
-    /// <summary>
-    /// Adapts ASP.NET's IFormFile to the transport-agnostic request the service
-    /// expects, so business logic never depends on the web stack.
-    /// </summary>
-    private static UploadRequest ToUploadRequest(IFormFile? file, string? note = null)
-    {
-        if (file is null || file.Length == 0)
-            throw new ValidationException("A file is required.");
-
-        return new UploadRequest(
-            file.OpenReadStream(),
-            file.FileName,
-            string.IsNullOrWhiteSpace(file.ContentType)
-                ? "application/octet-stream"
-                : file.ContentType,
-            file.Length,
-            note);
-    }
 }

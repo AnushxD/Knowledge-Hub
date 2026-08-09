@@ -2,6 +2,14 @@ using DocHub.Services.ViewModels;
 
 namespace DocHub.Services.Documents;
 
+/// <summary>
+/// Reads the mirrored library, and edits the metadata the hub owns.
+///
+/// There is no upload, move or delete: a document exists because a file exists
+/// in the repository, and the only thing that changes that is a sync. What can
+/// be edited here is what GitLab has no opinion about — title, description,
+/// tags and starring.
+/// </summary>
 public interface IDocumentService
 {
     Task<IReadOnlyList<DocumentViewModel>> QueryAsync(
@@ -10,31 +18,19 @@ public interface IDocumentService
 
     Task<DocumentDetailViewModel> GetAsync(Guid id, CancellationToken ct = default);
 
+    /// <summary>
+    /// Streams the file straight from the repository. Nothing is cached: the
+    /// hub keeps no copy of the bytes, so what a reader downloads is what the
+    /// branch holds right now, not what the last sync happened to see.
+    /// </summary>
     Task<DocumentContent> DownloadAsync(Guid id, CancellationToken ct = default);
-
-    Task<DocumentViewModel> UploadAsync(
-        Guid folderId,
-        UploadRequest request,
-        CancellationToken ct = default);
-
-    /// <summary>Uploads a replacement file, creating a new version of an existing document.</summary>
-    Task<DocumentViewModel> AddVersionAsync(
-        Guid id,
-        UploadRequest request,
-        CancellationToken ct = default);
 
     Task<DocumentViewModel> UpdateAsync(
         Guid id,
         UpdateDocumentRequest request,
         CancellationToken ct = default);
 
-    Task<DocumentViewModel> MoveAsync(Guid id, Guid folderId, CancellationToken ct = default);
-
-    Task DeleteAsync(Guid id, CancellationToken ct = default);
-
     Task<LibraryStatsViewModel> GetStatsAsync(CancellationToken ct = default);
 
     Task<IReadOnlyList<string>> GetTagsAsync(CancellationToken ct = default);
-
-    Task<IReadOnlyList<UserViewModel>> GetOwnersAsync(CancellationToken ct = default);
 }
