@@ -1,21 +1,22 @@
 # Document Hub — AI Documentation & Knowledge Hub
 
-An internal Documentation & Knowledge Hub: upload, organise and search team
-documentation, with an AI assistant that answers questions grounded strictly
-in indexed content and always cites its sources.
+An internal Documentation & Knowledge Hub: **mirrors a GitLab repository's
+documentation** — the same files, in the same folder structure — and searches
+it, with an AI assistant that answers questions grounded strictly in indexed
+content and always cites its sources.
 
-> **Status:** **v1 — complete.** Phases 1–6 are done. Documents upload, index and become
-> searchable by hybrid keyword + semantic search, and an AI assistant answers
-> questions from them — citing the exact passage behind every claim, and
-> saying "I don't know" when the answer isn't there. The assistant now retrieves
-> through an `IKnowledgeSource` abstraction, so a repository source over MCP
-> joins document search without the assistant changing; that MCP client now
-> exists and is switched on with one configuration key, falling back to a stub
-> that contributes nothing. Everything sits behind a sign-in with
-> Admin / Editor / Viewer roles, and Google sign-in can be switched on for
-> company addresses. It ships as container images or as a single-site IIS
-> artefact, both from one CI pipeline, with an activity trail recording who did
-> what. See [Current state](#current-state).
+> **Status: v2.** The library is a read-only mirror of a GitLab project. Nothing
+> is uploaded here any more: a document exists because a file exists in the
+> repository, the folder tree is that repository's directories, and the only
+> thing that changes either is a commit. Files are fetched from GitLab on
+> demand — the hub keeps no copy — indexed into hybrid keyword + semantic
+> search, and answered from by an assistant that cites the exact passage behind
+> every claim and says "I don't know" when the answer isn't there.
+>
+> V2 runs against **its own database** (`documenthub_v2`). V1's is left exactly
+> as [release 1](https://github.com/AnushxD/Knowledge-Hub/releases/tag/v1.0.0)
+> left it — the two share no migration history, so never point
+> `dotnet ef database update` at the old one. See [Current state](#current-state).
 
 ---
 
@@ -97,16 +98,62 @@ approve the build tooling once:
 npm --prefix client approve-scripts esbuild fsevents lmdb msgpackr-extract @parcel/watcher
 ```
 
-### 4. Create the database schema
+### 4. Create the V2 database and its schema
 
 The API **never** creates or migrates anything on startup — provisioning is an
-explicit step you run, so nothing is silently created behind your back.
+explicit step you run, so nothing is silently created behind your back. That
+includes the database itself.
+
+A fresh clone gets `documenthub_v2` automatically: `docker/initdb` runs when
+the Postgres volume is created. If you already had the volume from v1, create
+it once by hand:
+
+```bash
+docker compose exec postgres createdb -U documenthub documenthub_v2
+```
+
+Then apply the schema:
 
 ```bash
 dotnet ef database update --project server/src/DocHub.DataAccess --startup-project server/src/DocHub.Api
 ```
 
-### 5. Create the blob storage container
+> **Never run this against the v1 `documenthub` database.** V2 restarted the
+> migration chain, so the two share no history and applying one to the other
+> would try to create tables that already exist under a different shape. V1
+> stays exactly as release 1 left it, and `documenthub-schema.sql` is frozen
+> alongside it.
+
+### 5. Point the hub at a GitLab repository
+
+Every document comes from one GitLab project, so the API refuses to start
+without one. `appsettings.Development.json` ships pointing at a public project
+so a fresh clone has something to mirror; repoint it at yours:
+
+```jsonc
+"GitLab": {
+  "BaseUrl": "https://gitlab.example.org",
+  "ProjectPath": "team/handbook",   // namespaced path, as GitLab spells it
+  "Branch": "main",
+  "SubPath": "docs"                 // narrow the mirror; empty means the whole repo
+}
+```
+
+The access token is the one real secret and never goes in a committed file:
+
+```bash
+dotnet user-secrets set "GitLab:Token" "glpat-…" --project server/src/DocHub.Api
+```
+
+A token with `read_repository` is enough — nothing here writes to GitLab. Leave
+it unset for a public project.
+
+`SubPath` is usually what you want. A repository is mostly source code, and
+mirroring the root fills the tree with files no extractor can read; they are
+counted as skipped rather than mirrored, but the tree is easier to recognise
+without them.
+
+### 6. Create the blob storage container
 
 ```bash
 dotnet run --project server/src/DocHub.Api -- init-storage
@@ -115,7 +162,7 @@ dotnet run --project server/src/DocHub.Api -- init-storage
 This creates the private `documents` container in Azurite and exits. It is
 idempotent — running it again just reports that the container already exists.
 
-### 6. Pull the models
+### 7. Pull the models
 
 Two local models do the AI work — one turns text into vectors for search, the
 other writes the assistant's answers. Neither is bundled with the Ollama
@@ -141,7 +188,7 @@ second, so an answer streams in over several seconds. That is the cost of
 running locally for free; see [Configuration](#configuration) for what to
 change if you'd rather use a hosted model.
 
-### 7. Set the administrator password
+### 8. Set the administrator password
 
 The database arrives with one account, `dev@dochub.local`, and no password —
 a password hash is salted per call, so it cannot live in a migration, and a
@@ -157,15 +204,36 @@ Re-running it resets the password, which is also how to recover a forgotten
 local one. There is no self-registration — sign in as the administrator and
 create everyone else under **People**.
 
-### 8. Confirm setup is complete
+### 9. Confirm setup is complete
 
 Start the API (see below) and open http://localhost:5080/healthz — it stays
 anonymous so an orchestrator can reach it. It should report
 `"status": "Healthy"`. If a step above was missed, the status is `Degraded` and
-the response names the exact command to run.
+the response names the exact command to run. The `repository` check is the new
+one: it asks GitLab for the head commit, so it catches a wrong address, a
+rejected token and a branch that does not exist, which an HTTP ping would not.
 
 Then open the client and sign in as `dev@dochub.local`. Every other endpoint,
 plus `/swagger` and `/jobs`, now requires a session.
+
+### 10. Mirror the repository
+
+The library starts empty — nothing is mirrored until you ask. Sign in as an
+administrator and press **Sync now** on the library screen, or:
+
+```bash
+curl -X POST http://localhost:5080/api/repository/sync
+```
+
+The first sync of a real repository takes a while: it lists the whole tree,
+creates a document per readable file and queues each one for embedding. The
+library fills in as it goes, and the sidebar meter says how much of it is
+searchable yet. Measured against a public GitLab project's `doc/development`
+directory: 636 documents and 101 folders from a tree of 761 files, listed in
+about 19 seconds, with the embedding running on behind it.
+
+After that, a **GitLab push webhook** keeps it current — see
+[Configuration](#configuration).
 
 ---
 
@@ -203,7 +271,7 @@ step is missing — the response says which, and the command that fixes it. See
 [Troubleshooting](#troubleshooting).
 
 Browsing to the API root redirects to **Swagger UI**, where every endpoint can
-be expanded and called with *Try it out* — including file uploads, which get a
+be expanded and called with *Try it out* — including binary responses, which get a
 real file picker. It reads the same `/openapi/v1.json` document the API already
 serves, so it can never drift from the actual routes.
 
@@ -226,13 +294,41 @@ Breakpoints work in both C# and TypeScript. The API config runs
 
 ---
 
-## How ingestion and search work
+## How mirroring, ingestion and search work
 
-Uploading a document returns immediately and queues a background job — a large
-PDF takes far longer to process than an upload should. The job:
+A **sync** reconciles the hub against the repository. It lists the whole tree,
+compares it against what is already mirrored, and then:
 
-1. **Extracts** text according to file type
-2. **Chunks** it at roughly 800 tokens with 15% overlap, splitting on the
+- a path it has never seen becomes a new document, queued for ingestion
+- a path whose **git blob id** changed is repointed and re-ingested
+- a path that is gone is deleted, and its chunks with it, so content that left
+  the repository stops being answerable
+- everything else is left alone
+
+Blob ids are why a push touching one file does not re-embed the other six
+hundred: git is content-addressed, so an unchanged file has an unchanged id and
+sync can prove it without fetching anything. A file type no extractor can read
+is **counted as skipped**, not mirrored — a repository is mostly source code,
+and a row that can only ever say "failed" for a `.cs` file is noise that never
+clears.
+
+A sync that fails part way leaves the mirror exactly as it was, and does not
+advance the commit it claims to be current with. Emptying the library because
+GitLab was briefly unreachable is far worse than serving yesterday's tree — and
+the library screen says out loud that the last sync failed, because a stale
+mirror and a current one otherwise look identical.
+
+Two things trigger one: the admin-only **Sync now** button, and a **GitLab push
+webhook**. Both queue the work rather than running it inline — a full mirror
+takes minutes and GitLab hangs up on a slow webhook. Syncs run on their own
+Hangfire queue, drained ahead of ingestion, so a sync is never stuck behind the
+backlog it created.
+
+Ingestion then runs per document, on a background job:
+
+1. **Fetches** the file's bytes from GitLab — nothing is stored here, so what
+   is indexed is what the branch holds
+2. **Extracts** text according to file type, then **chunks** it at roughly 800 tokens with 15% overlap, splitting on the
    structure the document already has (headings, pages, slides) and only
    falling back to sentences and then raw length when a block will not fit
 3. **Embeds** each chunk with the local model
@@ -255,9 +351,11 @@ live list:
 | PDF | Text layer via PdfPig, one section per page |
 | Word, PowerPoint, Excel | OpenXML — headings, slide numbers and sheet names become labels |
 
-Images and scanned PDFs have no text layer and are marked `Failed` with a clear
-reason; OCR is a later phase. Legacy binary `.doc`/`.ppt`/`.xls` are not
-OpenXML and are not supported.
+Anything else in the repository is skipped rather than mirrored. A file of a
+supported type that still yields no text — a scanned PDF with no text layer, an
+empty file — becomes a document marked `Failed` with a reason you can read;
+OCR is a later phase. Legacy binary `.doc`/`.ppt`/`.xls` are not OpenXML and
+are not supported.
 
 **Search** runs two branches and merges them with reciprocal rank fusion:
 
@@ -330,20 +428,26 @@ dotnet test server/DocHub.slnx
 Both test projects run against the **real containers**, not fakes or in-memory
 providers. Docker must be running.
 
-- **Data access** — materialised-path queries, `text[]` columns and the GIN
-  index are exactly what an in-memory provider would fail to catch. Uses a
-  separate `documenthub_test` database, created and dropped per run.
+- **Data access** — materialised-path queries, `text[]` columns, the GIN index
+  and the vector relevance floor are exactly what an in-memory provider would
+  fail to catch. Uses a separate `documenthub_test` database, created and
+  dropped per run.
 - **Integrations** — exercises the actual Azure SDK against Azurite, including
   the 404 behaviour the code depends on. Uses a throwaway blob container per
   run.
-- **Services** — the whole stack minus HTTP: real services over real
-  repositories over real blob storage, including the ingestion pipeline and
-  hybrid search. Mocking those seams would only prove the mocks behave; the
-  bugs worth catching live between the layers, such as a deleted folder failing
-  to free its documents' files, or the two search branches colliding on a
-  shared DbContext.
+- **Services** — the whole stack minus HTTP and minus GitLab: real services
+  over real repositories against real Postgres, including mirroring, the
+  ingestion pipeline and hybrid search. Mocking those seams would only prove
+  the mocks behave; the bugs worth catching live between the layers, such as a
+  directory leaving the repository failing to take its documents' chunks, or
+  the two search branches colliding on a shared DbContext.
 
-  The two AI models are the only things faked: embeddings use the
+  GitLab is faked by an in-memory tree that **hashes its own content**, the way
+  git does. That matters: "this file is unchanged" is decided by comparing blob
+  ids, so a fake handing out a fresh id per call would make every assertion
+  about incremental sync pass for the wrong reason.
+
+  The two AI models are the only other things faked: embeddings use the
   deterministic `hashing` provider, and the assistant's model is scripted per
   test. Tests must not depend on a model being pulled, and what is under test
   is the orchestrator's judgement — what it retrieves, whether it calls the
@@ -373,9 +477,12 @@ Knowledge-Hub/
 │   ├── src/DocHub.Api/           # controllers, DI composition, health checks
 │   ├── src/DocHub.Services/      # business logic: documents, ingestion, search, chat
 │   ├── src/DocHub.DataAccess/    # EF Core, entities, repositories, migrations
-│   ├── src/DocHub.Integrations/  # external systems: blob storage, embeddings, LLM, MCP
+│   ├── src/DocHub.Integrations/  # external systems: GitLab, blob storage, embeddings, LLM, MCP
 │   └── tests/                    # integration tests
+├── docker/initdb/                # creates documenthub_v2 on a fresh Postgres volume
 ├── docker-compose.yml            # Postgres + pgvector, Azurite, Ollama
+├── documenthub-v2-schema.sql     # idempotent V2 setup, for a machine with no .NET SDK
+├── documenthub-schema.sql        # V1's, frozen at release 1
 ├── CLAUDE.md                     # architecture rules and conventions — read this
 └── architecture-blueprint.md     # the full technical design
 ```
@@ -398,9 +505,16 @@ Key settings, one strongly-typed Options class per external dependency:
 
 | Key | Purpose |
 |---|---|
-| `Database:ConnectionString` | Postgres connection — also backs the Hangfire job store |
-| `FileStorage:ConnectionString` | `UseDevelopmentStorage=true` locally; a real Azure connection string in production |
-| `FileStorage:ContainerName` | Blob container for document files (default `documents`) |
+| `Database:ConnectionString` | Postgres connection — `documenthub_v2`, and also backs the Hangfire job store |
+| `GitLab:BaseUrl` | Instance root, e.g. `https://gitlab.example.org`. **Required** — the API refuses to start without it |
+| `GitLab:ProjectPath` | Namespaced project path, e.g. `team/handbook`. **Required** |
+| `GitLab:Branch` | Branch to mirror (default `main`) |
+| `GitLab:SubPath` | Directory to mirror, or empty for the whole repository |
+| `GitLab:Token` | Access token with `read_repository`. **Secret** — user-secrets or Key Vault. Empty for a public project |
+| `GitLab:WebhookSecret` | Shared secret GitLab sends as `X-Gitlab-Token`. **Empty refuses every webhook** — see below |
+| `GitLab:MaxFileBytes` | Files above this are mirrored as metadata but never fetched or indexed (default 25 MB) |
+| `FileStorage:ConnectionString` | `UseDevelopmentStorage=true` locally; a real Azure connection string in production. **Unused by documents in v2** — files are streamed from GitLab — but the integration is still wired and health-checked |
+| `FileStorage:ContainerName` | Blob container (default `documents`) |
 | `FileStorage:ServiceVersion` | Storage REST API version, e.g. `2025-11-05`. Empty uses the SDK default. Only needed against an Azurite older than the SDK — see [Azurite rejects the API version](#azurite-rejects-the-api-version) |
 | `Embeddings:Provider` | `ollama` (default) or `hashing` — see below |
 | `Embeddings:BaseUrl` | Ollama endpoint (default `http://localhost:11434`) |
@@ -513,6 +627,16 @@ run. Swapping to a hosted provider (Voyage, OpenAI) means implementing
 `IEmbeddingProvider` and changing one registration; nothing in ingestion or
 search changes.
 
+**The webhook.** Point GitLab at `POST /api/webhooks/gitlab` (Settings →
+Webhooks, "Push events") and put the same string in both the hook's *Secret
+token* and `GitLab:WebhookSecret`. The endpoint has to be anonymous — GitLab
+holds no session — so that secret is the only thing separating GitLab from
+anyone else who can reach the box, and an unset one **refuses every delivery**
+rather than accepting them all. It is the same fail-closed reasoning as the
+Google allow-list. A push to any other branch is acknowledged and ignored:
+syncing on one would re-list the whole tree for every branch a busy team pushes
+to.
+
 All are validated at startup, so a missing or empty value fails the boot rather
 than the first request. Note that validation is all the app does at startup —
 it never creates a database, applies a migration, or creates a container on
@@ -534,8 +658,9 @@ dotnet user-secrets set "SomeProvider:ApiKey" "value" --project server/src/DocHu
 dotnet ef migrations add YourMigrationName --project server/src/DocHub.DataAccess --startup-project server/src/DocHub.Api
 ```
 
-**Reset everything** — wipes the database *and* all stored files, then re-runs
-setup:
+**Reset everything** — wipes the databases and all stored files, then re-runs
+setup. Nothing is lost that GitLab does not still have; the next sync rebuilds
+the library:
 
 ```bash
 docker compose down -v && docker compose up -d --wait
@@ -544,10 +669,22 @@ docker compose down -v && docker compose up -d --wait
 dotnet ef database update --project server/src/DocHub.DataAccess --startup-project server/src/DocHub.Api
 ```
 ```bash
-dotnet run --project server/src/DocHub.Api -- init-storage
+dotnet run --project server/src/DocHub.Api -- init-storage && dotnet run --project server/src/DocHub.Api -- seed-admin
 ```
 ```bash
 docker compose exec ollama ollama pull nomic-embed-text && docker compose exec ollama ollama pull qwen2.5:7b
+```
+
+**Mirror the repository now**, without the UI:
+
+```bash
+curl -X POST http://localhost:5080/api/repository/sync
+```
+
+**Check how current the mirror is:**
+
+```bash
+curl -s http://localhost:5080/api/repository
 ```
 
 **Re-index a document** after it fails, or after changing the chunking
@@ -570,14 +707,6 @@ then regenerate (never edit `icons.css` by hand):
 
 ```bash
 node client/tools/gen-icons.mjs
-```
-
-**Inspect stored files** — Azurite blobs are browsable with the
-[Azure Storage Explorer](https://azure.microsoft.com/products/storage/storage-explorer)
-(connect to "Local storage emulator"), or from the CLI if you have it:
-
-```bash
-az storage blob list --container-name documents --connection-string "UseDevelopmentStorage=true" --output table
 ```
 
 **Stop everything:**
@@ -703,7 +832,7 @@ put the files:
 > *Blob Containers → Create Blob Container*. The name has to match
 > `FileStorage__ContainerName` in step 4, which defaults to `documents`.
 >
-> Uploads fail until this container exists, and `/healthz` reports
+> `/healthz` reports
 > `blob-storage` as degraded with the container named.
 
 **The models.** Pull them once, a few GB in total, from PowerShell here:
@@ -717,24 +846,35 @@ ollama pull qwen2.5:7b
 
 #### 3. Create the database
 
-The artefact ships `documenthub-schema.sql` beside the binaries. It creates every
-table and index and seeds the administrator account, and it is **idempotent** —
-running it again applies only what is missing, so it is also how you apply
-changes on a later upgrade.
+The artefact ships `documenthub-v2-schema.sql` beside the binaries. It creates
+every table and index and seeds the administrator account, and it is
+**idempotent** — running it again applies only what is missing, so it is also
+how you apply changes on a later upgrade.
 
-Run it once against the container from step 2:
+Create the database first — the API never does:
 
 ```powershell
-psql -h localhost -p 5432 -U documenthub -d documenthub -f D:\Knowledge-Hub-main\documenthub-schema.sql
+createdb -h localhost -p 5432 -U documenthub documenthub_v2
+```
+
+Then run the script against it:
+
+```powershell
+psql -h localhost -p 5432 -U documenthub -d documenthub_v2 -f D:\Knowledge-Hub-main\documenthub-v2-schema.sql
 ```
 
 Point `-f` at wherever you extracted the artefact. There is no `dotnet ef` step
 and no SDK needed — this script *is* the migration. It enables the `vector`
 extension itself, so an empty database is all it needs.
 
+> **Upgrading a box that ran v1?** Leave the old `documenthub` database alone.
+> V2 restarted the migration chain, so its script and v1's must never touch the
+> same database, and v1's history contains nothing v2 can build on. The old
+> library was uploads; the new one is rebuilt from GitLab by the first sync.
+
 > If `psql` is not installed, open the `postgres` container in Portainer,
 > **Console → Connect** (`/bin/sh`), and paste the script into
-> `psql -U documenthub -d documenthub`. Workable, but the file is long; the
+> `psql -U documenthub -d documenthub_v2`. Workable, but the file is long; the
 > command above is better.
 
 #### 4. Create the application pool and site in IIS Manager
@@ -764,7 +904,13 @@ and add:
 | Name | Value |
 |---|---|
 | `ASPNETCORE_ENVIRONMENT` | `Production` |
-| `Database__ConnectionString` | `Host=localhost;Port=5432;Database=documenthub;Username=documenthub;Password=<the password from step 2>` |
+| `Database__ConnectionString` | `Host=localhost;Port=5432;Database=documenthub_v2;Username=documenthub;Password=<the password from step 2>` |
+| `GitLab__BaseUrl` | `https://gitlab.example.org` — the instance to mirror |
+| `GitLab__ProjectPath` | `team/handbook` |
+| `GitLab__Branch` | `main` |
+| `GitLab__SubPath` | `docs`, or leave unset for the whole repository |
+| `GitLab__Token` | The `read_repository` token. **Secret** — set it here rather than in any file |
+| `GitLab__WebhookSecret` | The same string as the hook's *Secret token* in GitLab. Unset refuses every delivery |
 | `FileStorage__ConnectionString` | `UseDevelopmentStorage=true` |
 | `FileStorage__ContainerName` | `documents` |
 | `Embeddings__BaseUrl` | `http://localhost:11434` |
@@ -784,7 +930,7 @@ Optional settings worth knowing:
 
 | Variable | Notes |
 |---|---|
-| `FileStorage__ServiceVersion` | Only when uploads fail with `InvalidHeaderValue` — see [Azurite rejects the API version](#azurite-rejects-the-api-version) |
+| `FileStorage__ServiceVersion` | Only when the storage health check fails with `InvalidHeaderValue` — see [Azurite rejects the API version](#azurite-rejects-the-api-version) |
 | `Authentication__SessionHours` | Session lifetime, default 8 |
 | `RateLimits__ChatRequests` | Questions per user per window, default 10 |
 | `Llm__Model` | `llama3.1:8b` or `qwen2.5:7b` follow the citation format better than the 3B default, at the cost of speed |
@@ -822,14 +968,14 @@ Browse to the site from IIS Manager, then check in order:
    `Degraded` names the command that fixes it.
 2. `http://localhost:8080/` → the sign-in screen.
 3. Sign in as **`admin@documenthub.local`**. The initial password is the one set
-   by `documenthub-schema.sql` — it is written in a comment at the bottom of that
+   by `documenthub-v2-schema.sql` — it is written in a comment at the bottom of that
    file. **Change it immediately** from the People screen; it is a known,
    committed credential and is meant to be rotated on first use.
 
    The People screen also lists `dev@dochub.local`, seeded by an early migration
    with no password. Nobody can sign in as it, but disable it here so the account
    list says only what it should.
-4. Upload a Markdown file and watch it reach **Indexed**.
+4. Press **Sync now** and watch documents appear and reach **Indexed**.
 5. Ask the assistant about it — the answer should stream in word by word. All at
    once means response buffering; see below.
 
@@ -897,7 +1043,10 @@ and no deployable artefact should contain a credential.
 |---|---|
 | Local infrastructure + solution skeleton | Done |
 | Data access: entities, migrations, repositories | Done |
-| Blob storage (`IFileStorage`) | Done |
+| **GitLab mirror: tree listing, blob-id diffing, on-demand file streaming** | **Done (v2)** |
+| **Manual sync, GitLab push webhook, sync state on screen** | **Done (v2)** |
+| **V2 database on a fresh migration chain, alongside v1's untouched** | **Done (v2)** |
+| Blob storage (`IFileStorage`) | Wired and health-checked; **no longer used by documents** |
 | Services + API endpoints | Done |
 | Angular client wired to the real API | Done |
 | Text extraction (Markdown, text, PDF, Office) | Done |
@@ -919,12 +1068,29 @@ and no deployable artefact should contain a credential.
 | Ingestion status that updates on screen while a document is processed | Done |
 | Models kept loaded, and a per-answer latency breakdown in the log | Done |
 | `Cited in answers`, counted from the citations answers actually carry | Done |
-| Running on the org Windows machine under IIS | Deployed; sign-in and streaming verified there |
+| Running on the org Windows machine under IIS | Deployed on v1; v2 not yet redeployed there |
+| Upload, folder management, document move and delete | **Removed in v2** — the repository is the system of record |
 
-**v1 is complete.** Upload a Markdown, PDF or Word file and it is
-extracted, chunked, embedded and searchable within seconds. Ask a question and
-the assistant answers from those documents, links every claim to the exact
-passage behind it, and declines when the answer isn't there.
+**v2 mirrors a GitLab repository.** Point it at a project and a branch, press
+Sync now, and the tree on screen is the tree in the repository — same folders,
+same nesting, same files. Each readable file is extracted, chunked, embedded
+and searchable; each is fetched from GitLab when previewed or downloaded, so
+the hub stores none of them. Ask a question and the assistant answers from
+those documents, links every claim to the exact passage behind it, and declines
+when the answer isn't there.
+
+Verified end to end against a public GitLab project's `doc/development`
+directory: **636 documents across 101 folders** from a tree of 761 files, listed
+in about 19 seconds, with 125 files of unreadable types counted as skipped
+rather than mirrored as permanent failures. A second sync immediately after
+reports 0 added, 0 updated and 0 removed — the blob-id comparison means an
+unchanged repository costs one tree listing and nothing else.
+
+What a reader can still change is what GitLab has no opinion about: a
+document's title, description, tags and starring. Those survive the file
+changing underneath them, because a document's identity is its repository path.
+A rename is a delete and an add, and loses them — the honest consequence of
+identifying a file by where it lives.
 
 Retrieval runs through `IKnowledgeSource`: every configured source is searched
 concurrently and merged by rank, a source that fails is left out of that answer
@@ -967,10 +1133,10 @@ faithful in-browser rendering, such as Word and PowerPoint, say so and offer the
 download rather than showing an approximation.
 
 Rendered Markdown is bound through Angular's HTML sanitizer, never
-`bypassSecurityTrustHtml`: documents are uploaded by contributors, so their
-content is untrusted input. For the same reason `?inline=true` is honoured only
-for PDFs and raster images — an uploaded SVG or HTML file displayed on our own
-origin could script against a reader's session.
+`bypassSecurityTrustHtml`: the content is whatever anyone with push access
+committed, which is untrusted input. For the same reason `?inline=true` is
+honoured only for PDFs and raster images — a repository is full of SVGs, and
+one displayed on our own origin could script against a reader's session.
 
 Access is a session cookie issued by ASP.NET Core Identity. Every endpoint
 requires one unless it opts out, content changes need Editor or Admin, and
@@ -982,6 +1148,14 @@ Not yet built, by design: Entra ID single sign-on; pushing images to a registry,
 and any automated deploy step — CI builds the images and the IIS artefact, but a
 human still puts them somewhere. Client-side unit tests are deferred, as is OCR,
 so image-only PDFs are reported as failed rather than silently indexed as empty.
+
+Known limits of the mirror, stated rather than hidden: **one repository per
+deployment**, since which project a hub contains defines the whole installation;
+**no scheduled sync**, so a deployment GitLab cannot reach relies on the manual
+button; **one sync at a time per process**, which is sufficient for a single box
+but would need a database lock across two; and a **file rename loses its
+hub-local metadata**, because a document is identified by its repository path
+and a rename reads as a delete and an add.
 
 The client talks to the API through one seam, `KnowledgeGateway`. Two
 implementations exist:
@@ -998,18 +1172,14 @@ requests are same-origin and CORS never applies.
 
 | Method | Route | Purpose |
 |---|---|---|
-| `GET` | `/api/folders` | Whole folder tree with recursive document counts |
-| `POST` | `/api/folders` | Create a folder |
-| `PUT` | `/api/folders/{id}` | Rename a folder |
-| `DELETE` | `/api/folders/{id}` | Delete a folder, its subtree and its files |
-| `GET` | `/api/documents` | List/filter documents (folder, text, tag, status, owner, sort, paging) |
-| `GET` | `/api/documents/{id}` | Document with breadcrumb and version history |
-| `GET` | `/api/documents/{id}/content` | The current file. Downloads by default; `?inline=true` serves it for display, honoured only for PDFs and raster images |
-| `POST` | `/api/documents?folderId=…` | Upload a document (multipart `file`) |
-| `POST` | `/api/documents/{id}/versions` | Upload a replacement as a new version |
-| `PATCH` | `/api/documents/{id}` | Update title, description, tags, starred |
-| `POST` | `/api/documents/{id}/move` | Move to another folder |
-| `DELETE` | `/api/documents/{id}` | Delete a document and all its files |
+| `GET` | `/api/repository` | Which project is mirrored, and how the last sync went. One row read — no call to GitLab — so it is safe to poll |
+| `POST` | `/api/repository/sync` | Queue a sync; 202 with the state as it stands (Admin only) |
+| `POST` | `/api/webhooks/gitlab` | GitLab push hook. Anonymous, authenticated by `X-Gitlab-Token`; a push to another branch is acknowledged and ignored |
+| `GET` | `/api/folders` | Whole folder tree with recursive document counts. Read-only — the tree is the repository's |
+| `GET` | `/api/documents` | List/filter documents (folder, text, tag, status, sort, paging) |
+| `GET` | `/api/documents/{id}` | Document with breadcrumb, repository path and indexed sections |
+| `GET` | `/api/documents/{id}/content` | The file, streamed live from GitLab. Downloads by default; `?inline=true` serves it for display, honoured only for PDFs and raster images |
+| `PATCH` | `/api/documents/{id}` | Update the hub-local metadata: title, description, tags, starred |
 | `GET` | `/api/documents/stats` | Library counts for the dashboard |
 | `GET` | `/api/documents/tags` | Every tag in use |
 | `GET` | `/api/documents/supported-types` | File extensions ingestion can index |
@@ -1038,7 +1208,7 @@ rule (with a message meant for the user), 404 for a missing entity.
 Try it once the API is running:
 
 ```bash
-curl -X POST http://localhost:5080/api/folders -H 'Content-Type: application/json' -d '{"parentId":null,"name":"Engineering"}'
+curl -X POST http://localhost:5080/api/repository/sync
 ```
 
 Search, once something is indexed:
@@ -1066,9 +1236,42 @@ immediately rather than on the first request.
 says which one:
 
 - `no migrations have been applied` → run step 4
-- `container does not exist` → run step 5
-- `the 'nomic-embed-text' model is not installed` → run step 6
-- `the 'qwen2.5:7b' model is not installed` → run step 6
+- `container does not exist` → run step 6
+- `the 'nomic-embed-text' model is not installed` → run step 7
+- `the 'qwen2.5:7b' model is not installed` → run step 7
+- `has no commits, so there is nothing to mirror` → the branch is real but
+  empty; check `GitLab:Branch`
+
+**API exits at startup with `GitLab:BaseUrl must be an absolute http or https
+URL`** — the mirror is not optional. Every document comes from one project, so
+an installation without one is not degraded, it is empty, and finding that out
+at boot beats finding it out from a blank library screen. See
+[step 5](#5-point-the-hub-at-a-gitlab-repository).
+
+### The library is empty after a sync
+
+Check `GET /api/repository`. The `outcome` distinguishes the three cases that
+look identical on screen:
+
+- `never` — no sync has run. Press **Sync now**.
+- `failed` — `error` says why. `GitLab refused the token` means
+  `GitLab:Token` is missing or lacks `read_repository`; `has no project … or no
+  branch` means `GitLab:ProjectPath` or `GitLab:Branch` is wrong.
+- `succeeded` with a high `skipped` and zero `added` — the sync worked and
+  none of the files are of a type that can be indexed. A repository root is
+  mostly source code; set `GitLab:SubPath` to the documentation directory.
+
+### The webhook does nothing
+
+Every delivery is refused when `GitLab:WebhookSecret` is unset — that is
+deliberate, since the endpoint is anonymous and the secret is the only thing
+identifying GitLab. Check GitLab's **Edit hook → Recent Deliveries**:
+
+- `401` — the secret does not match the hook's *Secret token*, or is unset here
+- `204` — received and deliberately ignored: the push was to a branch other
+  than `GitLab:Branch`, or the hook is not a Push event
+- `202` — accepted and queued; watch `/api/repository` or the
+  [jobs dashboard](http://localhost:5080/jobs)
 
 ### The model pull stops short of finishing
 
@@ -1126,7 +1329,7 @@ Read it in this order:
 
 ### Azurite rejects the API version
 
-Uploads fail and the log shows:
+The storage health check fails and the log shows:
 
 ```
 Azure.RequestFailedException: The API version 2026-06-06 is not supported by Azurite.

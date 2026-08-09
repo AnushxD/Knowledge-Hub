@@ -25,7 +25,7 @@ COPY server/src/ server/src/
 # matching its binaries. It is outside server/src/, so it has to be copied
 # explicitly — without it `dotnet publish` fails on the missing link, which is
 # a build error and not a quiet omission.
-COPY documenthub-schema.sql ./
+COPY documenthub-v2-schema.sql ./
 
 # No app host: the image starts the app with `dotnet DocHub.Api.dll`, so the
 # native launcher would be dead weight.

@@ -1,5 +1,15 @@
 # AI-Powered Documentation & Knowledge Hub — Technical Blueprint
 
+> **This is v1's blueprint, kept as the record of the original design.** It is
+> not maintained against the current code. V2 replaced uploads with a read-only
+> mirror of a GitLab repository: documents are files in that repository,
+> folders are its directories, bytes are streamed from GitLab on demand, and
+> "No forced structure" below is now the repository's structure rather than the
+> user's. What still holds is everything about grounding, retrieval and the
+> layering — the assistant, the search, and the interfaces around them are
+> unchanged. For what the system does today, read `CLAUDE.md`, `README.md` and
+> `chat-pipeline.md`.
+
 ## 1. Overview & Goals
 
 A centralized, enterprise-grade Documentation & Knowledge Hub that lets a team upload, organize, and search internal documentation, and lets an AI assistant answer natural-language questions grounded in that documentation *and* the team's source code repositories (via an existing MCP server, added later).

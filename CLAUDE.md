@@ -13,10 +13,15 @@ there.
 
 ## What this is
 
-An internal Documentation & Knowledge Hub: upload, organise and search team
-documentation, with an AI assistant that answers **only** from indexed content
-and cites every claim. Never fabricate — if the answer is not in the retrieved
-context, say so.
+An internal Documentation & Knowledge Hub: **mirrors a GitLab repository's
+documentation** — the same files, the same folder structure — and searches it,
+with an AI assistant that answers **only** from indexed content and cites every
+claim. Never fabricate — if the answer is not in the retrieved context, say so.
+
+**The repository is the system of record.** A document exists because a file
+exists in it; the folder tree is its directories; nothing is uploaded, moved,
+renamed or deleted here. The only thing that changes the library is a commit,
+picked up by a sync.
 
 A real org requirement, built as a personal learning project (also learning
 Claude Code, git workflow and CI/CD). Deployed on an org Windows machine under
@@ -39,8 +44,9 @@ IIS; the development machine is a Mac.
 |---|---|---|
 | Frontend | Angular 22 — standalone, signals, zoneless — + Tailwind v4 | **No third-party UI kit** |
 | Backend | ASP.NET Core (.NET 10) | |
-| Database | PostgreSQL 17 + pgvector | One database for relational data *and* embeddings |
-| File storage | Azure Blob Storage | Azurite emulator locally, real Azure or Azurite in prod |
+| Database | PostgreSQL 17 + pgvector | One database for relational data *and* embeddings. V2 uses `documenthub_v2`; v1's is frozen |
+| Source of documents | GitLab v4 REST API | One project, one branch, optionally one sub-path |
+| File storage | Azure Blob Storage | Wired and health-checked, but **no document uses it** — files stream from GitLab on demand |
 | Background jobs | Hangfire, Postgres-backed, in-process | Dashboard at `/jobs`, Admin only |
 | AI models | Ollama — `nomic-embed-text` (768-dim), `qwen2.5:7b` | Free, key-less, local |
 | Auth | ASP.NET Core Identity, session cookie | Optional Google sign-in; Entra ID later |
@@ -70,12 +76,13 @@ Follow this exactly; it matches the org's existing convention.
 Controllers   → endpoints only, accept/return ViewModels, NO business logic
 Service layer → business logic lives HERE, converts ViewModel → DTO before
                 calling Data Access. RAG orchestration (search, chat,
-                ingestion, activity) also lives here.
+                ingestion, activity) and repository mirroring also live here.
 Data Access   → DTOs ↔ EF Core ↔ PostgreSQL
 Integrations  → sibling to Data Access (not inside it) — external systems only,
                 always called from Services through an interface:
                 ILlmProvider, IEmbeddingProvider, IKnowledgeSource,
-                IRepositoryKnowledgeSourceFactory, IFileStorage
+                IRepositoryKnowledgeSourceFactory, ISourceRepositoryClient,
+                IFileStorage
 ```
 
 Do not fold Integrations into Data Access. External API calls have different
@@ -128,14 +135,16 @@ server/
   src/DocHub.Api/{Controllers,Infrastructure}
     Infrastructure/Auth/                  # Identity wiring, policies, seeder, admin gates
     web.config                            # IIS: no response buffering, 25 MB limit
-  src/DocHub.Services/{Documents,Folders,Ingestion,Search,Chat,Knowledge,Activity,ViewModels}
+  src/DocHub.Services/{Documents,Folders,Ingestion,Search,Chat,Knowledge,Repository,Activity,ViewModels}
   src/DocHub.DataAccess/{Entities,Dtos,Repositories,Migrations}
-  src/DocHub.Integrations/{Storage,Embeddings,Llm,Knowledge,HealthChecks}
+  src/DocHub.Integrations/{Storage,SourceControl,Embeddings,Llm,Knowledge,HealthChecks}
   tests/{DocHub.Api.Tests,DocHub.Services.Tests,DocHub.DataAccess.Tests,DocHub.Integrations.Tests}
   Dockerfile
 .github/workflows/{ci,publish}.yml
 docker-compose.yml                        # postgres+pgvector, azurite, ollama
-documenthub-schema.sql                    # idempotent DB setup; ships in the publish output
+docker/initdb/                            # creates documenthub_v2 on a fresh volume
+documenthub-v2-schema.sql                 # idempotent V2 setup; ships in the publish output
+documenthub-schema.sql                    # V1's, frozen at release 1, never regenerated
 docker-compose.app.yml                    # the built stack on that infrastructure
 CLAUDE.md · SESSION.md · README.md · architecture-blueprint.md · chat-pipeline.md
 ```
@@ -150,7 +159,9 @@ CLAUDE.md · SESSION.md · README.md · architecture-blueprint.md · chat-pipeli
 | `Services/Search/SearchService.cs` | Hybrid search + RRF; `RankAsync` shared by search and retrieval |
 | `Services/Knowledge/CompositeKnowledgeSource.cs` | Fan-out, per-source deadlines, failure isolation, rank fusion, dedupe |
 | `Integrations/Knowledge/McpRepositoryKnowledgeSource.cs` | The MCP client: tool resolution and the three response shapes it accepts. The tool contract it expects is documented on the class |
-| `Services/Ingestion/IngestionService.cs` | extract → chunk → embed → index; permanent vs transient failure split |
+| `Services/Repository/RepositoryMirrorService.cs` | The sync: list tree → diff on blob ids → add/repoint/remove → reconcile folders. Read the ordering comment before touching it |
+| `Integrations/SourceControl/GitLabRepositoryClient.cs` | The GitLab v4 client: paginated tree, raw file streaming, head commit |
+| `Services/Ingestion/IngestionService.cs` | fetch → extract → chunk → embed → index; permanent vs transient failure split |
 | `DataAccess/DocHubDbContext.cs` | Schema; `EmbeddingDimensions=768`, tsvector, HNSW, jsonb citations |
 | `DataAccess/Repositories/ChunkRepository.cs` | Both search branches |
 | `Api/Program.cs` | DI composition, auth pipeline, static files, Hangfire, health checks |
@@ -180,6 +191,9 @@ Settings that are load-bearing and easy to get wrong:
 | `Knowledge:SourceTimeoutSeconds` | Per-source deadline; without one a hung source stalls every question |
 | `Authentication:Google:AllowedDomains` | The access gate. **Empty admits nobody**, never everybody |
 | `Embeddings:Dimensions` | Must match the migrated column. Changing it needs a migration *and* a full re-index |
+| `GitLab:BaseUrl` / `ProjectPath` | Required. Every document comes from here, so an unset one is an empty product, not a degraded one — it fails at boot |
+| `GitLab:WebhookSecret` | The webhook endpoint is anonymous of necessity. **Empty refuses every delivery**, never accepts them all |
+| `GitLab:SubPath` | Narrows the mirror. A repository root is mostly code, and mirroring it fills the tree with files no extractor can read |
 
 ---
 
@@ -203,6 +217,53 @@ Recorded so they are not re-litigated. Each is a trade already reasoned through.
   request-scoped `DbContext`. The embedding HTTP call starts first so the only
   real latency overlaps. This fixed a real intermittent bug and is
   regression-tested.
+
+**The mirror**
+- **The repository is the system of record, and the hub is read-only.** Upload,
+  move, delete and every folder mutation are gone. A control that edited the
+  tree here would either be a lie the next sync undoes, or a write into
+  somebody's repository; both are worse than not offering it.
+- A document's identity is its **repository path**, and the database enforces
+  one row per path. Hub-local metadata — title, description, tags, starring —
+  therefore survives the file's contents changing but not a rename, which reads
+  as a delete and an add. That is the honest consequence of identifying a file
+  by where it lives.
+- Sync diffs on the **git blob id**, never on the commit. Git is
+  content-addressed, so an unchanged file has an unchanged id and a push
+  touching one file cannot re-embed six hundred. A commit says nothing about
+  whether any particular file changed.
+- **A type no extractor can read is counted as skipped, not mirrored.** Under
+  uploads a person chose the file and deserved to be told why it was not
+  searchable; a repository chose nothing and is mostly source code, so a row
+  per `.cs` file that can only ever say "failed" is noise that never clears.
+- **A failed sync leaves the mirror exactly as it was** and does not advance
+  the recorded commit. It has no way to tell a file that was deleted from one
+  it never got to, so emptying the library because GitLab blipped is far worse
+  than serving yesterday's tree — and claiming a commit it never finished
+  reading would make the next sync skip the remainder.
+- **Departures are settled before the folder tree is reconciled.** Reconciling
+  first removes the directories a departed file lived in and the cascade takes
+  the document with them, leaving nothing to count and nothing to name in the
+  trail: the library empties itself in silence. Found by a test.
+- One sync at a time, on a **process-wide semaphore**, and refused rather than
+  queued when one is running — two syncs reach the same answer twice, and race
+  on the unique path. Two API instances would need a database lock instead.
+- Syncs run on **their own Hangfire queue, drained ahead of ingestion**. The
+  first sync of a real repository queues hundreds of ingestion jobs; on a shared
+  queue the next sync lands behind all of them and the screen shows the previous
+  run's numbers as if nothing had been asked for. Measured at 636 documents.
+- File bytes are **fetched from GitLab on demand**, never copied. What a reader
+  downloads is what the branch holds now, not what the last sync happened to
+  see. The cost is honest and stated: GitLab down means preview fails, while
+  search still works.
+- Listing and checking are the same call here, unlike knowledge sources:
+  `/api/repository` is one row plus configuration and contacts nothing, so it
+  is safe to poll while a sync runs.
+- The webhook endpoint is **anonymous of necessity** — GitLab holds no session —
+  so the shared secret is the only thing separating GitLab from anyone else who
+  can reach the box. Empty refuses every delivery, for the same reason an empty
+  Google allow-list admits nobody. A push to another branch is acknowledged and
+  ignored: GitLab disables a hook that keeps erroring, and that is not an error.
 
 **Ingestion**
 - Text extraction lives in Services, not Integrations: PdfPig and OpenXML are
@@ -302,12 +363,23 @@ Recorded so they are not re-litigated. Each is a trade already reasoned through.
 - The password hash never appears in a migration; `seed-admin` sets it.
 
 **Activity**
-- The trail is append-only, and the target name is denormalised — deleting a
-  document must not blank out the record of it having been deleted.
+- The trail is append-only, and the target name is denormalised — a file
+  leaving the repository must not blank out the record of it having left.
+- **The actor is nullable, and usually null.** Most of the feed is now the
+  repository changing under a webhook with nobody signed in; attributing that
+  to the seeded administrator would put a name against work that account did
+  not do, and inventing a system user would put a row in the user table that
+  cannot sign in. An absent actor renders as the repository.
+- A sync writes **one entry for the whole run**, not one per file. A push
+  touching two hundred files would otherwise be the entire feed.
 - Recording never fails the operation it describes.
 - Starring is not recorded: a bookmark is not an edit.
 
 **Deployment**
+- **V2 has its own database and its own migration chain.** V1's is left exactly
+  as release 1 left it. The two share no history, so neither script may be run
+  against the other's database — `documenthub-schema.sql` is frozen and
+  `documenthub-v2-schema.sql` is the one that ships.
 - **One binary, two shapes.** Containers: nginx serves the client and proxies
   `/api`. IIS: the API serves the client from `wwwroot`, one site. Chosen at
   startup by looking for `wwwroot/index.html` — nothing branches on an
@@ -325,6 +397,12 @@ Recorded so they are not re-litigated. Each is a trade already reasoned through.
 
 - Only `Indexed` documents are retrievable. A half-processed or failed document
   must never be searchable or citable.
+- **A file that leaves the repository takes its chunks with it.** Otherwise
+  content the team deleted stays answerable, which is the worst kind of stale:
+  confidently cited and no longer true.
+- **A revision that changes drops the document back to Pending.** The stored
+  chunks describe text the repository no longer has, and leaving them
+  searchable would let the assistant quote a passage that has been edited away.
 - The LLM is never called with zero retrieved passages — that is exactly what
   produces confident fabrication. Refuse instead.
 - Every citation marker the model emits is verified against the passages
@@ -442,6 +520,9 @@ docker compose up -d --wait                  # postgres, azurite, ollama
 docker compose exec ollama ollama pull nomic-embed-text
 docker compose exec ollama ollama pull qwen2.5:7b
 
+# V2 has its own database. On a volume that predates it, create it once:
+docker compose exec postgres createdb -U documenthub documenthub_v2
+
 dotnet ef database update --project server/src/DocHub.DataAccess --startup-project server/src/DocHub.Api
 dotnet run --project server/src/DocHub.Api -- init-storage
 dotnet run --project server/src/DocHub.Api -- seed-admin
@@ -460,6 +541,9 @@ dotnet ef migrations add <Name> --project server/src/DocHub.DataAccess --startup
 Ports: client 4200 · API 5080 (`/swagger`, `/jobs`, `/healthz`) · Postgres 5432
 · Azurite 10000 · Ollama 11434.
 
+The library is empty until the repository is mirrored — `POST /api/repository/sync`,
+or **Sync now** on the library screen as an admin.
+
 - Trunk-based: commit to `main` directly, or one short-lived `feature/*` branch.
 - Commit small, one thing at a time. **Verify (build + tests) before pushing**,
   and push each finished chunk without asking.
@@ -475,7 +559,12 @@ Ports: client 4200 · API 5080 (`/swagger`, `/jobs`, `/healthz`) · Postgres 543
 
 - Never put a real secret in any committed `appsettings.*.json`
 - Never let a Controller contain business logic, or a Service talk to EF Core,
-  Blob or LLM clients except through Data Access / Integrations interfaces
+  Blob, GitLab or LLM clients except through Data Access / Integrations
+  interfaces
+- Never write to the mirrored repository. The token needs `read_repository` and
+  nothing more, so a bug here cannot alter the team's documentation
+- Never run `documenthub-schema.sql` and `documenthub-v2-schema.sql` against
+  the same database, or point `dotnet ef database update` at the v1 one
 - Never let the assistant answer from anything but retrieved passages
 - Never trust a client-supplied domain, `hd` hint or `returnUrl` — verify
   domains against the address the provider verified, and restrict redirects to
