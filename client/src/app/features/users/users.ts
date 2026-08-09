@@ -44,7 +44,7 @@ export class UsersPage {
       case 'Admin':
         return 'Everything, including this screen and the jobs dashboard.';
       case 'Editor':
-        return 'Upload, edit and delete documents and folders.';
+        return 'Edit document titles, descriptions and tags, and re-index them.';
       default:
         return 'Read, search and ask the assistant. Cannot change content.';
     }

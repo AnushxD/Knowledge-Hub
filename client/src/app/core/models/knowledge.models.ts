@@ -38,11 +38,18 @@ export interface DocumentSummary {
   fileName: string;
   kind: FileKind;
   extension: string;
+  /** Zero until the file has been fetched once — the tree listing carries no size. */
   sizeBytes: number;
-  version: number;
+  /** Where the file lives in the repository, relative to the mirrored sub-path. */
+  repositoryPath: string;
+  /** The file in GitLab. The hub is read-only, so this is the route to changing it. */
+  webUrl: string;
+  /** Commit the mirrored content came from, or null before the first sync. */
+  commitSha?: string | null;
   tags: string[];
-  owner: Person;
   updatedAt: string;
+  /** When sync last saw this file in the repository. */
+  lastSyncedAt: string;
   status: IngestionStatus;
   /** 0–100, only meaningful while `status === 'indexing'`. */
   indexProgress?: number;
@@ -56,7 +63,6 @@ export interface DocumentSummary {
 
 export interface DocumentDetail extends DocumentSummary {
   breadcrumb: Folder[];
-  versions: DocumentVersion[];
   /** Extracted text sections, used for preview + citation highlighting. */
   sections: DocumentSection[];
   /** How many assistant answers cite this document, across every conversation. */
@@ -77,15 +83,6 @@ export interface DocumentSection {
   tokenCount: number;
 }
 
-export interface DocumentVersion {
-  version: number;
-  changedBy: Person;
-  changedAt: string;
-  note: string;
-  sizeBytes: number;
-  current: boolean;
-}
-
 export interface Person {
   id: string;
   name: string;
@@ -96,16 +93,12 @@ export interface Person {
 
 export interface ActivityEvent {
   id: string;
-  type:
-    | 'uploaded'
-    | 'updated'
-    | 'moved'
-    | 'deleted'
-    | 'indexed'
-    | 'failed'
-    | 'folder-created'
-    | 'folder-deleted';
-  actor: Person;
+  type: 'added' | 'changed' | 'updated' | 'removed' | 'indexed' | 'failed' | 'synced';
+  /**
+   * Null when the sync did it and nobody was signed in, which is most of this
+   * feed. Rendered as the repository rather than as a person.
+   */
+  actor: Person | null;
   target: string;
   targetId?: string;
   at: string;
@@ -117,8 +110,37 @@ export interface LibraryStats {
   indexing: number;
   failed: number;
   folders: number;
-  storageBytes: number;
+  /** Size of the files fetched so far. The hub stores none of them. */
+  contentBytes: number;
   chunks: number;
+}
+
+/** How the last sync of the mirrored repository went. */
+export type SyncOutcome = 'never' | 'running' | 'succeeded' | 'failed';
+
+/**
+ * The repository the library comes from, and whether it is current.
+ *
+ * One shape for both questions, because answering only the first is how a
+ * stale mirror passes for a complete one.
+ */
+export interface Repository {
+  projectPath: string;
+  branch: string;
+  /** Directory being mirrored, or empty for the whole repository. */
+  subPath: string;
+  webUrl: string;
+  outcome: SyncOutcome;
+  /** Commit the mirror is current with. Null until a sync has succeeded. */
+  commitSha: string | null;
+  startedAt: string | null;
+  finishedAt: string | null;
+  error: string | null;
+  added: number;
+  updated: number;
+  removed: number;
+  /** Files in the tree no extractor can read, so not mirrored at all. */
+  skipped: number;
 }
 
 /** Filter state for the browser screen. */
@@ -130,7 +152,6 @@ export interface DocumentQuery {
   kinds?: FileKind[];
   statuses?: IngestionStatus[];
   tags?: string[];
-  ownerId?: string;
   starredOnly?: boolean;
   sort?: SortKey;
 }
@@ -187,7 +208,6 @@ export interface SearchQuery {
   folderId?: string | null;
   kinds?: FileKind[];
   tags?: string[];
-  ownerId?: string;
 }
 
 // ---- assistant --------------------------------------------------------------
@@ -290,17 +310,6 @@ export interface AskRequest {
   /** Omitted to start a new conversation. */
   sessionId?: string | null;
   folderId?: string | null;
-}
-
-export interface UploadTask {
-  id: string;
-  fileName: string;
-  sizeBytes: number;
-  kind: FileKind;
-  folderId: string;
-  progress: number;
-  phase: 'uploading' | 'queued' | 'extracting' | 'embedding' | 'done' | 'error';
-  error?: string;
 }
 
 /**

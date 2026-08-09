@@ -8,19 +8,18 @@
           {{ greeting() }}, <span class="dh-gradient-text">{{ firstName() }}</span>
         </h1>
         <p class="mt-2 max-w-xl text-[13.5px] leading-relaxed text-muted">
-          Your team's documentation, in one place. Upload it, organise it, and ask questions that
-          are answered only from what's actually indexed.
+          Your team's documentation, mirrored from GitLab exactly as the repository keeps it —
+          and answered from nothing else.
         </p>
 
         <div class="mt-5 flex flex-wrap items-center gap-2">
           <a
-            routerLink="/browse"
-            [queryParams]="{ upload: 1 }"
+            routerLink="/chat"
             class="flex h-9 items-center gap-2 rounded-dh px-4 text-[13px] font-medium text-white transition hover:brightness-110"
             style="background: linear-gradient(135deg, var(--dh-brand-600), var(--dh-brand-500))"
           >
-            <i class="pi pi-upload text-[12px]"></i>
-            Upload documents
+            <i class="pi pi-comments text-[12px]"></i>
+            Ask the assistant
           </a>
           <a
             routerLink="/browse"
@@ -157,8 +156,7 @@
             <div class="min-w-0 flex-1">
               <p class="truncate text-[13px] font-medium text-ink">{{ doc.title }}</p>
               <p class="truncate text-[11.5px] text-subtle">
-                {{ doc.owner.name }} · {{ doc.updatedAt | timeAgo }} ·
-                {{ doc.sizeBytes | fileSize }}
+                {{ doc.repositoryPath }} · {{ doc.updatedAt | timeAgo }}
               </p>
             </div>
             <dh-status-pill [status]="doc.status" [progress]="doc.indexProgress" />
@@ -174,23 +172,35 @@
       <div class="px-4 py-3">
         @if (activity(); as events) {
           @if (!events.length) {
-            <!-- Nothing records activity server-side yet, so this is the
-                 honest state rather than invented events. -->
             <div class="py-6 text-center">
               <i class="pi pi-inbox mb-2 block text-[18px] text-subtle"></i>
               <p class="text-[12.5px] text-muted">No activity recorded yet.</p>
               <p class="mt-1 text-[11.5px] text-subtle">
-                Actions are not recorded yet, so there is nothing to show here.
+                The first sync of the repository will fill this in.
               </p>
             </div>
           }
           <ol class="relative space-y-3.5">
             @for (event of events; track event.id) {
               <li class="flex gap-3">
-                <dh-avatar [person]="event.actor" size="sm" />
+                <!-- Most of this feed has no actor: the repository changed and
+                     nobody in the hub did it. An avatar for a person who does
+                     not exist would be worse than a mark that says so. -->
+                @if (event.actor; as actor) {
+                  <dh-avatar [person]="actor" size="sm" />
+                } @else {
+                  <span
+                    class="grid size-7 shrink-0 place-items-center rounded-full border border-hairline bg-surface-2 text-subtle"
+                    aria-hidden="true"
+                  >
+                    <i class="pi pi-code text-[10px]"></i>
+                  </span>
+                }
                 <div class="min-w-0 flex-1">
                   <p class="text-[12.5px] leading-snug text-muted">
-                    <span class="font-medium text-ink">{{ event.actor.name }}</span>
+                    <span class="font-medium text-ink">{{
+                      event.actor?.name ?? 'The repository'
+                    }}</span>
                     {{ verb(event) }}
                     @if (event.targetId) {
                       <a

@@ -1,8 +1,5 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
-import { Router, RouterLink } from '@angular/router';
-import { toSignal } from '@angular/core/rxjs-interop';
-import { map } from 'rxjs';
-import { ActivatedRoute } from '@angular/router';
+import { RouterLink } from '@angular/router';
 import { TooltipDirective } from '../../shared/directives/tooltip.directive';
 import { LibraryStore } from '../../core/state/library-store';
 import { AuthStore } from '../../core/state/auth-store';
@@ -14,10 +11,8 @@ import { Avatar } from '../../shared/components/avatar';
 import { EmptyState } from '../../shared/components/empty-state';
 import { RowSkeleton } from '../../shared/components/row-skeleton';
 import { CardSkeleton } from '../../shared/components/card-skeleton';
-import { FolderDialog } from '../../shared/components/folder-dialog';
 import { DocumentMenu } from '../../shared/components/document-menu';
 import { FileSizePipe, TimeAgoPipe } from '../../shared/pipes/format.pipes';
-import { UploadDialog } from './upload-dialog';
 
 @Component({
   selector: 'dh-browse',
@@ -32,8 +27,6 @@ import { UploadDialog } from './upload-dialog';
     RowSkeleton,
     CardSkeleton,
     DocumentMenu,
-    FolderDialog,
-    UploadDialog,
     FileSizePipe,
     TimeAgoPipe,
   ],
@@ -50,30 +43,38 @@ import { UploadDialog } from './upload-dialog';
 export class Browse {
   protected readonly store = inject(LibraryStore);
   protected readonly auth = inject(AuthStore);
-  private readonly router = inject(Router);
-  private readonly route = inject(ActivatedRoute);
 
   protected readonly documents = computed(() => this.store.documents() ?? []);
   protected readonly filtersOpen = signal(false);
-  protected readonly showUpload = signal(false);
   protected readonly menuFor = signal<string | null>(null);
-  protected readonly pageDragging = signal(false);
-  protected readonly droppedFiles = signal<File[]>([]);
 
   protected readonly allStatuses: IngestionStatus[] = ['indexed', 'indexing', 'pending', 'failed'];
 
-  /** `?upload=1` opens the dialog — used by the dashboard and command palette. */
-  private readonly uploadParam = toSignal(
-    this.route.queryParamMap.pipe(map((p) => p.get('upload'))),
-    { initialValue: null },
-  );
+  /**
+   * What an empty library actually means here.
+   *
+   * Three different situations look identical on screen — never synced, synced
+   * and the repository has no readable files, or a sync that failed — and only
+   * the last is a fault. Saying which one it is beats a single reassuring
+   * sentence that is wrong two times in three.
+   */
+  protected readonly emptyMessage = computed(() => {
+    const repo = this.store.repository();
+    if (!repo) return 'Loading the repository…';
 
-  constructor() {
-    // Open the dialog when routed to with ?upload=1.
-    queueMicrotask(() => {
-      if (this.uploadParam()) this.showUpload.set(true);
-    });
-  }
+    switch (repo.outcome) {
+      case 'never':
+        return `${repo.projectPath} has not been mirrored yet. Nothing is searchable until it is.`;
+      case 'running':
+        return `Mirroring ${repo.projectPath} now. Documents appear as they are read.`;
+      case 'failed':
+        return `The last sync of ${repo.projectPath} failed: ${repo.error ?? 'no reason given'}.`;
+      default:
+        return repo.skipped > 0
+          ? `${repo.projectPath} was read, but none of the files here are of a type that can be indexed — ${repo.skipped} were skipped across the repository.`
+          : `${repo.projectPath} was read and had nothing to mirror here.`;
+    }
+  });
 
   protected heading(): string {
     if (this.store.starredOnly()) return 'Starred';
@@ -106,21 +107,6 @@ export class Browse {
     this.store.sort.set((event.target as HTMLSelectElement).value as never);
   }
 
-  protected toggleOwner(id: string): void {
-    this.store.ownerId.set(this.store.ownerId() === id ? undefined : id);
-  }
-
-  /** Open while a new folder is being named. */
-  protected readonly namingFolder = signal(false);
-
-  /** New folders land in the folder being viewed, or at the top level. */
-  protected readonly newFolderParentName = computed(() => this.store.currentFolder()?.name ?? '');
-
-  protected createFolder(name: string): void {
-    this.store.createFolder(this.store.folderId(), name);
-    this.namingFolder.set(false);
-  }
-
   /**
    * Opens this document's menu and closes any other.
    *
@@ -137,34 +123,4 @@ export class Browse {
     this.store.retry(id);
   }
 
-  protected del(id: string): void {
-    this.menuFor.set(null);
-    this.store.remove(id);
-  }
-
-  // ---- page-level drop target --------------------------------------------
-  protected onDragOver(event: DragEvent): void {
-    if (!event.dataTransfer?.types.includes('Files')) return;
-    event.preventDefault();
-    this.pageDragging.set(true);
-  }
-
-  protected onDragLeave(event: DragEvent): void {
-    if (event.currentTarget === event.target) this.pageDragging.set(false);
-  }
-
-  protected onDrop(event: DragEvent): void {
-    const files = Array.from(event.dataTransfer?.files ?? []);
-    if (!files.length) return;
-    event.preventDefault();
-    this.pageDragging.set(false);
-    this.droppedFiles.set(files);
-    this.showUpload.set(true);
-  }
-
-  protected closeUpload(): void {
-    this.showUpload.set(false);
-    this.droppedFiles.set([]);
-    if (this.uploadParam()) this.router.navigate([], { queryParams: {} });
-  }
 }

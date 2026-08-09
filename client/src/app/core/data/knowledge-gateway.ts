@@ -15,7 +15,7 @@ import {
   KnowledgeSource,
   KnowledgeSourceSummary,
   LibraryStats,
-  Person,
+  Repository,
   RepositoryProbe,
   RepositorySource,
   RepositorySourceDraft,
@@ -160,16 +160,32 @@ export abstract class KnowledgeGateway {
   abstract deleteChatSession(sessionId: string): Observable<void>;
 
   abstract activity(limit?: number): Observable<ActivityEvent[]>;
-  abstract people(): Observable<Person[]>;
   abstract allTags(): Observable<string[]>;
 
-  abstract createFolder(parentId: string | null, name: string): Observable<Folder>;
-  abstract renameFolder(id: string, name: string): Observable<void>;
-  abstract deleteFolder(id: string): Observable<void>;
+  // ---- the mirrored repository --------------------------------------------
 
-  abstract uploadFiles(folderId: string, files: File[]): Observable<void>;
+  /**
+   * Where the library comes from and how current it is.
+   *
+   * Cheap by design — one row and configuration, no call to GitLab — so a
+   * screen can poll it while a sync runs.
+   */
+  abstract repository(): Observable<Repository>;
+
+  /**
+   * Queues a sync and returns the state as it stands. Admin only; the API
+   * enforces it.
+   *
+   * The mirror is not current when this resolves — a full sync runs for
+   * minutes on a background worker — so the caller polls `repository()` rather
+   * than treating the response as the result.
+   */
+  abstract syncRepository(): Observable<Repository>;
+
   abstract retryIngestion(documentId: string): Observable<void>;
   abstract toggleStar(documentId: string): Observable<void>;
-  abstract moveDocument(documentId: string, folderId: string): Observable<void>;
-  abstract deleteDocument(documentId: string): Observable<void>;
+
+  // There is no createFolder, uploadFiles, moveDocument or deleteDocument.
+  // The repository is the system of record: a document exists because a file
+  // does, and the only thing that changes that is a commit.
 }

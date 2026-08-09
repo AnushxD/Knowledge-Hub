@@ -65,14 +65,6 @@ export class CommandPalette {
   private readonly actions = computed<PaletteItem[]>(() => {
     const items: PaletteItem[] = [
       {
-        id: 'act-upload',
-        kind: 'action',
-        icon: 'pi-upload',
-        label: 'Upload documents',
-        hint: 'Add files to the library',
-        run: () => this.go(['/browse'], { upload: 1 }),
-      },
-      {
         id: 'act-library',
         kind: 'action',
         icon: 'pi-folder',
@@ -116,7 +108,7 @@ export class CommandPalette {
       id: doc.id,
       kind: 'document' as const,
       label: doc.title,
-      hint: `${doc.fileName} · v${doc.version}`,
+      hint: doc.repositoryPath,
       raw: doc,
       run: () => this.go(['/docs', doc.id]),
     }));

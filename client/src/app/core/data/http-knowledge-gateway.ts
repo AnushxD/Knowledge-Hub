@@ -21,6 +21,7 @@ import {
   LibraryStats,
   MatchStrategy,
   Person,
+  Repository,
   RepositoryProbe,
   RepositorySource,
   RepositorySourceDraft,
@@ -59,13 +60,15 @@ interface ApiDocument {
   fileName: string;
   extension: string;
   sizeBytes: number;
-  version: number;
+  repositoryPath: string;
+  webUrl: string;
+  commitSha: string | null;
   tags: string[];
-  owner: ApiUser;
   status: IngestionStatus;
   failureReason: string | null;
   chunkCount: number | null;
   isStarred: boolean;
+  lastSyncedAt: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -73,13 +76,6 @@ interface ApiDocument {
 interface ApiDocumentDetail {
   document: ApiDocument;
   breadcrumb: ApiFolder[];
-  versions: {
-    version: number;
-    sizeBytes: number;
-    note: string | null;
-    changedBy: ApiUser;
-    changedAt: string;
-  }[];
   sections: { chunkId: number; heading: string; body: string; tokenCount: number }[];
   citedInAnswers: number;
 }
@@ -116,7 +112,8 @@ interface ApiSearchResponse {
 interface ApiActivityEvent {
   id: string;
   type: ActivityEvent['type'];
-  actor: ApiUser;
+  /** Null when the sync caused it and nobody was signed in. */
+  actor: ApiUser | null;
   target: string;
   targetId: string | null;
   at: string;
@@ -128,7 +125,7 @@ interface ApiStats {
   inPipeline: number;
   failed: number;
   folders: number;
-  storageBytes: number;
+  contentBytes: number;
   chunks: number;
 }
 
@@ -164,14 +161,6 @@ export class HttpKnowledgeGateway extends KnowledgeGateway {
       map((detail) => ({
         ...toSummary(detail.document),
         breadcrumb: detail.breadcrumb.map(toFolder),
-        versions: detail.versions.map((version, index) => ({
-          version: version.version,
-          changedBy: toPerson(version.changedBy),
-          changedAt: version.changedAt,
-          note: version.note ?? '',
-          sizeBytes: version.sizeBytes,
-          current: index === 0,
-        })),
         // Empty until ingestion finishes; the detail screen shows pipeline
         // state instead of a preview while that is the case.
         sections: detail.sections,
@@ -207,7 +196,7 @@ export class HttpKnowledgeGateway extends KnowledgeGateway {
         indexing: stats.inPipeline,
         failed: stats.failed,
         folders: stats.folders,
-        storageBytes: stats.storageBytes,
+        contentBytes: stats.contentBytes,
         chunks: stats.chunks,
       })),
     );
@@ -222,19 +211,15 @@ export class HttpKnowledgeGateway extends KnowledgeGateway {
         map((events) =>
           events.map((event) => ({
             ...event,
-            // The avatar needs a colour, which the server has no opinion about.
-            actor: toPerson(event.actor),
+            // The avatar needs a colour, which the server has no opinion
+            // about. Null stays null: most of this feed is the repository
+            // changing, with nobody to draw an avatar for.
+            actor: event.actor ? toPerson(event.actor) : null,
             // Absent rather than null, so the template's @if reads naturally.
             targetId: event.targetId ?? undefined,
           })),
         ),
       );
-  }
-
-  people(): Observable<Person[]> {
-    return this.http
-      .get<ApiUser[]>(`${this.base}/documents/owners`)
-      .pipe(map((owners) => owners.map(toPerson)));
   }
 
   allTags(): Observable<string[]> {
@@ -332,7 +317,6 @@ export class HttpKnowledgeGateway extends KnowledgeGateway {
     let params = new HttpParams().set('query', query.text.trim());
 
     if (query.folderId) params = params.set('folderId', query.folderId);
-    if (query.ownerId) params = params.set('ownerId', query.ownerId);
     for (const tag of query.tags ?? []) params = params.append('tag', tag);
 
     // Same kind-to-extension expansion the library filter uses.
@@ -360,38 +344,14 @@ export class HttpKnowledgeGateway extends KnowledgeGateway {
     );
   }
 
-  // ---- folder commands -----------------------------------------------------
+  // ---- the mirrored repository ---------------------------------------------
 
-  createFolder(parentId: string | null, name: string): Observable<Folder> {
-    return this.http
-      .post<ApiFolder>(`${this.base}/folders`, { parentId, name })
-      .pipe(map(toFolder));
+  repository(): Observable<Repository> {
+    return this.http.get<Repository>(`${this.base}/repository`);
   }
 
-  renameFolder(id: string, name: string): Observable<void> {
-    return this.http.put<ApiFolder>(`${this.base}/folders/${id}`, { name }).pipe(map(() => void 0));
-  }
-
-  deleteFolder(id: string): Observable<void> {
-    return this.http.delete<void>(`${this.base}/folders/${id}`);
-  }
-
-  // ---- document commands ---------------------------------------------------
-
-  uploadFiles(folderId: string, files: File[]): Observable<void> {
-    if (!files.length) return of(void 0);
-
-    // Uploaded one at a time rather than as a single batch, so one rejected
-    // file (too large, blocked type) cannot fail the others.
-    return forkJoin(
-      files.map((file) => {
-        const form = new FormData();
-        form.append('file', file, file.name);
-        return this.http.post<ApiDocument>(`${this.base}/documents`, form, {
-          params: new HttpParams().set('folderId', folderId),
-        });
-      }),
-    ).pipe(map(() => void 0));
+  syncRepository(): Observable<Repository> {
+    return this.http.post<Repository>(`${this.base}/repository/sync`, {});
   }
 
   // ---- assistant -----------------------------------------------------------
@@ -493,15 +453,6 @@ export class HttpKnowledgeGateway extends KnowledgeGateway {
     );
   }
 
-  moveDocument(documentId: string, folderId: string): Observable<void> {
-    return this.http
-      .post<ApiDocument>(`${this.base}/documents/${documentId}/move`, { folderId })
-      .pipe(map(() => void 0));
-  }
-
-  deleteDocument(documentId: string): Observable<void> {
-    return this.http.delete<void>(`${this.base}/documents/${documentId}`);
-  }
 }
 
 // ---- mapping ----------------------------------------------------------------
@@ -536,10 +487,12 @@ function toSummary(document: ApiDocument): DocumentSummary {
     kind: kindFromExtension(document.extension) as FileKind,
     extension: document.extension,
     sizeBytes: document.sizeBytes,
-    version: document.version,
+    repositoryPath: document.repositoryPath,
+    webUrl: document.webUrl,
+    commitSha: document.commitSha,
     tags: document.tags,
-    owner: toPerson(document.owner),
     updatedAt: document.updatedAt,
+    lastSyncedAt: document.lastSyncedAt,
     status: document.status,
     chunkCount: document.chunkCount ?? undefined,
     failureReason: document.failureReason ?? undefined,
@@ -554,7 +507,6 @@ function toQueryParams(query: DocumentQuery): HttpParams {
   if (query.folderId) params = params.set('folderId', query.folderId);
   if (query.recursive !== undefined) params = params.set('recursive', query.recursive);
   if (query.text?.trim()) params = params.set('text', query.text.trim());
-  if (query.ownerId) params = params.set('ownerId', query.ownerId);
   if (query.starredOnly) params = params.set('starredOnly', true);
   if (query.sort) params = params.set('sort', query.sort);
 

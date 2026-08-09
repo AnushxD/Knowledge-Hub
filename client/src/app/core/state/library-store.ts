@@ -28,7 +28,6 @@ export class LibraryStore {
   readonly kinds = signal<FileKind[]>([]);
   readonly statuses = signal<IngestionStatus[]>([]);
   readonly tags = signal<string[]>([]);
-  readonly ownerId = signal<string | undefined>(undefined);
   readonly starredOnly = signal(false);
   readonly sort = signal<SortKey>('updated-desc');
   readonly viewMode = signal<ViewMode>('list');
@@ -40,7 +39,6 @@ export class LibraryStore {
     kinds: this.kinds(),
     statuses: this.statuses(),
     tags: this.tags(),
-    ownerId: this.ownerId(),
     starredOnly: this.starredOnly(),
     sort: this.sort(),
   }));
@@ -50,7 +48,6 @@ export class LibraryStore {
       this.kinds().length +
       this.statuses().length +
       this.tags().length +
-      (this.ownerId() ? 1 : 0) +
       (this.starredOnly() ? 1 : 0) +
       (this.text() ? 1 : 0),
   );
@@ -113,16 +110,33 @@ export class LibraryStore {
   );
 
   /**
+   * The repository the library is mirrored from, and how the last sync went.
+   *
+   * Re-read on the same trigger as everything else, so a sync that finishes
+   * while the poll is running updates the banner along with the rows.
+   */
+  readonly repository = toSignal(
+    toObservable(this.refresh).pipe(switchMap(() => this.gateway.repository())),
+    { initialValue: undefined },
+  );
+
+  /**
    * True while any document is still moving through ingestion.
    *
    * Only these two states change on their own. Everything else changes because
    * somebody did something, and is already covered by the refresh after that
    * action.
    */
-  private readonly ingesting = computed(() =>
-    (this.documentsResult() ?? []).some(
-      (document) => document.status === 'pending' || document.status === 'indexing',
-    ),
+  private readonly ingesting = computed(
+    () =>
+      (this.documentsResult() ?? []).some(
+        (document) => document.status === 'pending' || document.status === 'indexing',
+      ) ||
+      // A sync in flight changes the library without any document being in the
+      // pipeline yet — the first thing it does is read a tree, which can take
+      // a while on a large repository — so it has to keep the poll alive too,
+      // or the rows it adds appear only on reload.
+      this.repository()?.outcome === 'running',
   );
 
   /**
@@ -154,7 +168,6 @@ export class LibraryStore {
     });
   }
 
-  readonly people = toSignal(this.gateway.people(), { initialValue: [] });
   readonly availableTags = toSignal(this.gateway.allTags(), { initialValue: [] });
 
   readonly currentFolder = computed(() => {
@@ -189,7 +202,6 @@ export class LibraryStore {
     this.kinds.set([]);
     this.statuses.set([]);
     this.tags.set([]);
-    this.ownerId.set(undefined);
     this.starredOnly.set(false);
   }
 
@@ -227,48 +239,15 @@ export class LibraryStore {
     this.gateway.retryIngestion(documentId).subscribe(() => this.bump());
   }
 
-  remove(documentId: string): void {
-    this.gateway.deleteDocument(documentId).subscribe(() => this.bump());
-  }
-
-  move(documentId: string, folderId: string): void {
-    this.gateway.moveDocument(documentId, folderId).subscribe(() => this.bump());
-  }
-
-  upload(folderId: string, files: File[]): void {
-    this.gateway.uploadFiles(folderId, files).subscribe(() => this.bump());
-  }
-
-  createFolder(parentId: string | null, name: string): void {
-    this.gateway.createFolder(parentId, name).subscribe(() => this.bump());
-  }
-
   /**
-   * Deletes a folder, everything under it, and every file those documents own.
+   * Queues a sync of the mirrored repository. Admin only; the API enforces it.
    *
-   * Moves the view out of the subtree *before* the request, not after: if the
-   * folder currently being browsed is inside what is about to disappear, the
-   * list would otherwise re-query a folder the server no longer has and answer
-   * with nothing — which reads as "your documents are gone" rather than "you
-   * deleted this folder".
+   * Refreshes immediately so the screen picks up the "running" state, and
+   * again on the poll — the sync itself runs for as long as the repository
+   * takes, and nothing here waits for it.
    */
-  deleteFolder(id: string): void {
-    if (this.isInSubtree(this.folderId(), id)) this.openFolder(null);
-
-    this.gateway.deleteFolder(id).subscribe(() => this.bump());
-  }
-
-  /** Whether `folderId` is `ancestorId` or sits somewhere beneath it. */
-  private isInSubtree(folderId: string | null, ancestorId: string): boolean {
-    const folders = this.folders() ?? [];
-    let cursor = folderId;
-
-    while (cursor) {
-      if (cursor === ancestorId) return true;
-      cursor = folders.find((folder) => folder.id === cursor)?.parentId ?? null;
-    }
-
-    return false;
+  syncRepository(): void {
+    this.gateway.syncRepository().subscribe(() => this.bump());
   }
 
   /**

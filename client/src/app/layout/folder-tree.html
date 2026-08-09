@@ -30,16 +30,10 @@
     </button>
   }
 
-  <div class="mt-4 flex items-center justify-between px-2 pb-1.5">
+  <!-- No "new folder" control: the tree is the repository's directories, and
+       a folder made here would be undone by the next sync. -->
+  <div class="mt-4 px-2 pb-1.5">
     <p class="dh-eyebrow">Folders</p>
-    <button
-      type="button"
-      class="grid size-5 place-items-center rounded-md text-subtle transition hover:bg-surface-2 hover:text-ink"
-      (click)="pendingParent.set(null)"
-      aria-label="New top-level folder"
-    >
-      <i class="pi pi-plus text-[10px]"></i>
-    </button>
   </div>
 
   @if (store.folders(); as folders) {
@@ -54,17 +48,19 @@
   }
 </div>
 
-<!-- Storage meter: quiet, but it is the thing admins ask about first. -->
+<!-- How much of the mirror is searchable. The hub stores no files, so a
+     storage meter would measure nothing; this answers the question a reader
+     actually has about a library they did not fill themselves. -->
 <div class="border-t border-hairline px-4 py-3">
   <div class="flex items-baseline justify-between text-[11px]">
-    <span class="text-subtle">Storage</span>
-    <span class="font-medium text-muted">{{ storageLabel() }}</span>
+    <span class="text-subtle">Indexed</span>
+    <span class="font-medium text-muted">{{ indexedLabel() }}</span>
   </div>
   <div class="mt-1.5 h-1.5 overflow-hidden rounded-full bg-surface-3">
     <div
       class="h-full rounded-full transition-[width] duration-500"
       style="background: linear-gradient(90deg, var(--dh-ai-from), var(--dh-ai-to))"
-      [style.width.%]="storagePercent()"
+      [style.width.%]="indexedPercent()"
     ></div>
   </div>
   <p class="mt-1.5 text-[11px] text-subtle">{{ store.stats()?.chunks ?? 0 }} chunks indexed</p>
@@ -108,27 +104,7 @@
           [style.color]="node.color ?? 'var(--dh-text-subtle)'"
         ></i>
         <span class="flex-1 truncate text-left">{{ node.name }}</span>
-        <span class="dh-count group-hover:invisible">{{ node.documentCount }}</span>
-        @if (auth.canContribute()) {
-          <span class="absolute right-1.5 hidden items-center gap-0.5 group-hover:flex">
-            <button
-              type="button"
-              class="grid size-5 place-items-center rounded-md text-subtle transition hover:bg-surface-3 hover:text-ink"
-              (click)="pendingParent.set(node.id); $event.stopPropagation()"
-              [attr.aria-label]="'New folder inside ' + node.name"
-            >
-              <i class="pi pi-plus text-[10px]"></i>
-            </button>
-            <button
-              type="button"
-              class="grid size-5 place-items-center rounded-md text-subtle transition hover:bg-surface-3 hover:text-status-failed"
-              (click)="pendingDelete.set(node); $event.stopPropagation()"
-              [attr.aria-label]="'Delete ' + node.name"
-            >
-              <i class="pi pi-trash text-[10px]"></i>
-            </button>
-          </span>
-        }
+        <span class="dh-count">{{ node.documentCount }}</span>
       </div>
 
       @if (expanded().has(node.id)) {
@@ -140,22 +116,3 @@
     </div>
   }
 </ng-template>
-
-@if (pendingDelete(); as folder) {
-  <dh-confirm-dialog
-    heading="Delete this folder?"
-    [message]="deleteMessage(folder)"
-    detail="Everything inside is deleted with it — subfolders, documents and the stored files. This cannot be undone."
-    confirmLabel="Delete folder"
-    (confirm)="confirmDelete()"
-    (cancel)="pendingDelete.set(null)"
-  />
-}
-
-@if (pendingParent() !== undefined) {
-  <dh-folder-dialog
-    [parentName]="pendingParentName()"
-    (create)="confirmCreate($event)"
-    (cancel)="pendingParent.set(undefined)"
-  />
-}

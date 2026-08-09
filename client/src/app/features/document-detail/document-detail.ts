@@ -24,7 +24,7 @@ import { MarkdownView } from '../../shared/components/markdown-view';
 import { CodeView } from '../../shared/components/code-view';
 import { FileSizePipe, TimeAgoPipe } from '../../shared/pipes/format.pipes';
 
-type Tab = 'preview' | 'versions' | 'chunks';
+type Tab = 'preview' | 'chunks';
 
 /**
  * How the original file is best shown.
@@ -102,7 +102,6 @@ export class DocumentDetailPage {
   protected readonly tab = signal<Tab>('preview');
   protected readonly tabs: { id: Tab; label: string }[] = [
     { id: 'preview', label: 'Preview' },
-    { id: 'versions', label: 'Versions' },
     { id: 'chunks', label: 'Chunks' },
   ];
 
@@ -178,7 +177,7 @@ export class DocumentDetailPage {
           map((body) => ({ state: 'ready', body }) as TextState),
           startWith({ state: 'loading' } as TextState),
           // A preview that fails must not take the whole page down — the
-          // metadata, chunks and versions are all still worth showing.
+          // metadata and chunks are both still worth showing.
           catchError(() =>
             of<TextState>({
               state: 'error',

@@ -68,7 +68,7 @@ export class Dashboard {
       },
       {
         label: 'Storage used',
-        value: this.compactBytes(s?.storageBytes ?? 0),
+        value: this.compactBytes(s?.contentBytes ?? 0),
         hint: 'Azurite locally, Blob in prod',
         icon: 'pi-database',
         tint: 'var(--dh-status-pending)',
@@ -104,22 +104,24 @@ export class Dashboard {
     ];
   });
 
+  /**
+   * Reads naturally after either an actor or "The repository", which is what
+   * the two halves of this feed are now.
+   */
   protected verb(event: ActivityEvent): string {
     switch (event.type) {
-      case 'uploaded':
-        return 'uploaded';
+      case 'added':
+        return 'added';
+      case 'changed':
+        return 'changed';
+      case 'removed':
+        return 'removed';
       case 'indexed':
         return 'finished indexing';
       case 'failed':
         return 'hit an ingestion failure on';
-      case 'moved':
-        return 'moved';
-      case 'deleted':
-        return 'deleted';
-      case 'folder-created':
-        return 'created the folder';
-      case 'folder-deleted':
-        return 'deleted the folder';
+      case 'synced':
+        return 'synced';
       default:
         return 'updated';
     }

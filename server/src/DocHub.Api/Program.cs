@@ -47,7 +47,11 @@ builder.Services.AddHangfireServer(options =>
     // Embedding is the bottleneck and a local model serves one request at a
     // time; more workers would just queue inside Ollama instead of here.
     options.WorkerCount = 2;
-    options.Queues = ["default"];
+
+    // Order matters: Hangfire drains queues left to right, so a sync is picked
+    // up ahead of the ingestion backlog it queued. See
+    // HangfireRepositorySyncQueue for what happens without this.
+    options.Queues = [HangfireRepositorySyncQueue.QueueName, "default"];
 });
 
 builder.Services.AddScoped<IIngestionQueue, HangfireIngestionQueue>();

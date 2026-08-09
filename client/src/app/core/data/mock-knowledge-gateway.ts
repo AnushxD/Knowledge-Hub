@@ -15,13 +15,13 @@ import {
   DocumentQuery,
   DocumentSection,
   DocumentSummary,
-  DocumentVersion,
   Folder,
   IngestionStatus,
   KnowledgeSource,
   KnowledgeSourceSummary,
   LibraryStats,
   Person,
+  Repository,
   RepositoryProbe,
   RepositorySource,
   RepositorySourceDraft,
@@ -135,9 +135,7 @@ interface Seed {
   title: string;
   fileName: string;
   sizeBytes: number;
-  version: number;
   tags: string[];
-  owner: Person;
   updatedAt: string;
   status: IngestionStatus;
   indexProgress?: number;
@@ -154,9 +152,7 @@ const SEEDS: Seed[] = [
     title: 'Dev Environment Setup',
     fileName: 'dev-environment-setup.pdf',
     sizeBytes: 2_215_400,
-    version: 3,
     tags: ['setup', 'postgres', 'docker'],
-    owner: ANA,
     updatedAt: ago(2 * DAY),
     status: 'indexed',
     chunkCount: 48,
@@ -170,9 +166,7 @@ const SEEDS: Seed[] = [
     title: 'Local Postgres & pgvector notes',
     fileName: 'local-postgres-notes.md',
     sizeBytes: 12_800,
-    version: 1,
     tags: ['postgres', 'pgvector'],
-    owner: RAVI,
     updatedAt: ago(52 * MINUTE),
     status: 'indexing',
     indexProgress: 62,
@@ -185,9 +179,7 @@ const SEEDS: Seed[] = [
     title: 'Engineering Handbook (scanned)',
     fileName: 'engineering-handbook.pdf',
     sizeBytes: 8_412_000,
-    version: 1,
     tags: ['handbook', 'policy'],
-    owner: ANA,
     updatedAt: ago(3 * DAY),
     status: 'failed',
     failureReason:
@@ -199,9 +191,7 @@ const SEEDS: Seed[] = [
     title: 'First Week Checklist',
     fileName: 'first-week-checklist.docx',
     sizeBytes: 84_200,
-    version: 2,
     tags: ['onboarding'],
-    owner: PRIYA,
     updatedAt: ago(6 * DAY),
     status: 'indexed',
     chunkCount: 11,
@@ -212,9 +202,7 @@ const SEEDS: Seed[] = [
     title: 'Knowledge Hub Technical Blueprint',
     fileName: 'architecture-blueprint.md',
     sizeBytes: 18_607,
-    version: 4,
     tags: ['architecture', 'rag', 'mcp'],
-    owner: MEI,
     updatedAt: ago(5 * HOUR),
     status: 'indexed',
     chunkCount: 96,
@@ -228,9 +216,7 @@ const SEEDS: Seed[] = [
     title: 'Service Layer Conventions',
     fileName: 'service-layer-conventions.md',
     sizeBytes: 9_940,
-    version: 2,
     tags: ['architecture', 'conventions'],
-    owner: MEI,
     updatedAt: ago(9 * DAY),
     status: 'indexed',
     chunkCount: 22,
@@ -241,9 +227,7 @@ const SEEDS: Seed[] = [
     title: 'Data Model — ERD',
     fileName: 'data-model-erd.drawio',
     sizeBytes: 141_000,
-    version: 1,
     tags: ['architecture', 'database'],
-    owner: TOM,
     updatedAt: ago(11 * DAY),
     status: 'indexed',
     chunkCount: 6,
@@ -254,9 +238,7 @@ const SEEDS: Seed[] = [
     title: 'Ingestion Pipeline Sequence',
     fileName: 'ingestion-sequence.png',
     sizeBytes: 486_000,
-    version: 1,
     tags: ['architecture', 'ingestion'],
-    owner: TOM,
     updatedAt: ago(12 * DAY),
     status: 'indexed',
     chunkCount: 2,
@@ -267,9 +249,7 @@ const SEEDS: Seed[] = [
     title: 'Incident Response Runbook',
     fileName: 'incident-response.md',
     sizeBytes: 27_300,
-    version: 7,
     tags: ['runbook', 'oncall'],
-    owner: TOM,
     updatedAt: ago(20 * HOUR),
     status: 'indexed',
     chunkCount: 41,
@@ -280,9 +260,7 @@ const SEEDS: Seed[] = [
     title: 'Database Restore Procedure',
     fileName: 'db-restore.md',
     sizeBytes: 15_100,
-    version: 3,
     tags: ['runbook', 'postgres'],
-    owner: RAVI,
     updatedAt: ago(4 * DAY),
     status: 'indexed',
     chunkCount: 18,
@@ -293,9 +271,7 @@ const SEEDS: Seed[] = [
     title: 'Hangfire Job Failures — Triage',
     fileName: 'hangfire-triage.md',
     sizeBytes: 8_600,
-    version: 1,
     tags: ['runbook', 'hangfire'],
-    owner: RAVI,
     updatedAt: ago(38 * MINUTE),
     status: 'pending',
   },
@@ -305,9 +281,7 @@ const SEEDS: Seed[] = [
     title: 'Knowledge Hub — Product Requirements',
     fileName: 'khub-prd.docx',
     sizeBytes: 320_500,
-    version: 6,
     tags: ['prd', 'spec'],
-    owner: PRIYA,
     updatedAt: ago(1 * DAY),
     status: 'indexed',
     chunkCount: 64,
@@ -319,9 +293,7 @@ const SEEDS: Seed[] = [
     title: 'Search Relevance Requirements',
     fileName: 'search-relevance.md',
     sizeBytes: 14_200,
-    version: 2,
     tags: ['spec', 'search'],
-    owner: PRIYA,
     updatedAt: ago(2 * DAY),
     status: 'indexed',
     chunkCount: 19,
@@ -332,9 +304,7 @@ const SEEDS: Seed[] = [
     title: 'Citation UX Specification',
     fileName: 'citation-ux.pptx',
     sizeBytes: 4_120_000,
-    version: 3,
     tags: ['spec', 'ux', 'citations'],
-    owner: MEI,
     updatedAt: ago(3 * DAY),
     status: 'indexed',
     chunkCount: 28,
@@ -345,9 +315,7 @@ const SEEDS: Seed[] = [
     title: 'User Interviews — Doc Discovery',
     fileName: 'user-interviews-q2.docx',
     sizeBytes: 210_000,
-    version: 1,
     tags: ['research'],
-    owner: PRIYA,
     updatedAt: ago(16 * DAY),
     status: 'indexed',
     chunkCount: 37,
@@ -358,9 +326,7 @@ const SEEDS: Seed[] = [
     title: 'Competitive Landscape',
     fileName: 'competitive-landscape.xlsx',
     sizeBytes: 96_400,
-    version: 2,
     tags: ['research'],
-    owner: MEI,
     updatedAt: ago(21 * DAY),
     status: 'indexed',
     chunkCount: 9,
@@ -371,9 +337,7 @@ const SEEDS: Seed[] = [
     title: 'Embedding Model Benchmarks',
     fileName: 'embedding-benchmarks.csv',
     sizeBytes: 44_800,
-    version: 1,
     tags: ['research', 'embeddings'],
-    owner: RAVI,
     updatedAt: ago(7 * DAY),
     status: 'indexed',
     chunkCount: 4,
@@ -384,9 +348,7 @@ const SEEDS: Seed[] = [
     title: 'IIS Deployment Guide',
     fileName: 'iis-deployment.pdf',
     sizeBytes: 1_840_000,
-    version: 5,
     tags: ['deployment', 'iis'],
-    owner: TOM,
     updatedAt: ago(2 * DAY),
     status: 'indexed',
     chunkCount: 52,
@@ -399,9 +361,7 @@ const SEEDS: Seed[] = [
     title: 'GitHub Actions Pipeline',
     fileName: 'ci-pipeline.yml',
     sizeBytes: 6_300,
-    version: 4,
     tags: ['ci', 'deployment'],
-    owner: RAVI,
     updatedAt: ago(3 * HOUR),
     status: 'indexed',
     chunkCount: 5,
@@ -412,9 +372,7 @@ const SEEDS: Seed[] = [
     title: 'Azure App Service Migration Plan',
     fileName: 'azure-migration.pptx',
     sizeBytes: 3_610_000,
-    version: 2,
     tags: ['azure', 'deployment'],
-    owner: TOM,
     updatedAt: ago(8 * DAY),
     status: 'indexing',
     indexProgress: 24,
@@ -425,9 +383,7 @@ const SEEDS: Seed[] = [
     title: 'Secrets Management Policy',
     fileName: 'secrets-policy.md',
     sizeBytes: 11_900,
-    version: 3,
     tags: ['security', 'policy'],
-    owner: ANA,
     updatedAt: ago(5 * DAY),
     status: 'indexed',
     chunkCount: 16,
@@ -438,9 +394,7 @@ const SEEDS: Seed[] = [
     title: 'Entra ID SSO Configuration',
     fileName: 'entra-sso-config.pdf',
     sizeBytes: 940_000,
-    version: 1,
     tags: ['security', 'auth'],
-    owner: ANA,
     updatedAt: ago(14 * DAY),
     status: 'indexed',
     chunkCount: 24,
@@ -451,9 +405,7 @@ const SEEDS: Seed[] = [
     title: 'Access Review Q2',
     fileName: 'access-review-q2.xlsx',
     sizeBytes: 128_000,
-    version: 1,
     tags: ['security', 'audit'],
-    owner: ANA,
     updatedAt: ago(26 * DAY),
     status: 'failed',
     failureReason: 'File is password protected. Remove protection and re-upload to index it.',
@@ -464,9 +416,7 @@ const SEEDS: Seed[] = [
     title: 'Design Tokens Reference',
     fileName: 'design-tokens.md',
     sizeBytes: 22_100,
-    version: 5,
     tags: ['design-system'],
-    owner: MEI,
     updatedAt: ago(4 * HOUR),
     status: 'indexed',
     chunkCount: 31,
@@ -477,9 +427,7 @@ const SEEDS: Seed[] = [
     title: 'Component Library Audit',
     fileName: 'component-audit.xlsx',
     sizeBytes: 78_500,
-    version: 2,
     tags: ['design-system'],
-    owner: MEI,
     updatedAt: ago(10 * DAY),
     status: 'indexed',
     chunkCount: 12,
@@ -490,9 +438,7 @@ const SEEDS: Seed[] = [
     title: 'Brand Palette',
     fileName: 'brand-palette.svg',
     sizeBytes: 34_200,
-    version: 1,
     tags: ['design-system', 'brand'],
-    owner: MEI,
     updatedAt: ago(30 * DAY),
     status: 'indexed',
     chunkCount: 1,
@@ -572,41 +518,32 @@ function sectionsFor(seed: Seed): DocumentSection[] {
   );
 }
 
-function versionsFor(seed: Seed): DocumentVersion[] {
-  const notes = [
-    'Initial upload',
-    'Corrected the connection string example',
-    'Added troubleshooting section',
-    'Refreshed screenshots',
-    'Reviewed for the new release',
-    'Clarified prerequisites',
-    'Post-incident amendments',
-  ];
-  return Array.from({ length: seed.version }, (_, i) => {
-    const version = seed.version - i;
-    return {
-      version,
-      changedBy: i === 0 ? seed.owner : PEOPLE[(version + 2) % PEOPLE.length],
-      changedAt: ago(i === 0 ? Date.now() - new Date(seed.updatedAt).getTime() : (i * 9 + 3) * DAY),
-      note: notes[(version - 1) % notes.length],
-      sizeBytes: Math.round(seed.sizeBytes * (1 - i * 0.06)),
-      current: i === 0,
-    };
-  });
-}
-
 interface Db {
   folders: Folder[];
   documents: DocumentSummary[];
   activity: ActivityEvent[];
 }
 
+/**
+ * The project this mock stands in for. Every seeded file is a path inside it,
+ * because that is what a document is now — the folder tree is its directories.
+ */
+const PROJECT = 'platform/handbook';
+const BRANCH = 'main';
+
 function toSummary(seed: Seed): DocumentSummary {
   const extension = seed.fileName.split('.').pop() ?? '';
+  const folder = FOLDERS.find((candidate) => candidate.id === seed.folderId);
+  const repositoryPath = folder ? `${folder.path}/${seed.fileName}` : seed.fileName;
+
   return {
     ...seed,
     kind: kindFromFileName(seed.fileName),
     extension,
+    repositoryPath,
+    webUrl: `https://gitlab.example.org/${PROJECT}/-/blob/${BRANCH}/${repositoryPath}`,
+    commitSha: '9f2c1ab5d3e47f8091a2b6c4d5e6f708192a3b4c',
+    lastSyncedAt: ago(9 * MINUTE),
   };
 }
 
@@ -616,18 +553,20 @@ export class MockKnowledgeGateway extends KnowledgeGateway {
     folders: FOLDERS.map((f) => ({ ...f })),
     documents: SEEDS.map(toSummary),
     activity: [
+      // Mostly actorless: the repository changed, and no one in the hub did
+      // it. The two entries with a person are the two things a person can
+      // still do — edit hub-local metadata, and ask for a sync.
       {
         id: 'a1',
-        type: 'uploaded',
-        actor: RAVI,
-        target: 'Local Postgres & pgvector notes',
-        targetId: 'd-2',
-        at: ago(52 * MINUTE),
+        type: 'synced',
+        actor: ANA,
+        target: `${PROJECT}@${BRANCH}`,
+        at: ago(9 * MINUTE),
       },
       {
         id: 'a2',
-        type: 'uploaded',
-        actor: RAVI,
+        type: 'changed',
+        actor: null,
         target: 'Hangfire Job Failures — Triage',
         targetId: 'd-11',
         at: ago(38 * MINUTE),
@@ -635,7 +574,7 @@ export class MockKnowledgeGateway extends KnowledgeGateway {
       {
         id: 'a3',
         type: 'indexed',
-        actor: RAVI,
+        actor: null,
         target: 'GitHub Actions Pipeline',
         targetId: 'd-19',
         at: ago(3 * HOUR),
@@ -650,8 +589,8 @@ export class MockKnowledgeGateway extends KnowledgeGateway {
       },
       {
         id: 'a5',
-        type: 'updated',
-        actor: MEI,
+        type: 'added',
+        actor: null,
         target: 'Knowledge Hub Technical Blueprint',
         targetId: 'd-5',
         at: ago(5 * HOUR),
@@ -659,28 +598,27 @@ export class MockKnowledgeGateway extends KnowledgeGateway {
       {
         id: 'a6',
         type: 'indexed',
-        actor: TOM,
+        actor: null,
         target: 'Incident Response Runbook',
         targetId: 'd-9',
         at: ago(20 * HOUR),
       },
       {
         id: 'a7',
-        type: 'updated',
-        actor: PRIYA,
-        target: 'Knowledge Hub — Product Requirements',
-        targetId: 'd-12',
+        type: 'removed',
+        actor: null,
+        target: 'Retired VPN client notes',
         at: ago(1 * DAY),
       },
       {
         id: 'a8',
         type: 'failed',
-        actor: ANA,
+        actor: null,
         target: 'Engineering Handbook (scanned)',
         targetId: 'd-3',
         at: ago(3 * DAY),
       },
-      { id: 'a9', type: 'folder-created', actor: ANA, target: 'Design', at: ago(4 * DAY) },
+      { id: 'a9', type: 'synced', actor: null, target: `${PROJECT}@${BRANCH}`, at: ago(4 * DAY) },
     ],
   });
 
@@ -794,7 +732,6 @@ export class MockKnowledgeGateway extends KnowledgeGateway {
         if (query.starredOnly && !doc.starred) return false;
         if (query.statuses?.length && !query.statuses.includes(doc.status)) return false;
         if (query.kinds?.length && !query.kinds.includes(doc.kind)) return false;
-        if (query.ownerId && doc.owner.id !== query.ownerId) return false;
         if (query.tags?.length && !query.tags.some((t) => doc.tags.includes(t))) return false;
         if (text) {
           const haystack =
@@ -832,7 +769,6 @@ export class MockKnowledgeGateway extends KnowledgeGateway {
       return {
         ...doc,
         breadcrumb,
-        versions: versionsFor(seed),
         sections: sectionsFor(seed),
         citedInAnswers: doc.status === 'indexed' ? (Number(doc.id.replace('d-', '')) * 3) % 17 : 0,
         createdAt: ago(60 * DAY),
@@ -878,17 +814,13 @@ export class MockKnowledgeGateway extends KnowledgeGateway {
         .length,
       failed: db.documents.filter((d) => d.status === 'failed').length,
       folders: db.folders.length,
-      storageBytes: db.documents.reduce((sum, d) => sum + d.sizeBytes, 0),
+      contentBytes: db.documents.reduce((sum, d) => sum + d.sizeBytes, 0),
       chunks: db.documents.reduce((sum, d) => sum + (d.chunkCount ?? 0), 0),
     }));
   }
 
   activity(limit = 8): Observable<ActivityEvent[]> {
     return this.read((db) => db.activity.slice(0, limit));
-  }
-
-  people(): Observable<Person[]> {
-    return of(PEOPLE);
   }
 
   allTags(): Observable<string[]> {
@@ -917,7 +849,6 @@ export class MockKnowledgeGateway extends KnowledgeGateway {
         if (document.status !== 'indexed') continue;
         if (query.folderId && document.folderId !== query.folderId) continue;
         if (query.kinds?.length && !query.kinds.includes(document.kind)) continue;
-        if (query.ownerId && document.owner.id !== query.ownerId) continue;
         if (query.tags?.length && !query.tags.some((tag) => document.tags.includes(tag))) continue;
 
         const folder = db.folders.find((candidate) => candidate.id === document.folderId);
@@ -1265,87 +1196,33 @@ export class MockKnowledgeGateway extends KnowledgeGateway {
     return of(void 0);
   }
 
-  createFolder(parentId: string | null, name: string): Observable<Folder> {
-    const db = this.db$.value;
-    const parent = db.folders.find((f) => f.id === parentId);
-    const folder: Folder = {
-      id: `f-${Math.random().toString(36).slice(2, 8)}`,
-      parentId,
-      name,
-      path: parent ? `${parent.path}/${name}` : name,
-      documentCount: 0,
-    };
-    this.db$.next({
-      ...db,
-      folders: [...db.folders, folder],
-      activity: [
-        {
-          id: `a-${Date.now()}`,
-          type: 'folder-created',
-          actor: ANA,
-          target: name,
-          at: new Date().toISOString(),
-        },
-        ...db.activity,
-      ],
-    });
-    return of(folder);
-  }
-
-  renameFolder(id: string, name: string): Observable<void> {
-    const db = this.db$.value;
-    this.db$.next({
-      ...db,
-      folders: db.folders.map((f) =>
-        f.id === id ? { ...f, name, path: f.path.replace(/[^/]+$/, name) } : f,
-      ),
-    });
-    return of(void 0);
-  }
-
-  deleteFolder(id: string): Observable<void> {
-    const db = this.db$.value;
-    const doomed = this.descendantIds(db.folders, id);
-    this.db$.next({
-      ...db,
-      folders: db.folders.filter((f) => !doomed.has(f.id)),
-      documents: db.documents.filter((d) => !doomed.has(d.folderId)),
-    });
-    return of(void 0);
-  }
-
-  uploadFiles(folderId: string, files: File[]): Observable<void> {
-    const db = this.db$.value;
-    const created = files.map<DocumentSummary>((file, i) => ({
-      id: `d-${Date.now()}-${i}`,
-      folderId,
-      title: file.name.replace(/\.[^.]+$/, ''),
-      fileName: file.name,
-      kind: kindFromFileName(file.name),
-      extension: file.name.split('.').pop() ?? '',
-      sizeBytes: file.size,
-      version: 1,
-      tags: [],
-      owner: ANA,
-      updatedAt: new Date().toISOString(),
-      status: 'pending',
+  repository(): Observable<Repository> {
+    return this.read((db) => ({
+      projectPath: PROJECT,
+      branch: BRANCH,
+      subPath: 'docs',
+      webUrl: `https://gitlab.example.org/${PROJECT}`,
+      outcome: 'succeeded' as const,
+      commitSha: '9f2c1ab5d3e47f8091a2b6c4d5e6f708192a3b4c',
+      startedAt: ago(9 * MINUTE),
+      finishedAt: ago(9 * MINUTE),
+      error: null,
+      added: 0,
+      updated: 2,
+      removed: 1,
+      // A repository is mostly code, and the screen says so rather than
+      // implying the whole tree is searchable.
+      skipped: Math.max(0, 148 - db.documents.length),
     }));
-    this.db$.next({
-      ...db,
-      documents: [...created, ...db.documents],
-      activity: [
-        ...created.map((doc) => ({
-          id: `a-${doc.id}`,
-          type: 'uploaded' as const,
-          actor: ANA,
-          target: doc.title,
-          targetId: doc.id,
-          at: doc.updatedAt,
-        })),
-        ...db.activity,
-      ],
-    });
-    return of(void 0);
+  }
+
+  /**
+   * Pretends to mirror. The seeded tree is the repository here, so there is
+   * nothing to fetch — but the state has to move through "running", because
+   * that is the state the real screen spends its time polling.
+   */
+  syncRepository(): Observable<Repository> {
+    return this.repository().pipe(map((state) => ({ ...state, outcome: 'running' as const })));
   }
 
   retryIngestion(documentId: string): Observable<void> {
@@ -1370,20 +1247,6 @@ export class MockKnowledgeGateway extends KnowledgeGateway {
     return of(void 0);
   }
 
-  moveDocument(documentId: string, folderId: string): Observable<void> {
-    const db = this.db$.value;
-    this.db$.next({
-      ...db,
-      documents: db.documents.map((d) => (d.id === documentId ? { ...d, folderId } : d)),
-    });
-    return of(void 0);
-  }
-
-  deleteDocument(documentId: string): Observable<void> {
-    const db = this.db$.value;
-    this.db$.next({ ...db, documents: db.documents.filter((d) => d.id !== documentId) });
-    return of(void 0);
-  }
 }
 
 /** Convenience for one-shot reads in resolvers/tests. */

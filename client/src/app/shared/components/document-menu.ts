@@ -43,7 +43,6 @@ export class DocumentMenu {
   );
 
   readonly reindex = output<void>();
-  readonly remove = output<void>();
 
   /** An item that needs nothing from the caller but closing the menu. */
   readonly dismiss = output<void>();

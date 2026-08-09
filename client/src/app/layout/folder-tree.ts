@@ -5,13 +5,11 @@ import { LibraryStore } from '../core/state/library-store';
 import { AuthStore } from '../core/state/auth-store';
 import { Folder } from '../core/models/knowledge.models';
 import { formatBytes } from '../core/utils/file-kind';
-import { ConfirmDialog } from '../shared/components/confirm-dialog';
-import { FolderDialog } from '../shared/components/folder-dialog';
 
 @Component({
   selector: 'dh-folder-tree',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [NgTemplateOutlet, ConfirmDialog, FolderDialog],
+  imports: [NgTemplateOutlet],
   host: { class: 'flex min-h-0 flex-col' },
   templateUrl: './folder-tree.html',
   styleUrl: './folder-tree.css',
@@ -22,7 +20,6 @@ export class FolderTree {
   private readonly router = inject(Router);
 
   /** The folder awaiting a delete confirmation, if any. */
-  protected readonly pendingDelete = signal<Folder | null>(null);
 
   protected readonly expanded = signal(new Set<string>(['f-eng', 'f-onb']));
 
@@ -38,14 +35,24 @@ export class FolderTree {
     () => this.store.statuses().length === 1 && this.store.statuses()[0] === 'failed',
   );
 
-  protected readonly storagePercent = computed(() => {
-    const used = this.store.stats()?.storageBytes ?? 0;
-    return Math.min(100, Math.round((used / 50_000_000) * 100));
+  /**
+   * How much of the library has been through ingestion.
+   *
+   * The hub stores no files any more, so a "storage used" bar would be
+   * measuring nothing. What a reader actually wants to know is how much of the
+   * mirror is searchable yet, which is the same bar answering a real question.
+   */
+  protected readonly indexedPercent = computed(() => {
+    const stats = this.store.stats();
+    if (!stats || stats.documents === 0) return 0;
+    return Math.min(100, Math.round((stats.indexed / stats.documents) * 100));
   });
 
-  protected readonly storageLabel = computed(
-    () => `${formatBytes(this.store.stats()?.storageBytes ?? 0)} of 50 MB`,
-  );
+  protected readonly indexedLabel = computed(() => {
+    const stats = this.store.stats();
+    if (!stats || stats.documents === 0) return 'Nothing mirrored yet';
+    return `${stats.indexed} of ${stats.documents} searchable · ${formatBytes(stats.contentBytes)}`;
+  });
 
   protected childrenOf(id: string) {
     return (this.store.folders() ?? []).filter((f) => f.parentId === id);
@@ -92,70 +99,5 @@ export class FolderTree {
   protected openFailed(): void {
     this.store.showOnlyFailed();
     this.router.navigate(['/browse']);
-  }
-
-  /**
-   * The parent a new folder is being named for.
-   *
-   * Three states, which is why it is not a boolean: closed, open for a top-level
-   * folder (null parent), and open for a child. `undefined` is closed.
-   */
-  protected readonly pendingParent = signal<string | null | undefined>(undefined);
-
-  protected readonly pendingParentName = computed(() => {
-    const parentId = this.pendingParent();
-    if (!parentId) return '';
-    return (this.store.folders() ?? []).find((folder) => folder.id === parentId)?.name ?? '';
-  });
-
-  protected confirmCreate(name: string): void {
-    const parentId = this.pendingParent() ?? null;
-
-    this.store.createFolder(parentId, name);
-    this.pendingParent.set(undefined);
-
-    // Open the parent, or the folder just created is added out of sight.
-    if (parentId) this.expanded.update((set) => new Set(set).add(parentId));
-  }
-
-  /**
-   * What the confirmation spells out.
-   *
-   * `documentCount` is recursive, so it already covers the subtree — which is
-   * the number that matters, because the whole subtree goes.
-   */
-  protected deleteMessage(folder: Folder): string {
-    const subfolders = this.descendantCount(folder.id);
-    const documents = folder.documentCount;
-
-    const parts = [
-      documents === 1 ? '1 document' : `${documents} documents`,
-      subfolders === 1 ? '1 subfolder' : `${subfolders} subfolders`,
-    ];
-
-    return subfolders > 0
-      ? `“${folder.name}” holds ${parts[0]} across ${parts[1]}.`
-      : `“${folder.name}” holds ${parts[0]}.`;
-  }
-
-  private descendantCount(id: string): number {
-    const children = this.childrenOf(id);
-    return children.length + children.reduce((sum, c) => sum + this.descendantCount(c.id), 0);
-  }
-
-  protected confirmDelete(): void {
-    const folder = this.pendingDelete();
-    if (!folder) return;
-
-    this.store.deleteFolder(folder.id);
-    this.pendingDelete.set(null);
-
-    // The subtree is gone; leaving its ids expanded would keep stale rows open
-    // if a folder with the same id ever came back.
-    this.expanded.update((set) => {
-      const next = new Set(set);
-      next.delete(folder.id);
-      return next;
-    });
   }
 }
