@@ -27,10 +27,16 @@
 --   dotnet ef migrations script --idempotent --project server/src/DocHub.DataAccess --startup-project server/src/DocHub.Api --output documenthub-v2-schema.sql
 --
 -- That command overwrites the whole file, so re-add the header above and the
--- admin seed block below after regenerating.
+-- admin seed block below after regenerating — and strip the byte-order mark it
+-- writes at the top. psql does not skip a BOM: it reads it as part of the first
+-- statement and fails with `syntax error at or near "CREATE"`, which is a
+-- baffling thing to hit on a server with no SDK and no way to regenerate the
+-- file.
+--
+--   perl -i -pe 's/^\x{ef}\x{bb}\x{bf}//' documenthub-v2-schema.sql
 
 
-﻿CREATE TABLE IF NOT EXISTS __ef_migrations_history (
+CREATE TABLE IF NOT EXISTS __ef_migrations_history (
     "MigrationId" character varying(150) NOT NULL,
     "ProductVersion" character varying(32) NOT NULL,
     CONSTRAINT "PK___ef_migrations_history" PRIMARY KEY ("MigrationId")
