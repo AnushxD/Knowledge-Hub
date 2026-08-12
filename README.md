@@ -1309,11 +1309,14 @@ is almost always a library that is mirrored but not indexed. Only `Indexed`
 documents are retrievable — that is a grounding rule, not a bug — so a library
 sitting at `Pending` has nothing to answer from however full the tree looks.
 
+The dashboard's pipeline counts say so directly, and so does the database —
+`/api/documents/stats` needs a session, so it is not a one-liner from a shell:
+
 ```bash
-curl -s localhost:5080/api/documents/stats
+docker compose exec postgres psql -U documenthub -d documenthub_v2 -c 'select "Status", count(*) from documents group by "Status";'
 ```
 
-`documents` far above `indexed` is the case. It happens when the API stops part
+`Pending` far above `Indexed` is the case. It happens when the API stops part
 way through a first mirror: the documents still queued never get picked up, and
 their blob ids match for ever afterwards, so a second sync used to report
 `0 added, 0 updated, 0 removed` and change nothing. It now re-queues them and
