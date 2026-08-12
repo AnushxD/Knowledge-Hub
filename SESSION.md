@@ -4,7 +4,7 @@ Session state only. Architecture, conventions, design decisions and workflow
 live in `CLAUDE.md` and are not repeated here.
 
 **Last updated:** 2026-08-12 · **Branch:** `main`, clean and pushed ·
-**Tests:** 224 green (17 Api · 50 Integrations · 21 DataAccess · 136 Services) ·
+**Tests:** 226 green (17 Api · 50 Integrations · 21 DataAccess · 138 Services) ·
 **CI:** pushed, not yet checked
 
 ---
@@ -113,6 +113,16 @@ rather than sitting unprocessed. Expiry does not remove enqueued jobs, so
 something else took them — a recreated volume or schema is the likely
 candidate, three days having passed. The re-queue makes it recoverable either
 way, which is the property worth having, but it is not the same as knowing.
+
+**An MCP-only answer already worked; it had never been tested.** "The documents
+have nothing but the server does" is the case a hub in front of a repository
+hits constantly, and every existing test had documents present alongside the
+external source. Written now, it passed first run: the answer is shown, cited
+`external`, attributed to the server's name, linking out. What was wrong was
+the wording next door — a refusal with several sources searched still said
+"Nothing in the indexed documents matched… only documents that finished
+ingestion are searchable", which sends somebody to index a file when their
+repository server had already been asked and had nothing either.
 
 **The local database is still in the bad state** as of this writing: the fix is
 committed but the API on port 5080 is running the old build. Restart it and

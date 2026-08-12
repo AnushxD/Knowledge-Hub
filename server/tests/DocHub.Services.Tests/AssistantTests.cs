@@ -275,6 +275,25 @@ public sealed class AssistantTests(StackFixture fixture)
         Assert.Equal(0, (await scope.Documents.GetAsync(document.Id)).CitedInAnswers);
     }
 
+    /// <summary>A source that answers with exactly what it was handed.</summary>
+    private sealed class ScriptedSource(string name, IReadOnlyList<KnowledgeResult> results)
+        : IKnowledgeSource
+    {
+        public string Name => name;
+
+        public string DisplayName => name;
+
+        public string Description => "A source that exists only inside this test.";
+
+        public Task<KnowledgeSourceStatus> CheckStatusAsync(CancellationToken ct = default) =>
+            Task.FromResult(new KnowledgeSourceStatus(KnowledgeSourceState.Active, "Scripted."));
+
+        public Task<KnowledgeSearchResult> SearchAsync(
+            KnowledgeQuery query,
+            CancellationToken ct = default) =>
+            Task.FromResult(new KnowledgeSearchResult(results));
+    }
+
     /// <summary>A source that is configured but cannot be reached.</summary>
     private sealed class UnreachableSource : IKnowledgeSource
     {
@@ -336,6 +355,92 @@ public sealed class AssistantTests(StackFixture fixture)
         Assert.True(completed.IsRefusal);
         Assert.Empty(completed.Citations);
         Assert.Contains("don't have information", answer);
+    }
+
+    [Fact]
+    public async Task A_repository_server_answers_a_question_the_documents_cannot()
+    {
+        // The case a documentation hub in front of a code repository hits
+        // constantly: the answer is in the code, and nothing was ever written
+        // down about it here. Before this was covered, "the documents have
+        // nothing" and "nobody has anything" were indistinguishable.
+        var repository = new ScriptedSource("repositories",
+        [
+            new KnowledgeResult(
+                KnowledgeResultKind.External,
+                "src/Worker/IngestionWorker.cs",
+                "lines 40-58",
+                "The ingestion worker is restarted by supervisor policy on a non-zero exit.",
+                1.0,
+                "mcp",
+                Url: "https://git.example.org/hub/blob/abc123/src/Worker/IngestionWorker.cs#L40",
+                ChunkId: 4071),
+        ]);
+
+        await using var scope = fixture.NewScope(repository);
+
+        // Nothing indexed here at all, so the document source contributes
+        // nothing and the repository server is the only grounding there is.
+        var folder = await scope.EmptyFolderAsync(Unique("OnlyMcp"));
+
+        scope.Llm.Answer = "The ingestion worker is restarted by supervisor policy [1].";
+
+        var (events, answer) = await AskAsync(scope, new AskRequest
+        {
+            Question = "What restarts the ingestion worker?",
+            FolderId = folder,
+        });
+
+        var completed = Assert.IsType<ChatEvent.Completed>(events[^1]);
+
+        // Shown, not refused. One source having nothing must not suppress an
+        // answer another source plainly gave.
+        Assert.False(completed.IsRefusal);
+        Assert.Contains("supervisor policy", answer);
+
+        // Attributed to the server that supplied it, and resolving outside the
+        // hub — there is no document behind this and none is implied.
+        var citation = Assert.Single(completed.Citations);
+        Assert.Equal("external", citation.Kind);
+        Assert.Equal("repositories", citation.SourceName);
+        Assert.Equal("src/Worker/IngestionWorker.cs", citation.Title);
+        Assert.StartsWith("https://git.example.org/", citation.Url);
+        Assert.Null(citation.DocumentId);
+
+        // And the documents are named as having been searched and found
+        // nothing — information, not a fault, and the thing that stops a
+        // reader assuming the hub was never consulted.
+        Assert.Contains("Documents", completed.SourcesWithoutMatches);
+    }
+
+    [Fact]
+    public async Task A_refusal_across_several_sources_does_not_blame_the_documents_alone()
+    {
+        // A repository server that was reachable, was asked, and had nothing.
+        var repository = new ScriptedSource("repositories", []);
+
+        await using var scope = fixture.NewScope(repository);
+        var folder = await scope.EmptyFolderAsync(Unique("BothEmpty"));
+
+        var (events, answer) = await AskAsync(scope, new AskRequest
+        {
+            Question = "What restarts the ingestion worker?",
+            FolderId = folder,
+        });
+
+        var completed = Assert.IsType<ChatEvent.Completed>(events[^1]);
+        Assert.True(completed.IsRefusal);
+
+        // "Only documents that finished ingestion are searchable" would send
+        // somebody off to index a file when their repository server had already
+        // been asked and had no answer either.
+        Assert.DoesNotContain("finished ingestion", answer);
+        Assert.Contains("Every source was searched", answer);
+
+        // And both are named, so "asked and had nothing" cannot be read as
+        // "never asked".
+        Assert.Contains("Documents", completed.SourcesWithoutMatches);
+        Assert.Contains("repositories", completed.SourcesWithoutMatches);
     }
 
     [Fact]

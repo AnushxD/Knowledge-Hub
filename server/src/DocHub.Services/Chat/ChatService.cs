@@ -351,15 +351,28 @@ internal sealed class ChatService(
     /// only one of them means the answer does not exist.
     /// </summary>
     private static string NoSourcesMessage(GroundingResult retrieval) =>
-        retrieval.Degradations.Count > 0
+        retrieval switch
+        {
             // The specifics are carried structurally on the message and rendered
             // once, so they are not repeated in the prose here.
-            ? GroundedPrompt.RefusalPhrase
+            { Degradations.Count: > 0 } =>
+                GroundedPrompt.RefusalPhrase
                 + " Not everything could be searched for this question, so the answer may "
-                + "exist somewhere that was not reached."
-            : GroundedPrompt.RefusalPhrase
+                + "exist somewhere that was not reached.",
+
+            // More than the hub's own documents was searched, and all of them
+            // came back with nothing. Naming only the documents here would be a
+            // lie of omission — it would send someone off to index a file when
+            // their repository server had already been asked and had no answer
+            // either. Which sources those were is on the message structurally.
+            { SourcesWithoutMatches.Count: > 1 } =>
+                GroundedPrompt.RefusalPhrase
+                + " Every source was searched and none of them matched this question.",
+
+            _ => GroundedPrompt.RefusalPhrase
                 + " Nothing in the indexed documents matched this question. Only documents "
-                + "that finished ingestion are searchable.";
+                + "that finished ingestion are searchable.",
+        };
 
     /// <summary>
     /// A session title from the opening question, so history reads as a list of
