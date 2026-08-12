@@ -332,15 +332,23 @@ public record UpdateRepositorySourceRequest
 /// The handshake succeeded. Only then do the tool and repository lists mean
 /// anything, and only then is the address worth saving.
 /// </param>
+/// <param name="SearchedTools">
+/// The tools a question would actually be put to, in the order they would be
+/// asked. Searching uses every read-only tool that takes search text, so the
+/// screen has to say which of the names beside it are among them — otherwise a
+/// server whose tools mostly change things looks fully usable.
+/// </param>
 /// <param name="SuggestedToolName">
-/// The tool searching would pick on its own. Offered so the screen can fill the
-/// field rather than asking somebody to copy it out of a list.
+/// The tool to offer if this source is to be pinned to one, which narrows it.
+/// Offered so the screen can fill the field rather than asking somebody to copy
+/// it out of a list.
 /// </param>
 public record RepositoryProbeViewModel(
     bool IsReachable,
     bool SpeaksMcp,
     string Detail,
     IReadOnlyList<string> Tools,
+    IReadOnlyList<string> SearchedTools,
     string? SuggestedToolName,
     IReadOnlyList<string> Repositories);
 

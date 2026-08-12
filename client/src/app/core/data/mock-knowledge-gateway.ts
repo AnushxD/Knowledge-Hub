@@ -1105,6 +1105,7 @@ export class MockKnowledgeGateway extends KnowledgeGateway {
         speaksMcp: false,
         detail: 'Could not connect (mock gateway).',
         tools: [],
+        searchedTools: [],
         suggestedToolName: null,
         repositories: [],
       }).pipe(delay(400));
@@ -1117,6 +1118,7 @@ export class MockKnowledgeGateway extends KnowledgeGateway {
         detail:
           'Something answered (200 OK), but the MCP handshake failed. Check this is the MCP endpoint rather than the service’s home page.',
         tools: [],
+        searchedTools: [],
         suggestedToolName: null,
         repositories: [],
       }).pipe(delay(400));
@@ -1127,8 +1129,13 @@ export class MockKnowledgeGateway extends KnowledgeGateway {
     return of({
       isReachable: true,
       speaksMcp: true,
-      detail: 'Connected. Searching would use "search_codebase". Indexes 3 repositories.',
+      detail:
+        'Connected. Searching would use 4 of its 5 tools: "search_codebase", "get_answer", "get_architecture", "get_symbol". Indexes 3 repositories.',
       tools,
+      // Every tool but list_repos, which takes no search text: the mock has to
+      // show the gap between "exposes" and "is asked", because that gap is the
+      // whole reason the screen distinguishes them.
+      searchedTools: ['search_codebase', 'get_answer', 'get_architecture', 'get_symbol'],
       suggestedToolName: 'search_codebase',
       repositories: ['hub', 'worker', 'docs'],
     }).pipe(delay(400));

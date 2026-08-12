@@ -253,6 +253,7 @@ public sealed class RepositoryServerAdminTests(StackFixture fixture)
                 SpeaksMcp: true,
                 $"{endpoint} answered.",
                 ["search_codebase"],
+                ["search_codebase"],
                 "search_codebase",
                 []));
     }

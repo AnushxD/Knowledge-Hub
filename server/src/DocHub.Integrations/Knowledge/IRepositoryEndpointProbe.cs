@@ -31,9 +31,16 @@ public interface IRepositoryEndpointProbe
 /// </param>
 /// <param name="Detail">Plain wording for the administrator, naming what failed when it did.</param>
 /// <param name="Tools">Every tool the server exposes, in the order it listed them.</param>
+/// <param name="SearchedTools">
+/// The tools a question would actually be put to, in the order they would be
+/// asked. The subset of <paramref name="Tools"/> that is read-only and has
+/// somewhere to put the query — so the screen can show which of the names it is
+/// listing will do anything, rather than implying all of them will.
+/// </param>
 /// <param name="SuggestedToolName">
-/// The tool searching would pick if this source does not name one — so the
-/// screen can offer it rather than making somebody copy it out of a list.
+/// The tool to offer if somebody wants this source pinned to one — which is now
+/// a narrowing, not the default. Null when nothing is search-shaped, which no
+/// longer means the address is unusable.
 /// </param>
 /// <param name="Repositories">
 /// What the server says it indexes, when it offers a tool that says so. Empty
@@ -44,15 +51,16 @@ public sealed record EndpointProbeResult(
     bool SpeaksMcp,
     string Detail,
     IReadOnlyList<string> Tools,
+    IReadOnlyList<string> SearchedTools,
     string? SuggestedToolName,
     IReadOnlyList<string> Repositories)
 {
     public static EndpointProbeResult Failed(string detail) =>
-        new(false, false, detail, [], null, []);
+        new(false, false, detail, [], [], null, []);
 
     /// <summary>Something answered, but not in MCP. Reachable, and not usable.</summary>
     public static EndpointProbeResult NotMcp(string detail) =>
-        new(true, false, detail, [], null, []);
+        new(true, false, detail, [], [], null, []);
 }
 
 internal sealed class McpRepositoryEndpointProbe(
@@ -118,29 +126,47 @@ internal sealed class McpRepositoryEndpointProbe(
 
         var tools = await client.ListToolsAsync(cancellationToken: ct);
         var names = tools.Select(tool => tool.Name).ToList();
-        var search = RepositoryToolNames.PickSearchTool(names);
+
+        // The searcher's own rule, not a second one that agrees most of the
+        // time: this button exists to say what searching would do, so a
+        // disagreement between them would be worse than showing nothing.
+        var searched = RepositoryToolPlan.Answerable(tools)
+            .Select(tool => tool.Name)
+            .ToList();
+
         var repositories = await ReadRepositoriesAsync(client, names, ct);
 
         return new EndpointProbeResult(
             IsReachable: true,
             SpeaksMcp: true,
-            Describe(names, search, repositories),
+            Describe(names, searched, repositories),
             names,
-            search,
+            searched,
+            RepositoryToolNames.PickSearchTool(searched),
             repositories);
     }
 
     private static string Describe(
         IReadOnlyList<string> tools,
-        string? search,
+        IReadOnlyList<string> searched,
         IReadOnlyList<string> repositories)
     {
-        var sentence = search is null
+        var sentence = searched.Count switch
+        {
             // Reachable, speaks MCP, and still unusable for grounding — a
             // different problem from an outage, so it has to read like one.
-            ? $"Connected, but none of its {tools.Count} tools has \"search\" in its name. "
-              + "Name the one to search with, or this source will fail on every question."
-            : $"Connected. Searching would use \"{search}\".";
+            // Every tool either changes something or has nowhere to put a
+            // question, and neither can be worked around from this screen.
+            0 => $"Connected, but none of its {tools.Count} tools can be asked a question — they "
+                 + "either change something or take no search text. This source would fail on "
+                 + "every question.",
+            1 => $"Connected. Searching would use \"{searched[0]}\".",
+
+            // Counted and then named, because the count is the surprise: the
+            // number of tools it exposes is visible above and is usually larger.
+            _ => $"Connected. Searching would use {searched.Count} of its {tools.Count} tools: "
+                 + string.Join(", ", searched.Select(name => $"\"{name}\"")) + ".",
+        };
 
         return repositories.Count == 0
             ? sentence

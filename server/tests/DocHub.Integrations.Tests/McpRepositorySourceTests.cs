@@ -76,7 +76,7 @@ public sealed class McpRepositorySourceTests
     }
 
     [Fact]
-    public async Task With_no_tool_named_one_is_discovered_by_its_name()
+    public async Task With_no_tool_named_every_tool_that_can_be_asked_is_named()
     {
         await using var server = await FakeMcpServer.StartAsync();
 
@@ -84,11 +84,194 @@ public sealed class McpRepositorySourceTests
 
         Assert.Equal(KnowledgeSourceState.Active, status.State);
 
-        // Deliberately not asserting *which*: the server exposes two matching
-        // tools and nothing orders them, so pinning one would be testing the
-        // SDK's enumeration order rather than our behaviour. That ambiguity is
-        // why naming the tool is the supported path.
-        Assert.Contains("search", status.Detail);
+        // Both search tools, rather than whichever the SDK happened to list
+        // first: which one that was used to decide the whole source's answer.
+        Assert.Contains("search_code", status.Detail);
+        Assert.Contains("search_notes", status.Detail);
+
+        // And not the one there is nowhere to put a question in.
+        Assert.DoesNotContain("list_repos", status.Detail);
+    }
+
+    [Fact]
+    public async Task Every_tool_the_question_can_be_put_to_contributes_passages()
+    {
+        await using var server = await FakeMcpServer.StartAsync();
+
+        var result = await SourceFor(server.Endpoint, toolName: "")
+            .SearchAsync(new KnowledgeQuery("restart the worker", null, 8));
+
+        var texts = result.Results.Select(passage => passage.Text).ToList();
+
+        // The structured hits from search_code and the prose from search_notes,
+        // in one answer. Under one-tool-only whichever tool lost the coin toss
+        // contributed nothing, and a server's best answer is not reliably in
+        // the tool whose name happens to sort first.
+        Assert.Contains(FakeRepositoryTools.WorkerSnippet, texts);
+        Assert.Contains(FakeRepositoryTools.PlainNote, texts);
+
+        Assert.Null(result.Degradation);
+    }
+
+    [Fact]
+    public async Task A_tool_with_nowhere_to_put_the_question_is_never_called()
+    {
+        await using var server = await FakeMcpServer.StartAsync();
+
+        var result = await SourceFor(server.Endpoint, toolName: "")
+            .SearchAsync(new KnowledgeQuery("restart the worker", null, 8));
+
+        // list_repos takes no arguments, so it answers the same thing however
+        // it is asked — which is noise on every answer rather than grounding.
+        // A passage from it would carry its name, since that is where a tool
+        // answering in prose is recorded.
+        Assert.DoesNotContain(result.Results, passage => passage.Heading == "list_repos");
+    }
+
+    [Fact]
+    public async Task A_tool_that_changes_something_is_never_called()
+    {
+        await using var server = await FakeMcpServer.StartAsync<MutatingTools>();
+
+        var result = await SourceFor(server.Endpoint, toolName: "")
+            .SearchAsync(new KnowledgeQuery("stale branches", null, 5));
+
+        // Both take a string and would happily be "asked" — one says so in its
+        // annotations, the other only in its name. Asking either would turn a
+        // question into a write into somebody's repository, which is the one
+        // thing this hub must never do.
+        Assert.Empty(MutatingTools.Called);
+
+        var passage = Assert.Single(result.Results);
+        Assert.Equal(MutatingTools.Finding, passage.Text);
+    }
+
+    /// <summary>
+    /// A server whose tools are not all safe to call. Records what was asked,
+    /// because the assertion worth making is about the call, not the answer.
+    /// </summary>
+    [McpServerToolType]
+    public sealed class MutatingTools
+    {
+        public const string Finding = "Branch policy: stale branches are pruned after 90 days.";
+
+        public static readonly List<string> Called = [];
+
+        [McpServerTool(Name = "search_policies")]
+        [Description("The only tool here that reads.")]
+        public static Response SearchPolicies(string query) => new([new Hit(Finding)]);
+
+        /// <summary>Declares itself, which is what a well-behaved server does.</summary>
+        [McpServerTool(Name = "prune_branches", ReadOnly = false, Destructive = true)]
+        [Description("Deletes stale branches.")]
+        public static string PruneBranches(string query)
+        {
+            Called.Add("prune_branches");
+            return "Pruned.";
+        }
+
+        /// <summary>Declares nothing, so only the name gives it away.</summary>
+        [McpServerTool(Name = "delete_snapshot")]
+        [Description("Removes a snapshot, and admits nothing about it.")]
+        public static string DeleteSnapshot(string query)
+        {
+            Called.Add("delete_snapshot");
+            return "Deleted.";
+        }
+
+        public sealed record Response(IReadOnlyList<Hit> Results);
+
+        public sealed record Hit(string Text);
+    }
+
+    [Fact]
+    public async Task One_tool_failing_degrades_the_answer_instead_of_losing_it()
+    {
+        await using var server = await FakeMcpServer.StartAsync<HalfBrokenTools>();
+
+        var result = await SourceFor(server.Endpoint, toolName: "")
+            .SearchAsync(new KnowledgeQuery("worker", null, 5));
+
+        // The same rule the composite applies across sources, applied within
+        // one: what still works is used, and what did not is named on the
+        // answer rather than logged and forgotten.
+        Assert.Equal(HalfBrokenTools.Finding, Assert.Single(result.Results).Text);
+
+        Assert.NotNull(result.Degradation);
+        Assert.Contains("search_broken", result.Degradation);
+    }
+
+    [Fact]
+    public async Task Every_tool_failing_is_the_source_failing()
+    {
+        await using var server = await FakeMcpServer.StartAsync<BrokenTools>();
+
+        // Reported as an exception, not as an empty answer: the composite
+        // isolates each source, and "no results" would hide a broken server
+        // behind an answer that merely looks thin.
+        var failure = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => SourceFor(server.Endpoint, toolName: "")
+                .SearchAsync(new KnowledgeQuery("worker", null, 5)));
+
+        Assert.Contains("search_broken", failure.Message);
+    }
+
+    /// <summary>One tool that answers and one that throws.</summary>
+    [McpServerToolType]
+    public sealed class HalfBrokenTools
+    {
+        public const string Finding = "The worker restarts on a non-zero exit.";
+
+        [McpServerTool(Name = "search_working")]
+        [Description("Answers normally.")]
+        public static Response SearchWorking(string query) => new([new Hit(Finding)]);
+
+        [McpServerTool(Name = "search_broken")]
+        [Description("Throws every time.")]
+        public static string SearchBroken(string query) =>
+            throw new InvalidOperationException("The index is rebuilding.");
+
+        public sealed record Response(IReadOnlyList<Hit> Results);
+
+        public sealed record Hit(string Text);
+    }
+
+    /// <summary>A server where nothing works.</summary>
+    [McpServerToolType]
+    public sealed class BrokenTools
+    {
+        [McpServerTool(Name = "search_broken")]
+        [Description("Throws every time.")]
+        public static string SearchBroken(string query) =>
+            throw new InvalidOperationException("The index is rebuilding.");
+    }
+
+    [Fact]
+    public async Task A_server_with_nothing_that_can_be_asked_says_so()
+    {
+        await using var server = await FakeMcpServer.StartAsync<UnaskableTools>();
+
+        var status = await SourceFor(server.Endpoint, toolName: "").CheckStatusAsync();
+
+        // Reachable, speaks MCP, and still cannot ground anything. A different
+        // problem from an outage, and the detail has to be actionable rather
+        // than merely red.
+        Assert.Equal(KnowledgeSourceState.Unavailable, status.State);
+        Assert.Contains("no read-only tool", status.Detail);
+        Assert.Contains("purge_cache", status.Detail);
+    }
+
+    /// <summary>Everything here either changes something or takes no query.</summary>
+    [McpServerToolType]
+    public sealed class UnaskableTools
+    {
+        [McpServerTool(Name = "purge_cache")]
+        [Description("Empties the index cache.")]
+        public static string PurgeCache(string scope) => "Purged.";
+
+        [McpServerTool(Name = "health")]
+        [Description("Reports whether the server is well.")]
+        public static string Health() => "ok";
     }
 
     [Fact]

@@ -561,7 +561,7 @@ Each one carries:
 | Name | Lower-case letters, digits and hyphens. It goes in the API route and is recorded on every citation the server produces, so it cannot be changed afterwards |
 | Display name | What appears on screen, in "… could not be searched", and in "Searched with no matches". This is what tells two servers apart, so it is worth choosing well |
 | Address | Absolute `http://` or `https://`. **Test address** connects over MCP and reports what is there — see below |
-| Search tool | Empty discovers the first tool with `search` in its name — a guess worth replacing once the server's tool list is known. Its arguments are read from the tool's own schema, so a tool taking `q` is sent `q` |
+| Restrict to one tool | Leave empty, and the question goes to **every** tool the server exposes that is read-only and takes search text — see below. Naming one searches with that tool alone. Either way its arguments are read from the tool's own schema, so a tool taking `q` is sent `q` |
 | Search this source | Off takes it out of circulation without losing it, which is what an outage calls for |
 
 `KnowledgeSources:RepositoryProvider` stays in configuration and is the
@@ -580,26 +580,47 @@ Removing a server does not rewrite history. Answers that cited it keep their
 citations, because those denormalise the source's name for the same reason they
 denormalise a document's title.
 
+**Which tools get asked.** All of them, near enough: a question goes to every
+tool the server exposes concurrently, and the answers are merged by rank. A
+server's tools are windows on the same repository, and the one that happens to
+be called `search_code` is not reliably the one that knows the answer —
+`get_architecture` often is. Search-shaped tools are asked first and win ties,
+because they return text out of a file, which a reader can go and check;
+synthesised prose is still quoted verbatim and still citation-verified, but a
+citation to it resolves only to "this server said this". If that distinction has
+to be absolute for a particular server, restrict it to one tool.
+
+Two kinds of tool are never called:
+
+- **Anything that changes something.** The hub is read-only over somebody else's
+  repository, and routing a question into `delete_branch` would break that in
+  the worst way. The server's own `readOnlyHint` decides when it publishes one;
+  a blunt name check stands behind it, because most servers publish nothing. It
+  is biased towards excluding — a read tool wrongly skipped can still be named
+  explicitly, and a write tool wrongly called cannot be undone.
+- **Anything with nowhere to put the question** — no string parameter, or a
+  required argument nothing here knows. It would answer the same thing however
+  it is asked, which is noise on every answer rather than grounding.
+
+One tool failing leaves the rest to answer, and is named on the reply. Only when
+every tool fails is the whole source reported as unavailable.
+
 **Test address** does a real MCP handshake rather than an HTTP ping, because the
 mistakes that matter are not "the host is down" — they are "that is the wrong
-one of our two servers" and "the tool is not called what you assumed". It
-reports the server's whole tool list, which repositories it says it indexes, and
-which tool searching would pick, with a button to fill that in. Three outcomes,
-drawn differently:
+one of our two servers" and "nothing here can actually be searched". It reports
+the server's whole tool list with the ones that *would be asked* picked out,
+which repositories it says it indexes, and a tool to restrict to if wanted.
+Three outcomes, drawn differently:
 
-- **Connected** — the handshake worked. If nothing has `search` in its name it
-  still says so, because that source would fail on every question.
+- **Connected** — the handshake worked, and it says how many of the tools a
+  question would reach. If that is none, it says so plainly: every tool either
+  changes something or takes no search text, and that source would fail on every
+  question.
 - **Something answered, but not MCP** — the address and network path are right
   and it is still unusable. Usually the service's home page rather than its MCP
   endpoint.
 - **Could not connect** — nothing is listening. A different problem entirely,
   which is why it is worth telling apart from the one above.
-
-Only `search`-style tools are usable. A server exposing `get_answer` or
-`get_architecture` returns its own prose, and the assistant cites what it is
-handed — so grounding an answer in a summary would have it quoting text that
-exists in no file. Analysis tools like `get_blast_radius` are the same: real
-output, but nothing a citation can point at.
 
 **Using a bigger or hosted model.** `Llm:Model` takes any model Ollama can
 serve — `llama3.1:8b` or `qwen2.5:7b` follow the citation format noticeably
@@ -1064,6 +1085,7 @@ and no deployable artefact should contain a credential.
 | Citations that resolve outside the hub, not just to documents | Done |
 | Real MCP repository client behind `RepositoryProvider: mcp` | Done |
 | Adding, editing and removing MCP servers from the UI | Done |
+| Searching **every** usable tool on an MCP server, not one named `search` | Done |
 | Folder deletion, and naming a folder in a dialog | Done |
 | Ingestion status that updates on screen while a document is processed | Done |
 | Models kept loaded, and a per-answer latency breakdown in the log | Done |

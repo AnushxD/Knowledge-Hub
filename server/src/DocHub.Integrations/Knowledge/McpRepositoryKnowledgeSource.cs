@@ -16,13 +16,35 @@ namespace DocHub.Integrations.Knowledge;
 /// rather than being the first second source anyone ever ran.
 ///
 /// <para>
-/// <b>The tool contract.</b> MCP does not define what a "search" tool is called
+/// <b>Every tool that can be asked is asked</b>, not just the one whose name
+/// says "search". A server's tools are different windows on the same
+/// repository, and the one that happens to be called <c>search_code</c> is not
+/// reliably the one that knows the answer — see
+/// <see cref="RepositoryToolPlan"/> for what disqualifies a tool and why. They
+/// are asked concurrently over one connection, and merged by rank rather than
+/// by score, because two tools on the same server score in no more comparable
+/// units than two servers do.
+/// </para>
+/// <para>
+/// <b>The cost, stated plainly.</b> A search tool returns text out of the
+/// repository, so a citation to it resolves to something a reader can go and
+/// check. A tool like <c>get_architecture</c> returns the server's own prose,
+/// and a citation to that resolves only to "this server said this". Both are
+/// verbatim — the assistant still quotes exactly what it was handed, and the
+/// citation verifier still checks every marker — but they are not equally
+/// checkable, which is why search-shaped tools are asked first and win ties.
+/// Pinning a source to one tool remains available for a server where that
+/// distinction has to be absolute.
+/// </para>
+/// <para>
+/// <b>The tool contract.</b> MCP does not define what a search tool is called
 /// or what it returns, so this expects a convention rather than discovering
 /// meaning at run time:
 /// </para>
 /// <list type="bullet">
 /// <item>
-/// Called with <c>query</c> and <c>maxResults</c>.
+/// Called with <c>query</c> and <c>maxResults</c>, or whatever the tool's own
+/// schema calls them.
 /// </item>
 /// <item>
 /// Returns structured content shaped <c>{ "results": [ { "path", "lines",
@@ -76,11 +98,26 @@ internal sealed class McpRepositoryKnowledgeSource(
         try
         {
             await using var client = await ConnectAsync(source.Endpoint, ct);
-            var tool = await ResolveToolAsync(client, ct);
+
+            IReadOnlyList<McpClientTool> tools;
+
+            try
+            {
+                tools = await ResolveToolsAsync(client, ct);
+            }
+            catch (InvalidOperationException exception)
+            {
+                // It answered. What is wrong is which tools it has — a named
+                // tool that is absent, or nothing that can be asked anything —
+                // and reporting that as "did not answer" would send somebody to
+                // check a network that is fine.
+                return new KnowledgeSourceStatus(
+                    KnowledgeSourceState.Unavailable, exception.Message);
+            }
 
             return new KnowledgeSourceStatus(
                 KnowledgeSourceState.Active,
-                $"Connected to {source.Endpoint}, searching with the '{tool.Name}' tool.");
+                $"Connected to {source.Endpoint}, searching with {Describe(tools)}.");
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
@@ -108,15 +145,64 @@ internal sealed class McpRepositoryKnowledgeSource(
         // of it, so it is ignored rather than answered with nothing — narrowing
         // to a folder must not silently switch this source off.
         await using var client = await ConnectAsync(source.Endpoint, ct);
-        var tool = await ResolveToolAsync(client, ct);
+        var tools = await ResolveToolsAsync(client, ct);
 
         var take = Math.Clamp(Math.Min(query.Take, options.RepositoryMaxResults), 1, 100);
 
+        // Concurrently, over the one connection: the tools are asked the same
+        // question and do not depend on each other, and the source is already
+        // running under the composite's deadline — so asking them in turn would
+        // spend that whole budget on however many tools the server happens to
+        // expose.
+        var answers = await Task.WhenAll(
+            tools.Select(tool => AskAsync(client, tool, query.Text, take, ct)));
+
+        var failed = answers.Where(answer => answer.Failure is not null).ToList();
+
+        // Every tool failing is the server failing, and it is thrown for the
+        // same reason a single tool's error always was: the composite isolates
+        // each source, and reporting this as "no results" would hide a broken
+        // server behind an answer that merely looks thin. One tool of several
+        // failing is different — that is a degradation, reported below.
+        if (failed.Count > 0 && failed.Count == answers.Length)
+        {
+            throw new InvalidOperationException(
+                failed.Count == 1
+                    ? failed[0].Failure!
+                    : $"None of the {failed.Count} tools asked could answer. "
+                      + string.Join(" ", failed.Select(answer => answer.Failure)));
+        }
+
+        var results = Interleave(answers).Take(take).ToList();
+
+        logger.LogInformation(
+            "MCP source returned {Count} passages from {Endpoint} via {Tools}",
+            results.Count, source.Endpoint, string.Join(", ", tools.Select(tool => tool.Name)));
+
+        return new KnowledgeSearchResult(results, Degradation(failed));
+    }
+
+    /// <summary>
+    /// Puts the question to one tool, turning a failure into an explanation
+    /// rather than an exception.
+    ///
+    /// Isolated per tool for the same reason the composite isolates each
+    /// source: one tool that is broken, or that this server never really meant
+    /// to be searched, must not lose an answer the rest of the server could
+    /// have grounded.
+    /// </summary>
+    private async Task<ToolAnswer> AskAsync(
+        McpClient client,
+        McpClientTool tool,
+        string text,
+        int take,
+        CancellationToken ct)
+    {
         // Read off the tool's own schema rather than assumed. A server that
         // calls its query "q" would otherwise be sent an argument it does not
         // know, ignore it, search for the empty string, and hand back something
         // useless that we would then offer the model as grounding.
-        var arguments = RepositoryToolArguments.Map(tool.ProtocolTool.InputSchema, query.Text, take);
+        var arguments = RepositoryToolArguments.Map(tool.ProtocolTool.InputSchema, text, take);
 
         if (arguments.QueryParameter is null)
         {
@@ -129,32 +215,97 @@ internal sealed class McpRepositoryKnowledgeSource(
         if (arguments.UnfilledRequired.Count > 0)
         {
             // Not fatal — the server may default them — but it is the first
-            // thing to look at when this source returns nothing useful.
+            // thing to look at when this source returns nothing useful. Only
+            // reachable for a tool named explicitly on the source; discovery
+            // leaves these out rather than calling them wrong.
             logger.LogWarning(
                 "The '{Tool}' tool on {Endpoint} requires {Parameters}, which nothing here can "
                 + "supply",
                 tool.Name, source.Endpoint, string.Join(", ", arguments.UnfilledRequired));
         }
 
-        var response = await client.CallToolAsync(
-            tool.Name, arguments.Arguments, cancellationToken: ct);
-
-        if (response.IsError == true)
+        try
         {
-            // Thrown, not swallowed: the caller isolates each source, and
-            // reporting this as "no results" would hide a broken server behind
-            // an answer that merely looks thin.
-            throw new InvalidOperationException(
-                $"The '{tool.Name}' tool reported an error: {FirstText(response) ?? "no detail given"}.");
+            var response = await client.CallToolAsync(
+                tool.Name, arguments.Arguments, cancellationToken: ct);
+
+            if (response.IsError == true)
+            {
+                return ToolAnswer.Failed(
+                    tool.Name,
+                    $"The '{tool.Name}' tool reported an error: "
+                    + $"{FirstText(response) ?? "no detail given"}.");
+            }
+
+            return new ToolAnswer(tool.Name, [.. ReadResults(response, tool.Name).Take(take)], null);
         }
+        // The caller giving up, or this source's own deadline expiring, applies
+        // to every tool — so it is left to unwind rather than recorded as this
+        // one tool having a problem.
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            logger.LogWarning(exception,
+                "The '{Tool}' tool on {Endpoint} could not be called", tool.Name, source.Endpoint);
 
-        var results = ReadResults(response, tool.Name).Take(take).ToList();
+            return ToolAnswer.Failed(
+                tool.Name, $"The '{tool.Name}' tool could not be called ({exception.Message}).");
+        }
+    }
 
-        logger.LogInformation(
-            "MCP source returned {Count} passages from {Endpoint} via '{Tool}'",
-            results.Count, source.Endpoint, tool.Name);
+    /// <summary>
+    /// Merges the tools' answers by rank: each tool's best, then each tool's
+    /// second, and so on.
+    ///
+    /// By rank and never by score, the same rule the composite follows across
+    /// sources and for the same reason — a search tool's cosine similarity and
+    /// whatever number some other tool reports are not on one scale, and one of
+    /// them usually reports nothing at all. <see cref="RepositoryToolPlan"/>
+    /// has already put the search-shaped tools first, so they take the ties.
+    ///
+    /// Deduplicated on the passage id, because two tools on one server looking
+    /// at one repository will return the same file, and spending two citation
+    /// slots on it would make an answer look better supported than it is.
+    /// </summary>
+    private static IEnumerable<KnowledgeResult> Interleave(IReadOnlyList<ToolAnswer> answers)
+    {
+        var seen = new HashSet<int>();
+        var deepest = answers.Count == 0 ? 0 : answers.Max(answer => answer.Results.Count);
 
-        return new KnowledgeSearchResult(results);
+        for (var rank = 0; rank < deepest; rank++)
+        {
+            foreach (var answer in answers)
+            {
+                if (rank >= answer.Results.Count) continue;
+
+                var result = answer.Results[rank];
+
+                if (seen.Add(result.ChunkId)) yield return result;
+            }
+        }
+    }
+
+    /// <summary>
+    /// What to tell the reader when some tools answered and others did not.
+    ///
+    /// Named on the answer rather than logged, exactly as a whole failed source
+    /// is: an answer grounded in less than usual has to say so, and "the server
+    /// worked but half of it did not" is precisely the case a reader cannot
+    /// otherwise see.
+    /// </summary>
+    private string? Degradation(IReadOnlyList<ToolAnswer> failed) =>
+        failed.Count == 0
+            ? null
+            : $"{source.DisplayName} answered without "
+              + $"{string.Join(", ", failed.Select(answer => $"'{answer.Tool}'"))}, so this answer "
+              + "draws on the rest of its tools only.";
+
+    /// <param name="Failure">Null when the tool answered, whether or not it found anything.</param>
+    private sealed record ToolAnswer(
+        string Tool,
+        IReadOnlyList<KnowledgeResult> Results,
+        string? Failure)
+    {
+        public static ToolAnswer Failed(string tool, string detail) => new(tool, [], detail);
     }
 
     private async Task<McpClient> ConnectAsync(string endpoint, CancellationToken ct)
@@ -170,29 +321,63 @@ internal sealed class McpRepositoryKnowledgeSource(
         return await McpClient.CreateAsync(transport, loggerFactory: loggerFactory, cancellationToken: ct);
     }
 
-    private async Task<McpClientTool> ResolveToolAsync(McpClient client, CancellationToken ct)
+    /// <summary>
+    /// The tools this question goes to.
+    ///
+    /// Naming one on the source still pins it to that tool alone. It is now a
+    /// narrowing rather than the ordinary path, and it stays supported for
+    /// exactly that: a server with one tool worth trusting, or one whose other
+    /// tools are expensive enough that asking them on every question is not
+    /// wanted. Nothing is inferred about a tool somebody named — an
+    /// administrator saying "use this one" outranks every rule here.
+    /// </summary>
+    private async Task<IReadOnlyList<McpClientTool>> ResolveToolsAsync(
+        McpClient client,
+        CancellationToken ct)
     {
-        var tools = await client.ListToolsAsync(cancellationToken: ct);
+        var tools = (await client.ListToolsAsync(cancellationToken: ct)).ToList();
 
         if (!string.IsNullOrWhiteSpace(source.ToolName))
         {
-            return tools.FirstOrDefault(tool =>
-                    tool.Name.Equals(source.ToolName, StringComparison.OrdinalIgnoreCase))
-                // Named explicitly and absent means the configuration is wrong,
-                // and saying which tools do exist is what makes that fixable.
-                ?? throw new InvalidOperationException(
-                    $"The server exposes no tool named '{source.ToolName}'. "
-                    + $"Available: {(tools.Count == 0 ? "none" : string.Join(", ", tools.Select(t => t.Name)))}.");
+            return
+            [
+                tools.FirstOrDefault(tool =>
+                        tool.Name.Equals(source.ToolName, StringComparison.OrdinalIgnoreCase))
+                    // Named explicitly and absent means the configuration is
+                    // wrong, and saying which tools do exist makes that fixable.
+                    ?? throw new InvalidOperationException(
+                        $"The server exposes no tool named '{source.ToolName}'. "
+                        + $"Available: {Available(tools)}."),
+            ];
         }
 
-        var discovered = RepositoryToolNames.PickSearchTool(tools.Select(tool => tool.Name));
+        var answerable = RepositoryToolPlan.Answerable(tools);
 
-        return tools.FirstOrDefault(tool => tool.Name == discovered)
-            ?? throw new InvalidOperationException(
-                "The server exposes no tool with 'search' in its name. Set this source's "
-                + "ToolName to choose one explicitly. "
-                + $"Available: {(tools.Count == 0 ? "none" : string.Join(", ", tools.Select(t => t.Name)))}.");
+        // Reachable, speaking MCP, and still unable to ground anything: every
+        // tool either changes something or has nowhere to put the question.
+        // That is a different problem from an outage and has to read like one.
+        if (answerable.Count == 0)
+        {
+            throw new InvalidOperationException(
+                "The server exposes no read-only tool that a question can be put to. Set this "
+                + $"source's ToolName to choose one explicitly. Available: {Available(tools)}.");
+        }
+
+        return answerable;
     }
+
+    private static string Available(IReadOnlyList<McpClientTool> tools) =>
+        tools.Count == 0 ? "none" : string.Join(", ", tools.Select(tool => tool.Name));
+
+    /// <summary>
+    /// The tools named on a status line. Listed rather than counted: "searching
+    /// with 4 of its tools" invites the question this sentence exists to
+    /// answer, and a server with forty tools is not the case being designed for.
+    /// </summary>
+    private static string Describe(IReadOnlyList<McpClientTool> tools) =>
+        tools.Count == 1
+            ? $"the '{tools[0].Name}' tool"
+            : $"the {string.Join(", ", tools.Select(tool => $"'{tool.Name}'"))} tools";
 
     /// <summary>
     /// Turns a tool response into passages.
@@ -238,10 +423,15 @@ internal sealed class McpRepositoryKnowledgeSource(
             // is read by someone deciding whether to trust a sentence, and
             // "search" tells them nothing while "Live scores" tells them where
             // it came from.
+            //
+            // The tool goes in the heading instead, which is the "where within
+            // it" slot and is now load-bearing: several tools on one server
+            // answer in prose, and two citations reading "Repositories ·
+            // result" would be indistinguishable.
             passages.Add(new KnowledgeResult(
                 KnowledgeResultKind.External,
                 source.DisplayName,
-                "result",
+                toolName,
                 block.Text,
                 0,
                 "mcp",

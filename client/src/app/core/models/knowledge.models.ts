@@ -400,7 +400,7 @@ export interface RepositorySource {
   name: string;
   displayName: string;
   endpoint: string;
-  /** Empty means the client discovers a tool with "search" in its name. */
+  /** Empty means every read-only tool that takes search text is searched. */
   toolName: string;
   isEnabled: boolean;
   updatedAt: string;
@@ -422,7 +422,13 @@ export interface RepositoryProbe {
   speaksMcp: boolean;
   detail: string;
   tools: string[];
-  /** The tool searching would pick on its own, offered to fill the field. */
+  /**
+   * The tools a question would actually be put to, in the order they would be
+   * asked. A subset of `tools`: one that changes something, or that takes no
+   * search text, is never called.
+   */
+  searchedTools: string[];
+  /** The tool to offer if the source is to be pinned to one, which narrows it. */
   suggestedToolName: string | null;
   repositories: string[];
 }

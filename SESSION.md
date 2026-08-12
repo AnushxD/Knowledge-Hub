@@ -3,8 +3,8 @@
 Session state only. Architecture, conventions, design decisions and workflow
 live in `CLAUDE.md` and are not repeated here.
 
-**Last updated:** 2026-08-09 · **Branch:** `main`, clean and pushed ·
-**Tests:** 214 green (17 Api · 42 Integrations · 21 DataAccess · 134 Services) ·
+**Last updated:** 2026-08-12 · **Branch:** `main`, clean and pushed ·
+**Tests:** 222 green (17 Api · 50 Integrations · 21 DataAccess · 134 Services) ·
 **CI:** pushed, not yet checked
 
 ---
@@ -72,6 +72,22 @@ A third, smaller one: `ExecuteDelete` left deleted documents in the change
 tracker, so the next `SaveChanges` in the same sync failed on a concurrency
 error. They are detached now.
 
+**Since then: an MCP server is searched with all of its tools, not one.** A
+question now goes concurrently to every tool a server exposes that is read-only
+and takes search text, merged by rank, with search-shaped tools asked first and
+winning ties. This reverses a recorded decision — "only a `search`-style tool
+can ground an answer" — because it cost answers a server plainly had:
+`get_architecture` beside a thin `search_code` contributed nothing. The trade is
+recorded in `CLAUDE.md` and on `McpRepositoryKnowledgeSource`; the guard against
+its obvious failure mode is `RepositoryToolPlan`, which never calls a tool that
+changes something. One tool failing is a degradation named on the reply; all of
+them failing is the source failing. Covered by 8 new tests against real MCP
+servers hosted in-process, including one whose tools would delete things.
+
+**Not verified through the UI.** The sources screen wording and the "would be
+asked" tool chips were built and typecheck, but the screen is admin-only and
+signing in was not done in that session, so nobody has looked at them rendered.
+
 ---
 
 ## What is not done
@@ -106,6 +122,13 @@ error. They are detached now.
 - **Size is unknown until a file is first fetched.** The tree listing carries
   no size and asking per file would be a round trip per file on every sync, so
   ingestion fills it in and a pending document reports 0 B.
+- **Whether a tool changes something is a guess when the server does not say.**
+  `readOnlyHint` is optional and widely omitted, so a name check stands behind
+  it. It is blunt and biased towards excluding — a read tool called
+  `sync_index` will be skipped, and can be named explicitly to force it.
+- **A server with many tools costs more per question.** They run concurrently
+  under the one source deadline, so the wall clock is the slowest tool rather
+  than the sum, but a slow server is now slow on every tool it has.
 
 ---
 

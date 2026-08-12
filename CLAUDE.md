@@ -158,7 +158,8 @@ CLAUDE.md · SESSION.md · README.md · architecture-blueprint.md · chat-pipeli
 | `Services/Chat/ChatService.cs` | RAG orchestrator: retrieve → refuse-or-generate → verify → persist |
 | `Services/Search/SearchService.cs` | Hybrid search + RRF; `RankAsync` shared by search and retrieval |
 | `Services/Knowledge/CompositeKnowledgeSource.cs` | Fan-out, per-source deadlines, failure isolation, rank fusion, dedupe |
-| `Integrations/Knowledge/McpRepositoryKnowledgeSource.cs` | The MCP client: tool resolution and the three response shapes it accepts. The tool contract it expects is documented on the class |
+| `Integrations/Knowledge/McpRepositoryKnowledgeSource.cs` | The MCP client: fan-out across a server's tools, per-tool isolation, and the three response shapes it accepts. The tool contract it expects is documented on the class |
+| `Integrations/Knowledge/RepositoryToolPlan.cs` | Which of a server's tools a question is put to, and what disqualifies one. Shared by the searcher and the probe |
 | `Services/Repository/RepositoryMirrorService.cs` | The sync: list tree → diff on blob ids → add/repoint/remove → reconcile folders. Read the ordering comment before touching it |
 | `Integrations/SourceControl/GitLabRepositoryClient.cs` | The GitLab v4 client: paginated tree, raw file streaming, head commit |
 | `Services/Ingestion/IngestionService.cs` | fetch → extract → chunk → embed → index; permanent vs transient failure split |
@@ -334,16 +335,41 @@ Recorded so they are not re-litigated. Each is a trade already reasoned through.
   address and its settings.
 - Pointing the server at an arbitrary host is **admin-gated SSRF by design**.
   Only absolute http/https is accepted, so the box cannot become a file reader.
-- **Only a `search`-style tool can ground an answer.** A tool that returns the
-  server's own prose (`get_answer`, `get_architecture`) or a computed analysis
-  (`get_blast_radius`) has no passage to cite, so wiring one in would have the
-  assistant quoting text that exists in no file. `RepositoryToolNames` holds the
-  one rule for picking a tool, shared by the searcher and the probe so the probe
-  cannot promise a tool the searcher would not use.
+- **Every tool a question can be put to is put to it**, concurrently, over one
+  connection — not just the one whose name says "search". A server's tools are
+  windows on the same repository, and the one that sorts first is not reliably
+  the one that knows the answer: a thin `search_code` beside a
+  `get_architecture` that answers exactly what was asked used to produce a
+  refusal. Reversed deliberately, and the cost is real and stated on
+  `McpRepositoryKnowledgeSource`: a search tool returns text out of a file, so a
+  citation to it resolves to something a reader can check, while a citation to
+  synthesised prose resolves only to "this server said this". Both are still
+  verbatim and still verified, which is what makes the trade acceptable —
+  search-shaped tools are asked first and win ties, and pinning a source to one
+  tool is still there for a server where the distinction has to be absolute.
+- **A tool that changes something is never called, and neither is one with
+  nowhere to put the question.** Asking every tool means calling tools nobody
+  vetted with the user's words in them, and `delete_branch(query: "how do we
+  restart the worker")` is not a search that finds nothing — it is a write into
+  somebody's repository, which is the one thing the hub must never do. The
+  server's `readOnlyHint` decides when it declares one; a blunt name check
+  stands behind it, because most servers declare nothing. Biased towards
+  excluding: a read tool wrongly skipped costs some passages and can still be
+  named explicitly, and a write tool wrongly called cannot be undone. A tool
+  with no string parameter is left out for a different reason — it answers the
+  same thing however it is asked, which is noise on every answer.
+- `RepositoryToolPlan` holds that one rule, shared by the searcher and the
+  probe, so the probe cannot promise a tool the searcher would not use.
+- **One tool failing degrades the answer; all of them failing fails the
+  source.** The same split the composite applies across sources, applied within
+  one — the tools that answered are used, and the ones that did not are named on
+  the reply rather than logged. Tools merge by rank, never by score, for the
+  same reason sources do.
 - The address probe speaks MCP and reports the tool list, because the mistakes
-  worth catching are "wrong server" and "wrong tool name", and an HTTP ping sees
-  neither. It falls back to a plain request only to tell "answered but not MCP"
-  apart from "nothing listening" — different problems, different fixes.
+  worth catching are "wrong server" and "the tools here cannot be searched", and
+  an HTTP ping sees neither. It reports which tools would actually be asked, not
+  just which exist. It falls back to a plain request only to tell "answered but
+  not MCP" apart from "nothing listening" — different problems, different fixes.
 
 **Identity**
 - The `users` table **is** the Identity store (`User : IdentityUser<Guid>`), so

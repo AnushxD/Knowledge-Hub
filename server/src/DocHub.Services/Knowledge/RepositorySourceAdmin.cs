@@ -141,6 +141,7 @@ internal sealed partial class RepositorySourceAdmin(
             result.SpeaksMcp,
             result.Detail,
             result.Tools,
+            result.SearchedTools,
             result.SuggestedToolName,
             result.Repositories);
     }

@@ -119,8 +119,8 @@
                   {{ source.isEnabled ? 'Enabled' : 'Switched off' }} ·
                   {{
                     source.toolName
-                      ? 'searching with ' + source.toolName
-                      : 'discovering a tool with “search” in its name'
+                      ? 'searching with ' + source.toolName + ' only'
+                      : 'searching with every tool it exposes that takes a query'
                   }}
                 </p>
               </div>
@@ -228,7 +228,7 @@
         </label>
 
         <label class="mt-3 block">
-          <span class="mb-1.5 block text-[12px] font-medium text-ink">Search tool</span>
+          <span class="mb-1.5 block text-[12px] font-medium text-ink">Restrict to one tool</span>
           <input
             class="h-9 w-full rounded-dh border border-hairline bg-surface-1 px-3 text-[13px] text-ink outline-none transition placeholder:text-subtle focus:border-brand-500/50"
             type="text"
@@ -239,8 +239,9 @@
             (ngModelChange)="draftToolName.set($event)"
           />
           <span class="mt-1.5 block text-[11.5px] text-subtle">
-            Leave blank to use the first tool with “search” in its name — a guess worth replacing
-            once the server’s tool list is known.
+            Leave blank — a question is then put to every tool the server exposes that is read-only
+            and takes search text, and the answers are merged. Name one only to search with that
+            tool alone.
           </span>
         </label>
 
@@ -275,14 +276,25 @@
             </div>
 
             @if (result.tools.length) {
+              <!-- Two states, not a highlight of one favourite: the tools that
+                   would be asked are drawn in full, the rest greyed. A server
+                   whose tools mostly change something would otherwise look
+                   entirely usable. -->
               <div class="mt-2.5 pl-[22px]">
-                <p class="text-[11.5px] text-subtle">Tools it exposes</p>
+                <p class="text-[11.5px] text-subtle">
+                  Tools it exposes — {{ result.searchedTools.length }} would be asked
+                </p>
                 <div class="mt-1.5 flex flex-wrap gap-1.5">
                   @for (tool of result.tools; track tool) {
                     <code
                       class="rounded-full border border-hairline bg-surface-2 px-2 py-[3px] text-[11px]"
-                      [class.text-ink]="tool === result.suggestedToolName"
-                      [class.text-subtle]="tool !== result.suggestedToolName"
+                      [class.text-ink]="result.searchedTools.includes(tool)"
+                      [class.text-subtle]="!result.searchedTools.includes(tool)"
+                      [title]="
+                        result.searchedTools.includes(tool)
+                          ? 'Asked on every question'
+                          : 'Never called — it changes something, or takes no search text'
+                      "
                     >
                       {{ tool }}
                     </code>
@@ -304,10 +316,13 @@
               </div>
             }
 
+            <!-- Wording carries the change: this button used to pick the tool
+                 that would have been guessed at, and now it turns the others
+                 off. Offering it as "use this one" would read as the default. -->
             @if (canUseSuggestedTool()) {
               <div class="mt-3 pl-[22px]">
                 <button class="dh-btn-ghost" type="button" (click)="useSuggestedTool()">
-                  Use “{{ result.suggestedToolName }}”
+                  Restrict to “{{ result.suggestedToolName }}”
                 </button>
               </div>
             }
