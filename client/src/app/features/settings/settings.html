@@ -200,13 +200,16 @@
     </div>
   </section>
 
-  <!-- Storage -->
+  <!-- Library contents. Deliberately not called "Storage" any more: the hub
+       stores no files at all, and a heading claiming otherwise was the last
+       place the pre-mirror architecture was still being described to users. -->
   <section class="dh-card mt-4 p-5">
-    <h2 class="text-[14px] font-semibold text-ink">Storage</h2>
+    <h2 class="text-[14px] font-semibold text-ink">Library contents</h2>
     <p class="mt-1 text-[12.5px] text-muted">
-      Files live in Azure Blob Storage — the Azurite emulator locally, real Blob Storage in
-      production, through the same <code class="font-mono text-[11.5px]">IFileStorage</code>
-      implementation.
+      No file is stored here. A document's bytes are fetched from the repository each time it is
+      previewed or downloaded, so what you get is what the branch holds now — and if the repository
+      is unreachable, previews fail while search keeps working. What the hub does keep is below:
+      the extracted text, split into the chunks an answer can cite.
     </p>
     <dl class="mt-4 grid grid-cols-2 gap-3 text-[12.5px] sm:grid-cols-4">
       <div class="rounded-dh border border-hairline p-3">

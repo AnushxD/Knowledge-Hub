@@ -7,9 +7,11 @@ import { marked } from 'marked';
  * Bound through `[innerHTML]` rather than `DomSanitizer.bypassSecurityTrustHtml`,
  * and that is the whole security argument: an `[innerHTML]` binding runs
  * Angular's sanitizer, which drops `<script>`, `on*` handlers and
- * `javascript:` URLs. Documents here are uploaded by contributors, so the
- * Markdown is untrusted input — bypassing the sanitizer would turn any upload
- * into stored XSS against every reader.
+ * `javascript:` URLs. Documents here are files out of somebody's repository, so
+ * the Markdown is untrusted input — bypassing the sanitizer would turn one
+ * commit into stored XSS against every reader. Mirroring rather than uploading
+ * does not soften this: it widens it, since anyone who can push to the branch
+ * can now reach these readers without ever signing in here.
  *
  * `marked` is a parser, not a UI kit, so it does not run into the licensing
  * problem that ruled out a component library.

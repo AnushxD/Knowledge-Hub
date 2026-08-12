@@ -76,7 +76,7 @@ export class LibraryStore {
   /**
    * Re-runs when the filters change *or* after a mutation. The refresh trigger
    * matters for the HTTP gateway: unlike the in-memory mock it answers a query
-   * once, so an upload or delete would otherwise leave the list stale.
+   * once, so a sync or a metadata edit would otherwise leave the list stale.
    *
    * The `undefined` that drives the loading skeleton is emitted **once per
    * query**, not once per refresh. A new filter genuinely has nothing to show
@@ -149,7 +149,7 @@ export class LibraryStore {
   constructor() {
     document.addEventListener('visibilitychange', () => this.visible.set(!document.hidden));
 
-    // Re-read while anything is ingesting, so an uploaded document moves
+    // Re-read while anything is ingesting, so a newly mirrored document moves
     // Queued → Indexing → Indexed on screen instead of only on reload.
     //
     // The whole refresh, not just the list: finishing ingestion also changes

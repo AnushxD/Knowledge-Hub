@@ -8,9 +8,9 @@ import { SignedInUser, UserRole } from '../models/knowledge.models';
  * Who is signed in, for the whole app.
  *
  * The server is the authority — this is a cache of what it last said, and every
- * decision it drives is a *presentation* decision. Hiding an upload button from
- * a viewer is a courtesy; the endpoint refuses them regardless, which is what
- * actually enforces the rule.
+ * decision it drives is a *presentation* decision. Hiding the Sync now button
+ * from a viewer is a courtesy; the endpoint refuses them regardless, which is
+ * what actually enforces the rule.
  */
 @Injectable({ providedIn: 'root' })
 export class AuthStore {

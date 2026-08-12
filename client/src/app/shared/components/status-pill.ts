@@ -45,7 +45,7 @@ export class StatusPill {
       case 'failed':
         return 'Ingestion failed. This document is invisible to search and the assistant.';
       default:
-        return 'Uploaded and waiting for an ingestion worker.';
+        return 'Mirrored from the repository, waiting for an ingestion worker.';
     }
   });
 }

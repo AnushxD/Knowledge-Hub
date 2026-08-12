@@ -66,10 +66,14 @@ export class Dashboard {
         icon: 'pi-sync',
         tint: 'var(--dh-status-indexing)',
       },
+      // Not "Storage used": the hub stores no files, so this is how much the
+      // repository holds, and only of the files read so far — a document that
+      // has never been fetched reports nothing, because the tree listing
+      // carries no size.
       {
-        label: 'Storage used',
+        label: 'Content size',
         value: this.compactBytes(s?.contentBytes ?? 0),
-        hint: 'Azurite locally, Blob in prod',
+        hint: 'in the repository, of files read so far',
         icon: 'pi-database',
         tint: 'var(--dh-status-pending)',
       },
