@@ -338,6 +338,25 @@ Ingestion then runs per document, on a background job:
 A chunk never spans two sections, which is what lets a search result or a
 citation say "Page 4" rather than pointing vaguely at a file.
 
+**A sync also picks up documents that never finished indexing.** The blob id
+answers "has this file changed"; it does not answer "is this document
+searchable", and only the second decides whether a question can be answered.
+Stop the API part way through a first mirror — a restart, a deploy, Ctrl-C —
+and the documents still queued are left `Pending`, with a blob id that will
+match for ever afterwards. They are re-queued and reported as **requeued**,
+counted apart from *updated* because nothing in the repository changed.
+
+If the assistant refuses every question, this is the first thing to check: only
+`Indexed` documents are retrievable, so a library that is mostly `Pending` has
+almost nothing to answer from. The dashboard's pipeline count and the library's
+status filter both show it. Press **Sync now** and let the backlog drain —
+roughly a second or two per document on the local model.
+
+A `Failed` document is deliberately *not* retried by a sync. That is the
+permanent half of the failure split — a file no extractor can read fails
+identically every time — so it waits for a new revision, which arrives as a new
+blob id. Retry one by hand from its page, or `POST /api/documents/{id}/reindex`.
+
 Watch a document move through the pipeline on the
 [jobs dashboard](http://localhost:5080/jobs), or by its status in the library.
 
@@ -1282,6 +1301,34 @@ look identical on screen:
 - `succeeded` with a high `skipped` and zero `added` — the sync worked and
   none of the files are of a type that can be indexed. A repository root is
   mostly source code; set `GitLab:SubPath` to the documentation directory.
+
+### The assistant refuses every question
+
+"I don't have information about that in the indexed documents" on *everything*
+is almost always a library that is mirrored but not indexed. Only `Indexed`
+documents are retrievable — that is a grounding rule, not a bug — so a library
+sitting at `Pending` has nothing to answer from however full the tree looks.
+
+```bash
+curl -s localhost:5080/api/documents/stats
+```
+
+`documents` far above `indexed` is the case. It happens when the API stops part
+way through a first mirror: the documents still queued never get picked up, and
+their blob ids match for ever afterwards, so a second sync used to report
+`0 added, 0 updated, 0 removed` and change nothing. It now re-queues them and
+reports them as `requeued` — press **Sync now** and let the backlog drain.
+
+Two things that are *not* the cause, worth ruling out before looking further:
+
+- **Search still working.** The search screen has no relevance floor and the
+  assistant does; a question that returns weak results on one and a refusal on
+  the other is that floor doing its job, not a fault.
+- **Citations, not retrieval.** An answer that streams and is then replaced by
+  a refusal means the model cited nothing verifiable. Check
+  `Llm:ContextTokens` — Ollama defaults to 2048 and silently discards the rest
+  of a 5,000-token grounded prompt, so the model answers having seen no
+  passages.
 
 ### The webhook does nothing
 

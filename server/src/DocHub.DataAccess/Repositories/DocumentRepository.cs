@@ -116,7 +116,8 @@ internal sealed class DocumentRepository(DocHubDbContext db) : IDocumentReposito
         await db.Documents
             .AsNoTracking()
             .Select(document => new MirroredFileDto(
-                document.Id, document.RepositoryPath, document.BlobSha, document.Title))
+                document.Id, document.RepositoryPath, document.BlobSha, document.Title,
+                document.Status))
             .ToListAsync(ct);
 
     public async Task<DocumentDto> CreateAsync(

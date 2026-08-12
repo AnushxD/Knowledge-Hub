@@ -436,6 +436,24 @@ BEGIN
 END $EF$;
 COMMIT;
 
+START TRANSACTION;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM __ef_migrations_history WHERE "MigrationId" = '20260812192926_RequeuedFileCount') THEN
+    ALTER TABLE repository_sync_state ADD "FilesRequeued" integer NOT NULL DEFAULT 0;
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM __ef_migrations_history WHERE "MigrationId" = '20260812192926_RequeuedFileCount') THEN
+    INSERT INTO __ef_migrations_history ("MigrationId", "ProductVersion")
+    VALUES ('20260812192926_RequeuedFileCount', '10.0.10');
+    END IF;
+END $EF$;
+COMMIT;
+
 
 
 -- Default administrator for a fresh deployment.

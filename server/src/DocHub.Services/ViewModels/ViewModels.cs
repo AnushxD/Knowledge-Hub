@@ -471,6 +471,12 @@ public record DocumentContent(Stream Content, string ContentType, string FileNam
 /// mostly code, and a number here is the difference between "the sync worked"
 /// and "the sync worked and most of the repository is not searchable".
 /// </param>
+/// <param name="Requeued">
+/// Unchanged files whose document had never finished indexing, put back on the
+/// queue. Nothing in the repository changed — this is the mirror catching up
+/// with itself, and it is shown because a run reporting nothing but zeros while
+/// hundreds of documents begin indexing reads as a run that did nothing.
+/// </param>
 public record RepositoryViewModel(
     string ProjectPath,
     string Branch,
@@ -484,4 +490,5 @@ public record RepositoryViewModel(
     int Added,
     int Updated,
     int Removed,
-    int Skipped);
+    int Skipped,
+    int Requeued);

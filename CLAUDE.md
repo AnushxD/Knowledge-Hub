@@ -233,6 +233,19 @@ Recorded so they are not re-litigated. Each is a trade already reasoned through.
   content-addressed, so an unchanged file has an unchanged id and a push
   touching one file cannot re-embed six hundred. A commit says nothing about
   whether any particular file changed.
+- **An unchanged file whose document never finished indexing is queued again**,
+  and counted separately as `FilesRequeued`. The blob id answers "has the file
+  changed"; it does not answer "is this document searchable", and only the
+  second decides whether a question can be answered. A worker stopped part way
+  through a first backlog — a restart, a deploy, a crash — leaves hundreds
+  Pending whose blob id then matches for ever, so before this they were
+  stranded: never retrievable, and no sync would ever pick them up. Found in
+  the worst possible way, as "every question is refused" against a library that
+  had indexed 21 of 636 documents while sync cheerfully reported 0/0/0.
+  `Failed` is deliberately excluded — that is the permanent half of the failure
+  split, and retrying an unreadable file every sync would burn the queue on
+  documents that can only change with a new revision, which arrives as a new
+  blob id anyway.
 - **A type no extractor can read is counted as skipped, not mirrored.** Under
   uploads a person chose the file and deserved to be told why it was not
   searchable; a repository chose nothing and is mostly source code, so a row

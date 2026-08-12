@@ -55,12 +55,15 @@ public sealed class MirrorSyncTests(StackFixture fixture)
     }
 
     [Fact]
-    public async Task An_unchanged_file_is_not_queued_for_ingestion_again()
+    public async Task An_unchanged_file_that_is_already_indexed_is_not_queued_again()
     {
         await using var scope = fixture.NewScope();
         var path = $"{Unique("Same")}/notes.md";
 
-        await scope.PublishAsync(path, "v1 body");
+        // Indexed, not merely mirrored. That distinction is the whole point:
+        // "unchanged" is about the file, and whether to re-queue is about the
+        // document — see the pending case below.
+        await scope.PublishIndexedAsync(path, "v1 body");
         var afterFirst = scope.Queue.Queued.Count;
 
         await scope.Mirror.SyncAsync(actorId: null);
@@ -69,6 +72,54 @@ public sealed class MirrorSyncTests(StackFixture fixture)
         // re-embedded everything it saw would make a repository of any size
         // unmirrorable, and the blob id is what makes it unnecessary.
         Assert.Equal(afterFirst, scope.Queue.Queued.Count);
+    }
+
+    [Fact]
+    public async Task An_unchanged_file_that_never_finished_indexing_is_queued_again()
+    {
+        await using var scope = fixture.NewScope();
+        var path = $"{Unique("Stalled")}/notes.md";
+
+        // Mirrored and left Pending, which is exactly what a worker that stops
+        // part way through a backlog leaves behind — a restart, a deploy, a
+        // crash. The blob id will match for ever afterwards, so before this the
+        // document was stranded: never searchable, and no sync would ever pick
+        // it up. Measured against a real repository at 21 indexed of 636.
+        var stranded = await scope.PublishAsync(path, "The gateway is at ten dot one.");
+        Assert.Equal("pending", stranded.Status);
+
+        var afterFirst = scope.Queue.Queued.Count;
+        var repository = await scope.Mirror.SyncAsync(actorId: null);
+
+        Assert.Contains(stranded.Id, scope.Queue.Queued);
+        Assert.Equal(afterFirst + 1, scope.Queue.Queued.Count);
+
+        // Counted, and counted apart from Updated: nothing in the repository
+        // changed. A run reporting nothing but zeros while hundreds of
+        // documents begin indexing reads as a run that did nothing.
+        Assert.Equal(1, repository.Requeued);
+        Assert.Equal(0, repository.Updated);
+    }
+
+    [Fact]
+    public async Task An_unchanged_file_that_failed_permanently_is_left_alone()
+    {
+        await using var scope = fixture.NewScope();
+        var path = $"{Unique("Broken")}/empty.md";
+
+        // Whitespace only: extraction finds no text, which is the permanent
+        // half of the failure split — it will fail identically every time.
+        var failed = await scope.PublishIndexedAsync(path, "   \n  \n");
+        Assert.Equal("failed", (await scope.Documents.GetAsync(failed.Id)).Document.Status);
+
+        var afterFirst = scope.Queue.Queued.Count;
+        var repository = await scope.Mirror.SyncAsync(actorId: null);
+
+        // Retrying it on every sync would burn the queue on documents that can
+        // only change when the repository holds a different revision — and that
+        // arrives as a new blob id, which is requeued by the branch above.
+        Assert.Equal(afterFirst, scope.Queue.Queued.Count);
+        Assert.Equal(0, repository.Requeued);
     }
 
     [Fact]

@@ -70,7 +70,8 @@ public record RepositorySyncStateDto(
     int FilesAdded,
     int FilesUpdated,
     int FilesRemoved,
-    int FilesSkipped);
+    int FilesSkipped,
+    int FilesRequeued);
 
 /// <summary>Filter for a document listing. Null members mean "no constraint".</summary>
 public record DocumentQueryDto
@@ -108,9 +109,21 @@ public enum DocumentSort
 
 /// <summary>
 /// A mirrored file reduced to what sync compares — its identity, the revision
-/// held, and a name to put in the activity trail when it goes.
+/// held, a name to put in the activity trail when it goes, and whether it ever
+/// finished being indexed.
 /// </summary>
-public record MirroredFileDto(Guid Id, string RepositoryPath, string BlobSha, string Title);
+/// <param name="Status">
+/// Carried because "has the file changed" and "is this document searchable" are
+/// different questions, and the blob id only answers the first. A document left
+/// Pending by a worker that stopped is unchanged for ever, so without this it
+/// would never be picked up again.
+/// </param>
+public record MirroredFileDto(
+    Guid Id,
+    string RepositoryPath,
+    string BlobSha,
+    string Title,
+    IngestionStatus Status);
 
 /// <summary>Everything needed to record a file found in the repository tree.</summary>
 public record NewDocumentDto

@@ -4,7 +4,7 @@ Session state only. Architecture, conventions, design decisions and workflow
 live in `CLAUDE.md` and are not repeated here.
 
 **Last updated:** 2026-08-12 · **Branch:** `main`, clean and pushed ·
-**Tests:** 222 green (17 Api · 50 Integrations · 21 DataAccess · 134 Services) ·
+**Tests:** 224 green (17 Api · 50 Integrations · 21 DataAccess · 136 Services) ·
 **CI:** pushed, not yet checked
 
 ---
@@ -87,6 +87,36 @@ servers hosted in-process, including one whose tools would delete things.
 **Not verified through the UI.** The sources screen wording and the "would be
 asked" tool chips were built and typecheck, but the screen is admin-only and
 signing in was not done in that session, so nobody has looked at them rendered.
+
+**Then: the assistant refused every question, and it was the mirror.** Diagnosed
+against the local database rather than guessed at:
+
+- 636 documents mirrored, **21 Indexed**, 2 stranded in `Indexing`, 613
+  `Pending`. Only Indexed documents are retrievable, so 97% of the library
+  could not answer anything.
+- `hangfire.job` empty; `stats:succeeded` 23, all on 2026-08-09. The first
+  sync (11:18:37–11:18:51) created all 636 and queued them; 23 ran before the
+  process stopped, and the rest never did.
+- The sync three minutes later (11:21:41) reported **0 added, 0 updated, 0
+  removed, 125 skipped** — correct by the blob-id rule and useless, because
+  every stranded document was "unchanged". There was no route back.
+- Retrieval itself was healthy throughout, which is why it took looking:
+  questions inside the indexed 21 embed to 0.24–0.27 cosine, well inside the
+  0.5 floor. The pipeline was fine; the corpus was 3% of itself.
+
+Fixed by re-queueing unchanged files whose document is `Pending` or `Indexing`,
+counted and reported as `FilesRequeued` (new column, migration
+`RequeuedFileCount`). `Failed` is left alone on purpose.
+
+**What is still not explained:** the ~613 *enqueued* Hangfire rows are gone
+rather than sitting unprocessed. Expiry does not remove enqueued jobs, so
+something else took them — a recreated volume or schema is the likely
+candidate, three days having passed. The re-queue makes it recoverable either
+way, which is the property worth having, but it is not the same as knowing.
+
+**The local database is still in the bad state** as of this writing: the fix is
+committed but the API on port 5080 is running the old build. Restart it and
+press **Sync now** to drain the backlog.
 
 ---
 

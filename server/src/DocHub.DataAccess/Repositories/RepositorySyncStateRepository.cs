@@ -43,6 +43,7 @@ internal sealed class RepositorySyncStateRepository(DocHubDbContext db)
         state.FilesUpdated = 0;
         state.FilesRemoved = 0;
         state.FilesSkipped = 0;
+        state.FilesRequeued = 0;
 
         // CommitSha is deliberately left alone: until this run succeeds, the
         // mirror is still current with whatever the last one brought in.
@@ -72,6 +73,7 @@ internal sealed class RepositorySyncStateRepository(DocHubDbContext db)
         state.FilesUpdated = input.FilesUpdated;
         state.FilesRemoved = input.FilesRemoved;
         state.FilesSkipped = input.FilesSkipped;
+        state.FilesRequeued = input.FilesRequeued;
 
         // Only a successful run may move the recorded commit. A failed one has
         // mirrored some unknown fraction of the tree, and claiming it is
@@ -99,5 +101,6 @@ internal sealed class RepositorySyncStateRepository(DocHubDbContext db)
         state.FilesAdded,
         state.FilesUpdated,
         state.FilesRemoved,
-        state.FilesSkipped);
+        state.FilesSkipped,
+        state.FilesRequeued);
 }

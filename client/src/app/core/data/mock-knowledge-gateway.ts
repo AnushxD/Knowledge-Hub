@@ -1220,6 +1220,7 @@ export class MockKnowledgeGateway extends KnowledgeGateway {
       // A repository is mostly code, and the screen says so rather than
       // implying the whole tree is searchable.
       skipped: Math.max(0, 148 - db.documents.length),
+      requeued: 0,
     }));
   }
 

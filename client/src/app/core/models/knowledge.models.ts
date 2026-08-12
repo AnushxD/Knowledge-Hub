@@ -141,6 +141,12 @@ export interface Repository {
   removed: number;
   /** Files in the tree no extractor can read, so not mirrored at all. */
   skipped: number;
+  /**
+   * Unchanged files whose document had never finished indexing, put back on the
+   * queue. Nothing in the repository changed — this is the mirror catching up
+   * with itself after a worker stopped part way through a backlog.
+   */
+  requeued: number;
 }
 
 /** Filter state for the browser screen. */

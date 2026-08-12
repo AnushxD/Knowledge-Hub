@@ -92,7 +92,8 @@ internal sealed class RepositoryMirrorService(
                 outcome.Added,
                 outcome.Updated,
                 outcome.Removed,
-                outcome.Skipped);
+                outcome.Skipped,
+                outcome.Requeued);
 
             await syncState.FinishAsync(finished, ct);
 
@@ -108,9 +109,9 @@ internal sealed class RepositoryMirrorService(
 
             logger.LogInformation(
                 "Synced {Project}@{Branch} at {Commit}: {Added} added, {Updated} updated, "
-                + "{Removed} removed, {Skipped} not indexable, in {ElapsedMs}ms",
+                + "{Removed} removed, {Requeued} requeued, {Skipped} not indexable, in {ElapsedMs}ms",
                 repository.ProjectPath, repository.Branch, head ?? "(no commits)",
-                outcome.Added, outcome.Updated, outcome.Removed, outcome.Skipped,
+                outcome.Added, outcome.Updated, outcome.Removed, outcome.Requeued, outcome.Skipped,
                 stopwatch.ElapsedMilliseconds);
 
             return ToViewModel(finished);
@@ -136,7 +137,8 @@ internal sealed class RepositoryMirrorService(
                 FilesAdded: 0,
                 FilesUpdated: 0,
                 FilesRemoved: 0,
-                FilesSkipped: 0);
+                FilesSkipped: 0,
+                FilesRequeued: 0);
 
             await syncState.FinishAsync(failed, CancellationToken.None);
 
@@ -216,6 +218,28 @@ internal sealed class RepositoryMirrorService(
             if (existing.BlobSha == file.BlobSha)
             {
                 unchanged.Add(existing.Id);
+
+                // Unchanged in the repository is not the same as present in the
+                // library. A document only becomes searchable when ingestion
+                // finishes, and a worker that stopped part way through a first
+                // sync — a restart, a deploy, a crash — leaves hundreds of them
+                // Pending with nothing queued to pick them up. The blob id will
+                // match for ever after, so without this the library would sit
+                // permanently short of the repository and every question about
+                // the missing part would be refused. Measured: 21 of 636.
+                //
+                // Failed is deliberately left alone. That is the permanent half
+                // of the failure split — a file no extractor can read fails
+                // identically every time — and retrying it on every sync would
+                // burn the queue on documents that can only change when the
+                // repository holds a different revision, which arrives as an
+                // updated blob id and is requeued above.
+                if (existing.Status is IngestionStatus.Pending or IngestionStatus.Indexing)
+                {
+                    queue.Enqueue(existing.Id);
+                    counts.Requeued++;
+                }
+
                 continue;
             }
 
@@ -319,7 +343,8 @@ internal sealed class RepositoryMirrorService(
         state?.FilesAdded ?? 0,
         state?.FilesUpdated ?? 0,
         state?.FilesRemoved ?? 0,
-        state?.FilesSkipped ?? 0);
+        state?.FilesSkipped ?? 0,
+        state?.FilesRequeued ?? 0);
 
     private sealed class SyncCounts
     {
@@ -327,5 +352,13 @@ internal sealed class RepositoryMirrorService(
         public int Updated { get; set; }
         public int Removed { get; set; }
         public int Skipped { get; init; }
+
+        /// <summary>
+        /// Unchanged files whose document had never finished indexing, put back
+        /// on the queue. Counted separately from Updated because nothing about
+        /// the repository changed — this is the mirror catching up with itself,
+        /// and calling it an update would misreport the repository's history.
+        /// </summary>
+        public int Requeued { get; set; }
     }
 }

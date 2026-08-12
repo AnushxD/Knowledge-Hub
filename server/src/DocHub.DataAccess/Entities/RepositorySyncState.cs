@@ -56,4 +56,16 @@ public class RepositorySyncState
     /// searchable" is the honest headline for a mirror of one.
     /// </summary>
     public int FilesSkipped { get; set; }
+
+    /// <summary>
+    /// Unchanged files whose document had never finished indexing, put back on
+    /// the queue by this run.
+    ///
+    /// Separate from <see cref="FilesUpdated"/> because nothing about the
+    /// repository changed: this is the mirror catching up with itself after a
+    /// worker stopped part way through a backlog. Reported rather than done
+    /// quietly — a run that says "0 added, 0 updated, 0 removed" while six
+    /// hundred documents start indexing reads as a run that did nothing.
+    /// </summary>
+    public int FilesRequeued { get; set; }
 }
