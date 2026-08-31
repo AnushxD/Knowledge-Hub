@@ -34,6 +34,11 @@ export class LibraryStore {
 
   readonly query = computed<DocumentQuery>(() => ({
     folderId: this.folderId(),
+    // Always. Opening a folder shows everything under it, and there is no
+    // setting for this on purpose: anyone who may see a folder may see its
+    // subfolders, so a toggle would only ever hide a reader's own documents
+    // from them. The API parameter stays, since the client should ask for the
+    // behaviour it wants rather than lean on a server default.
     recursive: true,
     text: this.text(),
     kinds: this.kinds(),
