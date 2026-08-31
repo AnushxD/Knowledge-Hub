@@ -124,6 +124,15 @@ the wording next door — a refusal with several sources searched still said
 ingestion are searchable", which sends somebody to index a file when their
 repository server had already been asked and had nothing either.
 
+**Two UI items done since.** The "Include subfolders" toggle in Settings was a
+decorative span pinned to "on" — removed rather than wired up, on the reasoning
+that anyone who may see a folder may see its subfolders, so the control could
+only ever hide a reader's own documents from them. Browsing stays recursive with
+the reason recorded where the value is set. And the sync counts, which had been
+computed and persisted and shown nowhere, now appear on the library header:
+"Last synced 9m ago · 2 updated, 1 removed, 3 requeued for indexing, 122 not
+indexable", with zero counts omitted and all-zero reading "no changes".
+
 **The local database is still in the bad state** as of this writing: the fix is
 committed but the API on port 5080 is running the old build. Restart it and
 press **Sync now** to drain the backlog.
