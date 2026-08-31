@@ -76,6 +76,47 @@ export class Browse {
     }
   });
 
+  /**
+   * What the last sync actually did, in one line.
+   *
+   * These numbers were computed, persisted and then shown nowhere, which made
+   * a sync indistinguishable from a no-op: pressing "Sync now" against a
+   * stalled library requeued six hundred documents and reported the same blank
+   * header as a run that changed nothing. Counts that exist and are never
+   * rendered are worse than no counts, because the work looks like it did not
+   * happen.
+   *
+   * Null when the failure banner below already says it in full — repeating the
+   * same fact twice on one screen reads as two problems.
+   */
+  protected readonly lastSync = computed(() => {
+    const repo = this.store.repository();
+    if (!repo) return null;
+
+    switch (repo.outcome) {
+      case 'never':
+        return 'Never synced.';
+      case 'running':
+        return 'Reading the repository now…';
+      case 'failed':
+        return null;
+    }
+
+    const parts: string[] = [];
+    if (repo.added) parts.push(`${repo.added} added`);
+    if (repo.updated) parts.push(`${repo.updated} updated`);
+    if (repo.removed) parts.push(`${repo.removed} removed`);
+    // Named apart from the rest: nothing in the repository changed, this is
+    // the mirror catching up with documents that never finished indexing.
+    if (repo.requeued) parts.push(`${repo.requeued} requeued for indexing`);
+    if (repo.skipped) parts.push(`${repo.skipped} not indexable`);
+
+    // "No changes" rather than an empty line. A repeat sync of an unchanged
+    // repository is the common case and a successful outcome, and saying so is
+    // what separates it from a sync that never ran.
+    return parts.length > 0 ? parts.join(', ') : 'no changes';
+  });
+
   protected heading(): string {
     if (this.store.starredOnly()) return 'Starred';
     if (this.store.statuses().length === 1 && this.store.statuses()[0] === 'failed')

@@ -1203,13 +1203,24 @@ export class MockKnowledgeGateway extends KnowledgeGateway {
     return of(void 0);
   }
 
+  /**
+   * When the pretend sync finishes. Held as state rather than returned once,
+   * because the store discards what `syncRepository` resolves to and re-reads
+   * this — so a "running" outcome that lived only in that response was never
+   * seen by any screen, and the button and the sync summary both sat on
+   * "succeeded" throughout.
+   */
+  private syncingUntil = 0;
+
   repository(): Observable<Repository> {
     return this.read((db) => ({
       projectPath: PROJECT,
       branch: BRANCH,
       subPath: 'docs',
       webUrl: `https://gitlab.example.org/${PROJECT}`,
-      outcome: 'succeeded' as const,
+      outcome: (Date.now() < this.syncingUntil ? 'running' : 'succeeded') as
+        | 'running'
+        | 'succeeded',
       commitSha: '9f2c1ab5d3e47f8091a2b6c4d5e6f708192a3b4c',
       startedAt: ago(9 * MINUTE),
       finishedAt: ago(9 * MINUTE),
@@ -1220,7 +1231,10 @@ export class MockKnowledgeGateway extends KnowledgeGateway {
       // A repository is mostly code, and the screen says so rather than
       // implying the whole tree is searchable.
       skipped: Math.max(0, 148 - db.documents.length),
-      requeued: 0,
+      // Non-zero on purpose: a requeue is the state worth being able to see
+      // without a backend, since it is the one that says "the library was
+      // short of the repository and this run went and fetched the rest".
+      requeued: 3,
     }));
   }
 
@@ -1230,7 +1244,11 @@ export class MockKnowledgeGateway extends KnowledgeGateway {
    * that is the state the real screen spends its time polling.
    */
   syncRepository(): Observable<Repository> {
-    return this.repository().pipe(map((state) => ({ ...state, outcome: 'running' as const })));
+    // Comfortably longer than the store's 2.5s poll, so at least one re-read
+    // lands inside the window. Equal to it raced, and the screen jumped
+    // straight back to "succeeded" as though the button had done nothing.
+    this.syncingUntil = Date.now() + 7000;
+    return this.repository();
   }
 
   retryIngestion(documentId: string): Observable<void> {

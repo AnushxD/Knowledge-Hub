@@ -62,6 +62,21 @@
         }
       </div>
     </div>
+
+    <!-- What the last sync did. Shown to everyone, not just the admins who can
+         press the button: whether the library is current is what decides
+         whether to trust what is on it. -->
+    @if (store.repository(); as repo) {
+      @if (lastSync(); as summary) {
+        <p class="mt-1.5 text-[11.5px] text-subtle">
+          @if (repo.outcome === 'succeeded' && repo.finishedAt) {
+            Last synced {{ repo.finishedAt | timeAgo }} · {{ summary }}
+          } @else {
+            {{ summary }}
+          }
+        </p>
+      }
+    }
   </div>
 
   <!-- ── Toolbar ───────────────────────────────────────────────────────── -->
