@@ -3,8 +3,8 @@
 Session state only. Architecture, conventions, design decisions and workflow
 live in `CLAUDE.md` and are not repeated here.
 
-**Last updated:** 2026-08-12 · **Branch:** `main`, clean and pushed ·
-**Tests:** 226 green (17 Api · 50 Integrations · 21 DataAccess · 138 Services) ·
+**Last updated:** 2026-09-01 · **Branch:** `main`, clean and pushed ·
+**Tests:** 237 green (17 Api · 50 Integrations · 21 DataAccess · 149 Services) ·
 **CI:** pushed, not yet checked
 
 ---
@@ -139,6 +139,62 @@ press **Sync now** to drain the backlog.
 
 ---
 
+## Since then: the repository is chosen in the UI
+
+The `GitLab` section is no longer the only way to say which repository the hub
+mirrors. `repository_settings` is one row overlaying it, edited by an
+administrator under **Settings → Source repository** — instance, project,
+branch, sub-path, access token and webhook secret — and in force on the next
+call, with no restart.
+
+This reverses a recorded decision. `GitLabOptions` argued the mirror was "a
+single deployment-level setting" unlike the MCP servers; repointing it in
+practice meant a text editor on the box and an app-pool recycle, which is a
+ticket for a five-second decision. Configuration stays the default and the
+fallback: a field left blank falls back to it, so a box provisioned by
+environment variables is untouched by this.
+
+What it cost, and what was decided:
+
+- **Startup validation had to relax.** It now checks that a value which *is*
+  there is well formed, not that one exists — refusing to boot without a
+  repository would put the screen that sets one out of reach. No repository is
+  a first-run state: `/healthz` degraded, sync refused with a message, and a
+  library that says "No repository is configured yet" with the action beside
+  it rather than an empty shelf.
+- **The two secrets are editable and encrypted at rest** with Data Protection,
+  write-only: blank keeps, empty clears, nothing is ever sent back. Leaving the
+  token in configuration would have made the screen half a feature — pointing
+  the hub at a *private* project is most of the point. The cost is that they
+  are only as durable as `Authentication:KeyPath`, and unreadable ciphertext is
+  reported as "set it again" rather than as "not set".
+- **Settings resolve per call** through `IRepositorySettingsReader` — the
+  contract in Integrations, the database-backed overlay in Services, one cached
+  snapshot per process refreshed on save and every 30 seconds. A second API
+  instance picks a change up on that timer.
+- **Test connection speaks to GitLab before saving**, and reports whether the
+  sub-path holds any files. A wrong project is an obvious 404; a wrong sub-path
+  mirrors nothing and reads as a broken hub, so that is the one worth catching
+  while it is still being typed.
+- **Saving does not sync.** Changing the project replaces the whole library at
+  the next sync, and the form says so before the button is pressed.
+
+**Verified end to end, in a browser, against a throwaway database.** An API
+booted with `GitLab:BaseUrl` and `ProjectPath` empty — which the old build
+refused to do — reported the repository check as degraded and the library said
+so. Pointing it at `gitlab-org/gitlab-foss`, branch `master`, sub-path
+`.gitlab/issue_templates` purely through the settings screen, then pressing
+**Sync now**, mirrored 96 documents (1 not indexable) which then indexed. The
+probe was exercised both ways: a good sub-path reads "Read 'gitlab-org/
+gitlab-foss' on branch 'master' anonymously", and `doc/no-such-folder` reads
+"holds no files on that branch. The hub would mirror nothing."
+
+11 new Service tests cover the overlay, the three secret states, an unreadable
+token after a lost key ring, a rotated webhook secret being the one a delivery
+is checked against, and a hub pointed nowhere writing no failed sync.
+
+---
+
 ## What is not done
 
 - **Not deployed to the org Windows machine.** v1 is what is running there. The
@@ -149,9 +205,10 @@ press **Sync now** to drain the backlog.
   to exist on the runner, which the compose init script handles on a fresh
   volume — worth confirming on the first run.
 - **Not tried against the org's own GitLab.** Everything so far is against
-  gitlab.com anonymously. The token path (`GitLab:Token` in user-secrets,
-  `PRIVATE-TOKEN`) is written and unit-covered but has never had a real token
-  through it.
+  gitlab.com anonymously. The token path — in user-secrets or saved in the UI,
+  sent as `PRIVATE-TOKEN` — is written and covered by tests but has never had a
+  real token through it, so the encrypted-at-rest path has never protected a
+  credential that GitLab actually accepted.
 - **The webhook has never received a real delivery.** The decision logic is
   tested directly — secret match, wrong branch, non-push event — but no GitLab
   instance has actually called the endpoint.
@@ -162,8 +219,12 @@ press **Sync now** to drain the backlog.
 
 ## Known limits, stated rather than hidden
 
-- **One repository per deployment.** Which project a hub contains defines the
-  whole installation, so this is configuration, not a table.
+- **One repository per deployment.** Still one, but now chosen in the UI rather
+  than only in configuration. Which project a hub contains still defines the
+  whole installation — changing it replaces the library at the next sync.
+- **A saved change reaches a second API instance within 30 seconds**, not
+  instantly: the snapshot is per process and only the instance that saved it
+  refreshes immediately.
 - **A rename loses hub-local metadata.** A document is identified by its path,
   so a rename is a delete and an add. Description, tags and starring go with it.
 - **One sync at a time per process**, on a static semaphore. Sufficient for a

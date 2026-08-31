@@ -126,9 +126,21 @@ dotnet ef database update --project server/src/DocHub.DataAccess --startup-proje
 
 ### 5. Point the hub at a GitLab repository
 
-Every document comes from one GitLab project, so the API refuses to start
-without one. `appsettings.Development.json` ships pointing at a public project
-so a fresh clone has something to mirror; repoint it at yours:
+Every document comes from one GitLab project. There are two ways to say which:
+
+- **In the UI**, as an administrator — Settings → **Source repository**. This is
+  the normal way, including the access token and the webhook secret. It takes
+  effect immediately, with no restart, and it is what a deployment nobody wants
+  to edit files on should use. Skip the rest of this step if you take it.
+- **In configuration**, below. It is the deployment's default and the fallback
+  for anything left blank in the UI, so a box provisioned by environment
+  variables keeps working untouched.
+
+Leaving both unset is a valid state: the API starts, `/healthz` reports the
+repository check as `Degraded`, and the library says no repository has been
+chosen rather than looking broken. `appsettings.Development.json` ships pointing
+at a public project so a fresh clone has something to mirror; repoint it at
+yours:
 
 ```jsonc
 "GitLab": {
@@ -147,6 +159,12 @@ dotnet user-secrets set "GitLab:Token" "glpat-…" --project server/src/DocHub.A
 
 A token with `read_repository` is enough — nothing here writes to GitLab. Leave
 it unset for a public project.
+
+A token set in the UI instead is encrypted with ASP.NET Data Protection before
+it is stored, and is never sent back to a browser — the screen says only whether
+one is held. That makes it exactly as durable as the key ring: set
+`Authentication:KeyPath` on IIS, or a recycle leaves a token nobody can decrypt,
+which the screen then reports as needing to be set again.
 
 `SubPath` is usually what you want. A repository is mostly source code, and
 mirroring the root fills the tree with files no extractor can read; they are
@@ -218,8 +236,10 @@ plus `/swagger` and `/jobs`, now requires a session.
 
 ### 10. Mirror the repository
 
-The library starts empty — nothing is mirrored until you ask. Sign in as an
-administrator and press **Sync now** on the library screen, or:
+The library starts empty — nothing is mirrored until you ask. Saving a
+repository in Settings does not sync either: changing the project replaces the
+whole library at the next sync, so that stays a deliberate second step. Sign in
+as an administrator and press **Sync now** on the library screen, or:
 
 ```bash
 curl -X POST http://localhost:5080/api/repository/sync
@@ -525,12 +545,12 @@ Key settings, one strongly-typed Options class per external dependency:
 | Key | Purpose |
 |---|---|
 | `Database:ConnectionString` | Postgres connection — `documenthub_v2`, and also backs the Hangfire job store |
-| `GitLab:BaseUrl` | Instance root, e.g. `https://gitlab.example.org`. **Required** — the API refuses to start without it |
-| `GitLab:ProjectPath` | Namespaced project path, e.g. `team/handbook`. **Required** |
-| `GitLab:Branch` | Branch to mirror (default `main`) |
-| `GitLab:SubPath` | Directory to mirror, or empty for the whole repository |
-| `GitLab:Token` | Access token with `read_repository`. **Secret** — user-secrets or Key Vault. Empty for a public project |
-| `GitLab:WebhookSecret` | Shared secret GitLab sends as `X-Gitlab-Token`. **Empty refuses every webhook** — see below |
+| `GitLab:BaseUrl` | Instance root, e.g. `https://gitlab.example.org`. The deployment's default; an administrator can override it under Settings → Source repository. Unset means "not chosen yet" |
+| `GitLab:ProjectPath` | Namespaced project path, e.g. `team/handbook`. Overridable in the UI |
+| `GitLab:Branch` | Branch to mirror (default `main`). Overridable in the UI |
+| `GitLab:SubPath` | Directory to mirror, or empty for the whole repository. Overridable in the UI |
+| `GitLab:Token` | Access token with `read_repository`. **Secret** — user-secrets or Key Vault. Empty for a public project. Overridable in the UI, where it is encrypted with Data Protection and never read back |
+| `GitLab:WebhookSecret` | Shared secret GitLab sends as `X-Gitlab-Token`. **Empty refuses every webhook** — see below. Overridable in the UI, encrypted the same way |
 | `GitLab:MaxFileBytes` | Files above this are mirrored as metadata but never fetched or indexed (default 25 MB) |
 | `FileStorage:ConnectionString` | `UseDevelopmentStorage=true` locally; a real Azure connection string in production. **Unused by documents in v2** — files are streamed from GitLab — but the integration is still wired and health-checked |
 | `FileStorage:ContainerName` | Blob container (default `documents`) |
@@ -1214,7 +1234,9 @@ requests are same-origin and CORS never applies.
 | Method | Route | Purpose |
 |---|---|---|
 | `GET` | `/api/repository` | Which project is mirrored, and how the last sync went. One row read — no call to GitLab — so it is safe to poll |
-| `POST` | `/api/repository/sync` | Queue a sync; 202 with the state as it stands (Admin only) |
+| `POST` | `/api/repository/sync` | Queue a sync; 202 with the state as it stands (Admin only). 400 when no repository has been chosen yet |
+| `GET`/`PUT` | `/api/repository/settings` | Which repository is mirrored, and changing it (Admin only). Secrets are described, never returned; a change is in force with no restart |
+| `POST` | `/api/repository/settings/test` | Read the repository described by the body without saving it — project, branch and whether the sub-path holds any files (Admin only) |
 | `POST` | `/api/webhooks/gitlab` | GitLab push hook. Anonymous, authenticated by `X-Gitlab-Token`; a push to another branch is acknowledged and ignored |
 | `GET` | `/api/folders` | Whole folder tree with recursive document counts. Read-only — the tree is the repository's |
 | `GET` | `/api/documents` | List/filter documents (folder, text, tag, status, sort, paging) |
@@ -1284,16 +1306,22 @@ says which one:
   empty; check `GitLab:Branch`
 
 **API exits at startup with `GitLab:BaseUrl must be an absolute http or https
-URL`** — the mirror is not optional. Every document comes from one project, so
-an installation without one is not degraded, it is empty, and finding that out
-at boot beats finding it out from a blank library screen. See
+URL`** — a value is there and is not a URL. An *empty* section is fine and no
+longer stops the API: the repository can be chosen in the UI, and refusing to
+boot without one would put that screen out of reach. See
 [step 5](#5-point-the-hub-at-a-gitlab-repository).
+
+**`repository` reports `No repository is configured`** — nothing is broken and
+no sync is missing; the hub has not been pointed anywhere. Set it under
+Settings → **Source repository**, or in configuration.
 
 ### The library is empty after a sync
 
 Check `GET /api/repository`. The `outcome` distinguishes the three cases that
 look identical on screen:
 
+- `never` with `isConfigured: false` — no repository has been chosen. Set one
+  under Settings → **Source repository**.
 - `never` — no sync has run. Press **Sync now**.
 - `failed` — `error` says why. `GitLab refused the token` means
   `GitLab:Token` is missing or lacks `read_repository`; `has no project … or no

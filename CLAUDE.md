@@ -161,6 +161,9 @@ CLAUDE.md · SESSION.md · README.md · architecture-blueprint.md · chat-pipeli
 | `Integrations/Knowledge/McpRepositoryKnowledgeSource.cs` | The MCP client: fan-out across a server's tools, per-tool isolation, and the three response shapes it accepts. The tool contract it expects is documented on the class |
 | `Integrations/Knowledge/RepositoryToolPlan.cs` | Which of a server's tools a question is put to, and what disqualifies one. Shared by the searcher and the probe |
 | `Services/Repository/RepositoryMirrorService.cs` | The sync: list tree → diff on blob ids → add/repoint/remove → reconcile folders. Read the ordering comment before touching it |
+| `Services/Repository/StoredRepositorySettings.cs` | What an administrator saved, laid over configuration. One cached snapshot per process, refreshed on save |
+| `Services/Repository/IRepositorySettingsAdmin.cs` | The rules for changing the repository: what a usable address is, and that a secret is replaced rather than echoed |
+| `Integrations/SourceControl/IRepositorySettingsReader.cs` | The contract the GitLab client reads its settings through, and the configuration-only default |
 | `Integrations/SourceControl/GitLabRepositoryClient.cs` | The GitLab v4 client: paginated tree, raw file streaming, head commit |
 | `Services/Ingestion/IngestionService.cs` | fetch → extract → chunk → embed → index; permanent vs transient failure split |
 | `DataAccess/DocHubDbContext.cs` | Schema; `EmbeddingDimensions=768`, tsvector, HNSW, jsonb citations |
@@ -188,11 +191,11 @@ Settings that are load-bearing and easy to get wrong:
 | Key | Why it matters |
 |---|---|
 | `Llm:ContextTokens` | Ollama defaults `num_ctx` to 2048 and **discards the overflow silently**. The grounded prompt is 5,000+ tokens, so too low means the model cites passages it never saw |
-| `Authentication:KeyPath` | Data Protection keys. Unset on IIS, every app-pool recycle signs everyone out |
+| `Authentication:KeyPath` | Data Protection keys. Unset on IIS, every app-pool recycle signs everyone out — **and takes the repository token and webhook secret saved in the UI with it**, since those are encrypted with the same key ring |
 | `Knowledge:SourceTimeoutSeconds` | Per-source deadline; without one a hung source stalls every question |
 | `Authentication:Google:AllowedDomains` | The access gate. **Empty admits nobody**, never everybody |
 | `Embeddings:Dimensions` | Must match the migrated column. Changing it needs a migration *and* a full re-index |
-| `GitLab:BaseUrl` / `ProjectPath` | Required. Every document comes from here, so an unset one is an empty product, not a degraded one — it fails at boot |
+| `GitLab:*` | The deployment's default repository. **Every field is overridable in the UI** by an administrator, per `repository_settings`; unset means "not chosen yet", which is a first-run state and not a boot failure |
 | `GitLab:WebhookSecret` | The webhook endpoint is anonymous of necessity. **Empty refuses every delivery**, never accepts them all |
 | `GitLab:SubPath` | Narrows the mirror. A repository root is mostly code, and mirroring it fills the tree with files no extractor can read |
 
@@ -220,6 +223,40 @@ Recorded so they are not re-litigated. Each is a trade already reasoned through.
   regression-tested.
 
 **The mirror**
+- **Which repository is mirrored is data, not configuration.** `repository_settings`
+  is one row overlaying the `GitLab` section, edited by an administrator on the
+  settings screen. This reverses the earlier "a single deployment-level
+  setting" reading: repointing the hub is operational, and needing a text
+  editor on the box and an app-pool recycle to do it made a five-second
+  decision a ticket. Configuration remains the default and the fallback — a
+  field left blank falls back to it, so a box provisioned by environment
+  variables keeps working untouched.
+- **An unconfigured hub boots.** Startup validation checks that a value that is
+  *there* is well formed, not that one exists: refusing to start without a
+  repository would mean the screen that sets one could never be reached. No
+  repository is a first-run state — degraded health, a refused sync, and an
+  empty library that says what would fill it — never an error.
+- **The token and webhook secret are editable, and encrypted at rest** with
+  Data Protection, write-only: null leaves the stored one alone, empty clears
+  it, and nothing is ever sent back to a client. Pointing the hub at a private
+  project is most of the point of pointing it at all, so leaving the credential
+  in configuration would have made the screen half a feature. The cost is
+  stated: they are only as durable as `Authentication:KeyPath`, and ciphertext
+  that will not open is reported as "set it again" rather than as "not set".
+- **Settings are resolved per call, through `IRepositorySettingsReader`** —
+  defined in Integrations, because the GitLab client depends on it and
+  Integrations references nothing; implemented in Services, because the
+  overlay needs the database. One cached snapshot per process, refreshed on
+  save and after 30 seconds, so a change is in force with no restart. A second
+  API instance sees it on that timer rather than instantly.
+- **The address is probed before it is saved**, and the probe reports whether
+  the sub-path holds any files. A wrong project is a 404 and obvious; a wrong
+  sub-path mirrors nothing and looks like a broken hub, which is the mistake
+  worth catching while somebody is still typing.
+- **Saving does not sync.** Changing the project replaces the entire library at
+  the next sync — every document not in the new tree is removed — so it is a
+  second, deliberate button, and the form says so before the first one is
+  pressed.
 - **The repository is the system of record, and the hub is read-only.** Upload,
   move, delete and every folder mutation are gone. A control that edited the
   tree here would either be a lie the next sync undoes, or a write into
@@ -502,7 +539,10 @@ Recorded so they are not re-litigated. Each is a trade already reasoned through.
 - Client-side guards and hidden buttons are courtesy. The API enforces access,
   and every rule must hold with the client bypassed entirely.
 - Data Protection keys must outlive the process wherever sessions are expected
-  to (`Authentication:KeyPath`).
+  to (`Authentication:KeyPath`) — and now the repository's stored token and
+  webhook secret depend on the same key ring.
+- A secret stored in the database is written encrypted and never read back out
+  to a client. A screen says whether one is set, never what it is.
 - Response buffering must be off in front of the assistant — `proxy_buffering
   off` in nginx, `responseBufferLimit="0"` in `web.config`. Neither fails
   loudly: the answer simply stops streaming.
