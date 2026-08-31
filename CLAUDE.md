@@ -331,6 +331,20 @@ Recorded so they are not re-litigated. Each is a trade already reasoned through.
 **The assistant**
 - Citations are stored as `jsonb` on the message, denormalising title and
   heading, so a historical answer stays truthful after renames and deletes.
+- **A citation lands in the document, not in the extract.** `/docs/:id?chunk=n`
+  opens the rendered file — Markdown as Markdown, source with its line numbers,
+  a PDF at the cited page — scrolled to the passage and marking it. The
+  passage is found by its section heading in Markdown and by where its text
+  sits in the file for source, because chunks never span sections. The
+  extracted view is the fallback, taken when the passage cannot be located in
+  the rendered one or the type has no preview: landing on the right document
+  with nothing marked is the "citations resolve to the passage" guarantee
+  failing quietly, and a plainer view that certainly holds the passage beats a
+  prettier one that may not.
+- **That scroll is instant, never smooth.** A cited passage sits tens of
+  thousands of pixels down a long file, and a smooth scroll over that distance
+  does not arrive at all — measured at 22,728 pixels, the page had not moved
+  half a minute later.
 - A citation carries a `kind`: a `document` one resolves to `/docs/:id?chunk=n`,
   an `external` one to a URL, or to no link at all when the source gave none.
   That is what lets a repository passage, which has no document id, be cited.

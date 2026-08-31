@@ -689,8 +689,11 @@ Frames are split on the blank line separator, with a partial trailing frame held
 in a buffer until the rest arrives. Unknown event names are ignored rather than
 thrown on, so a future server event will not break an older client.
 
-Citations link to `/docs/:id?chunk=N`, which opens the document with that exact
-passage highlighted.
+Citations link to `/docs/:id?chunk=N`, which opens the document **as the file
+itself** — the rendered Markdown, the source with its line numbers, the PDF at
+its page — scrolled to the cited passage with it marked. The extracted view is
+the fallback, for a passage the rendered document cannot be aimed at and for a
+file type with no preview at all.
 
 **Response buffering must be off in front of all of this.** `proxy_buffering off`
 in nginx, `responseBufferLimit="0"` in `web.config`, plus the

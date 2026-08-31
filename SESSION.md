@@ -257,6 +257,51 @@ the new subject. 8 new tests.
 
 ---
 
+## Since then: a citation lands in the document, not the extract
+
+Following a citation used to switch to the **Extracted** view and scroll to the
+chunk there — the passage as the indexer holds it, formatting flattened out.
+The rendered document is what a reader came to read, so the deep link now lands
+there and marks the passage in place:
+
+- **Markdown** — found by the section's heading, since chunks never span
+  sections. Repeated headings are told apart by counting how many earlier
+  sections carry the same one. The heading, its prose and its table are washed
+  and railed as one block.
+- **Source and text** — found by where the section's first line sits in the
+  file, which is exact for these types because the extracted text *is* the
+  file. The chunk's own lines are marked in the numbered gutter view.
+- **PDF** — the frame is opened at `#page=N` when the section names a page.
+  Nothing outside the browser's viewer can reach its pages, and that fragment
+  is the one lever it offers. Untested: the library has no PDFs in it.
+- **Anything else** — Word, slides, a passage the rendered document cannot be
+  aimed at — falls back to the extracted view exactly as before.
+
+Switching between the two views now keeps the highlight and re-reveals it;
+"Document" used to clear it, which sent a reader who had just followed a
+citation looking for their passage by hand.
+
+**Two things learned by measuring rather than assuming.** A smooth
+`scrollIntoView` over 22,728 pixels never arrives — the page had not moved half
+a minute later — so the landing is instant. And a `ResizeObserver` layer built
+to fight a document that appeared to shrink 27,000 pixels mid-scroll was
+removed once the shrink turned out to be an artefact of the headless browser
+pane reporting a zero-height viewport; with a real viewport the plain scroll
+lands correctly every time.
+
+**Verified in a browser** against a copy of the library: the *Activity
+Analytics* citation lands on that section of the rendered Markdown with the
+endpoint table marked, and a `.gitlab-ci.yml` citation lands on line 205 of the
+source view with the chunk's lines marked.
+
+**Found while verifying, not fixed:** a session whose Identity security stamp
+has changed — after a password reset, say — gets a **500** from every request
+instead of being signed out. `SecurityStampValidator` signs out
+`Identity.TwoFactorRememberMe`, which `AuthenticationRegistration` never
+registers. Reachable through the ordinary change-password path.
+
+---
+
 ## What is not done
 
 - **Not deployed to the org Windows machine.** v1 is what is running there. The

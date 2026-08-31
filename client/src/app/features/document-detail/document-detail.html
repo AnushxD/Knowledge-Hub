@@ -154,7 +154,7 @@
                     type="button"
                     class="dh-seg dh-seg-label"
                     [class.dh-seg-active]="showExtracted()"
-                    (click)="showExtracted.set(true)"
+                    (click)="viewExtracted()"
                   >
                     Extracted
                   </button>
@@ -253,9 +253,7 @@
               @if (!canRender() && renderer() === 'none') {
                 <!-- Said plainly rather than left to look broken: this file type
                      has no faithful in-browser rendering. -->
-                <p
-                  class="border-b border-hairline px-6 py-2.5 text-[12px] text-subtle lg:px-8"
-                >
+                <p class="border-b border-hairline px-6 py-2.5 text-[12px] text-subtle lg:px-8">
                   {{ kindLabel(document.kind) }} files are shown as the text ingestion extracted.
                   Download the original to see its formatting.
                 </p>
@@ -271,7 +269,9 @@
                     >
                       <div class="mb-1.5 flex items-baseline gap-2">
                         <h2 class="text-[14px] font-semibold text-ink">{{ section.heading }}</h2>
-                        <span class="text-[11px] text-subtle">~{{ section.tokenCount }} tokens</span>
+                        <span class="text-[11px] text-subtle"
+                          >~{{ section.tokenCount }} tokens</span
+                        >
                         @if (highlightChunk() === section.chunkId) {
                           <span
                             class="rounded-full px-2 py-px text-[10px] font-medium"

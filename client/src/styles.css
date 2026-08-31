@@ -698,6 +698,25 @@
     word-break: break-word;
     color: var(--dh-text);
   }
+
+  /* ---- The cited passage, marked in the rendered document ---------------
+     Global rather than scoped to the document screen: the elements it lands on
+     come out of the Markdown parser through [innerHTML], so they never carry a
+     component's style attribute and a scoped rule would not reach them.
+
+     Applied element by element down the section, since there is no wrapper to
+     put it on. Consecutive blocks read as one highlighted range because the
+     rail lines up; the gaps between them are the prose's own margins. */
+  .dh-cited-passage {
+    background: color-mix(in oklab, var(--dh-ai-from) 11%, transparent);
+    box-shadow: inset 3px 0 0 var(--dh-brand-500);
+    /* Pulled back out again so the highlighted text stays on the same left
+       edge as the rest of the document — a passage that shifts sideways when
+       it is highlighted reads as a different block of content. */
+    padding-left: 12px;
+    margin-left: -12px;
+    border-radius: 0 2px 2px 0;
+  }
 }
 
 /* ---------------------------------------------------------------------------

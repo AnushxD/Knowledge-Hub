@@ -466,8 +466,11 @@ cited, with the document title and heading copied onto the citation. Renaming
 or deleting a document later cannot rewrite what a historical answer claimed
 to be based on.
 
-Citations link to `/docs/:id?chunk=N`, which opens the document with that exact
-passage highlighted.
+Citations link to `/docs/:id?chunk=N`, which opens the document **as the file
+itself** — the rendered Markdown, the source with its line numbers, the PDF at
+its page — scrolled to the cited passage with it marked. The extracted view is
+the fallback, for a passage the rendered document cannot be aimed at and for a
+file type with no preview at all.
 
 For the full technical walkthrough — every stage from the HTTP request to the
 persisted citation, with flow charts, the exact prompt, the rank-fusion maths and
