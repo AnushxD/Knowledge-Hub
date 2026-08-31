@@ -11,6 +11,121 @@ namespace DocHub.Services.Tests;
 /// </summary>
 public sealed class GroundedPromptTests
 {
+    [Fact]
+    public void A_quoted_path_must_appear_in_the_passage_it_cites()
+    {
+        var passages = new[]
+        {
+            Passage(
+                "fine_grained_access_tokens_rest",
+                "Cluster Agent",
+                """
+                Grants the ability to create, delete, and read cluster agents.
+                | Create | Project | `POST` | `/projects/:id/cluster_agents` |
+                """),
+        };
+
+        // The path is real and the words around it overlap heavily — "cluster",
+        // "agent", "projects" — so word counting alone accepts this. No passage
+        // the model was given contains the endpoint it quoted, though, so there
+        // is nothing to point the citation at and nothing grounding the claim.
+        var citations = GroundedPrompt.VerifyCitations(
+            "- `POST /projects/:id/cluster_agents/:agent_id/tokens` [1]",
+            passages,
+            "how do I create a cluster agent token?");
+
+        Assert.Empty(citations);
+    }
+
+    [Fact]
+    public void A_misattributed_path_is_repointed_at_the_passage_that_has_it()
+    {
+        var passages = new[]
+        {
+            Passage(
+                "fine_grained_access_tokens_rest",
+                "Cluster Agent",
+                "Grants the ability to create, delete, and read cluster agents. "
+                + "| Create | Project | `POST` | `/projects/:id/cluster_agents` |"),
+            Passage(
+                "fine_grained_access_tokens_rest",
+                "Cluster Agent Token",
+                "Grants the ability to create, read, and revoke cluster agent tokens. "
+                + "| Create | Project | `POST` | `/projects/:id/cluster_agents/:agent_id/tokens` |",
+                chunkId: 22),
+        };
+
+        // The model quoted the right path and marked it against the wrong
+        // section. Refusing would throw away a true answer; leaving it as
+        // written would send a reader somewhere the path is not.
+        var citation = Assert.Single(GroundedPrompt.VerifyCitations(
+            "- `POST /projects/:id/cluster_agents/:agent_id/tokens` [1]",
+            passages,
+            "how do I create a cluster agent token?"));
+
+        Assert.Equal("Cluster Agent Token", citation.Heading);
+        Assert.Equal(22, citation.ChunkId);
+
+        // The number in the text is what the reader clicks, so it stays as the
+        // model wrote it — only where it points has been corrected.
+        Assert.Equal(1, citation.Marker);
+    }
+
+    [Fact]
+    public void One_passage_is_not_cited_twice_because_two_markers_were_wrong()
+    {
+        var passages = new[]
+        {
+            Passage(
+                "fine_grained_access_tokens_rest",
+                "Cluster Agent",
+                "Grants the ability to create, delete, and read cluster agents. "
+                + "| Create | Project | `POST` | `/projects/:id/cluster_agents` |"),
+            Passage(
+                "fine_grained_access_tokens_rest",
+                "Cluster Agent Token",
+                "Grants the ability to create, read, and revoke cluster agent tokens. "
+                + "| Create | Project | `POST` | `/projects/:id/cluster_agents/:agent_id/tokens` |",
+                chunkId: 22),
+        };
+
+        // [1] is wrong and would be corrected onto the section [2] already
+        // cites correctly. One claim, one source: the corrected marker gives
+        // way rather than rendering as corroboration, and the number the model
+        // got right is the one the reader keeps.
+        var citation = Assert.Single(GroundedPrompt.VerifyCitations(
+            "- `POST /projects/:id/cluster_agents/:agent_id/tokens` [1][2]",
+            passages,
+            "how do I create a cluster agent token?"));
+
+        Assert.Equal("Cluster Agent Token", citation.Heading);
+        Assert.Equal(2, citation.Marker);
+    }
+
+    [Fact]
+    public void A_quoted_path_that_is_in_the_passage_is_cited()
+    {
+        var passages = new[]
+        {
+            Passage(
+                "fine_grained_access_tokens_rest",
+                "Activity Analytics",
+                """
+                Grants the ability to read activity analytics.
+                | Read | Group | `GET` | `/analytics/group_activity/issues_count` |
+                """),
+        };
+
+        // The list line the prompt now asks for: short, almost no prose, and
+        // verified by the one thing on it that matters.
+        var citations = GroundedPrompt.VerifyCitations(
+            "- `/analytics/group_activity/issues_count` [1]",
+            passages,
+            "can you specify the paths?");
+
+        Assert.Equal("Activity Analytics", Assert.Single(citations).Heading);
+    }
+
     /// <param name="body">
     /// Real prose, not a placeholder: a citation is now checked against the
     /// words of the passage it points at, so a fixture whose body said nothing

@@ -155,7 +155,10 @@ internal sealed class McpRepositoryKnowledgeSource(
         // spend that whole budget on however many tools the server happens to
         // expose.
         var answers = await Task.WhenAll(
-            tools.Select(tool => AskAsync(client, tool, query.Text, take, ct)));
+            // The anchored form when there is one: a remote tool asked "can
+            // you specify the paths?" has no more to go on than we would.
+            tools.Select(tool =>
+                AskAsync(client, tool, query.SemanticText ?? query.Text, take, ct)));
 
         var failed = answers.Where(answer => answer.Failure is not null).ToList();
 

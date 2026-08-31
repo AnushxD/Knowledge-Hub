@@ -68,7 +68,8 @@ internal sealed class CompositeKnowledgeSource(
             // it. Splitting it would cap how much a strong source can
             // contribute based only on how many other sources happen to be
             // registered — including ones that returned nothing.
-            Math.Clamp(request.Take, 1, 100));
+            Math.Clamp(request.Take, 1, 100),
+            request.SemanticQuery?.Trim() is { Length: > 0 } anchored ? anchored : null);
 
         var outcomes = await SearchAllAsync(query, ct);
 

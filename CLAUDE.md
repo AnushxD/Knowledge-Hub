@@ -155,6 +155,7 @@ CLAUDE.md · SESSION.md · README.md · architecture-blueprint.md · chat-pipeli
 |---|---|
 | `chat-pipeline.md` | End-to-end walkthrough of answering one question, with flow charts. Read before changing anything in the chat path |
 | `Services/Chat/GroundedPrompt.cs` | Prompt construction, citation verification, refusal detection. Pure functions |
+| `Services/Chat/ConversationQuery.cs` | What a follow-up is actually searched for — the conversation reaching retrieval, not just the model |
 | `Services/Chat/ChatService.cs` | RAG orchestrator: retrieve → refuse-or-generate → verify → persist |
 | `Services/Search/SearchService.cs` | Hybrid search + RRF; `RankAsync` shared by search and retrieval |
 | `Services/Knowledge/CompositeKnowledgeSource.cs` | Fan-out, per-source deadlines, failure isolation, rank fusion, dedupe |
@@ -498,6 +499,26 @@ Recorded so they are not re-litigated. Each is a trade already reasoned through.
   without one every question retrieves something and the model is handed
   whatever was least unlike it. The search screen has no floor: a person can
   see a weak result for what it is, and the assistant cannot.
+- **A follow-up is retrieved with the conversation in front of it.** A question
+  under three substantial words is searched together with the last two user
+  questions — on the vector branch only, since the keyword branch ANDs its terms
+  and widening it there matches less. The conversation reached the model and not
+  retrieval, and "can you specify the paths?" one turn after an answer quoting
+  them retrieved three passages about user preferences while the passage that
+  answered it sat at rank 285 of 476, outside the floor. Composed, it ranks
+  first.
+- **The prompt asks for the specifics, not a summary of them.** Paths,
+  endpoints, commands and numbers are copied out verbatim and listed one per
+  line, each with its own marker. "Answer in prose, briefly" on its own produced
+  "the paths provided" from a table of three endpoints, which is a summary whose
+  every useful part has been removed.
+- **A quoted path must appear in the passage cited for it**, checked before word
+  overlap and settling the matter on its own. If another supplied passage
+  contains it, the marker is re-pointed there rather than dropped — the claim is
+  grounded and only the number was wrong — and surplus markers landing on one
+  passage are dropped so a single source cannot render as corroboration. Word
+  overlap is weakest exactly where a copied path is strongest: a list line is a
+  short sentence with few words in it.
 - **A citation is checked against the sentence citing it**, not just against the
   list of supplied passages. Sharing at least two substantial words, and not
   only words the question already supplied — a source that echoes the query

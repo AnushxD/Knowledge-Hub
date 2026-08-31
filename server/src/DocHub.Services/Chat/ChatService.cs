@@ -68,10 +68,16 @@ internal sealed class ChatService(
         // Across every configured knowledge source, not just documents. What
         // comes back is already merged and ranked, so nothing below this line
         // knows or cares how many sources there were.
+        // The conversation reaches retrieval, not just the model. A follow-up
+        // like "can you specify the paths?" names no subject, and searched on
+        // its own words it finds whatever else in the library mentions paths —
+        // which is how an answer can be quoted in one turn and declared missing
+        // in the next.
         var retrieval = await knowledge.RetrieveAsync(
             new SearchRequest
             {
                 Query = question,
+                SemanticQuery = ConversationQuery.For(session, question),
                 FolderId = request.FolderId,
                 Take = options.PassageCount,
             },

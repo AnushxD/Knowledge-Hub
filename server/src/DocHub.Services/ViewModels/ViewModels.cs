@@ -147,6 +147,19 @@ public record SearchDiagnosticsViewModel(
 public record SearchRequest
 {
     public string Query { get; init; } = string.Empty;
+
+    /// <summary>
+    /// What the <b>vector</b> branch searches for, when that should differ from
+    /// the words typed. Empty means "the same thing", which is every search
+    /// from the search screen.
+    ///
+    /// Only the vector branch, and deliberately: the assistant anchors a thin
+    /// follow-up to the subject of the conversation, and putting that wider
+    /// text through the keyword branch would *narrow* it — the query is ANDed,
+    /// so every word added is one more term a chunk has to contain.
+    /// </summary>
+    public string? SemanticQuery { get; init; }
+
     public Guid? FolderId { get; init; }
     public string[]? Extension { get; init; }
     public string[]? Tag { get; init; }

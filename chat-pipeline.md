@@ -234,6 +234,26 @@ The session title comes from the opening question, collapsed to single spaces an
 truncated at 80 characters with an ellipsis, so conversation history reads as a
 list of questions rather than of timestamps.
 
+**What gets searched is not always what was typed.**
+[ConversationQuery](server/src/DocHub.Services/Chat/ConversationQuery.cs) decides
+that. A question with fewer than three substantial words — four characters and
+up, the same measure citation verification uses — is taken to be leaning on the
+conversation, and the last two user questions are put in front of it for the
+*vector* branch only. Everything else is searched exactly as asked.
+
+This was found the hard way. "can you specify the paths?", one turn after an
+answer that quoted them, searched on its own five words: the keyword branch
+matched nothing (its terms are ANDed, and no chunk held both *specify* and
+*path*), the vector branch returned three passages about user preferences at
+distance 0.38, and the passage that actually answered it sat at rank 285 of 476,
+distance 0.52 — outside the relevance floor. The assistant declined, correctly,
+on what it had been handed. Composed with the question before it, the same
+passage ranks first at 0.235.
+
+Only the vector branch is widened. The keyword branch ANDs its terms, so every
+word added there is one more a chunk has to contain — widening it would match
+less rather than more.
+
 ---
 
 ## Stage 2 — Retrieval
@@ -455,7 +475,9 @@ Rules:
   4. If the sources do not answer the question, reply with exactly:
      I don't have information about that in the indexed documents.
   5. Partial information is not a failure.
-  6. Answer in prose, briefly.
+  6. Give the specifics, do not point at them — paths, endpoints, commands and
+     numbers copied out exactly, listed one per line with a source number each.
+  7. Otherwise answer in prose, briefly.
 
 SOURCES
 
@@ -468,6 +490,13 @@ SOURCES
 
 Reminder: end every sentence with a bracketed source number, like [1].
 ```
+
+Rule 6 exists because of a real answer. Handed a table of three endpoints, the
+model wrote "you need access granted by a group using the `GET` method on the
+paths provided" — a summary of a table, with the table's whole value removed.
+"Answer in prose, briefly" was doing that: it is now conditional on there being
+nothing concrete to copy. The example under the rule shows a cited list, because
+every line still has to carry its own source number.
 
 Four choices in that layout, each with a specific failure it prevents:
 
@@ -574,6 +603,20 @@ flowchart TD
     style H fill:#4a2a2a,stroke:#c94b4b,color:#f5dede
     style O fill:#25402f,stroke:#3f9c62,color:#dff0e5
 ```
+
+**A quoted path decides its own citation.** Before the word-overlap test, the
+sentence is scanned for endpoint paths. If it quotes one, the cited passage must
+contain that exact string — and if another supplied passage does contain it, the
+marker is re-pointed there rather than dropped, because the claim is grounded
+and only the number was wrong. Where several wrong markers would land on one
+passage, the surplus is dropped: one claim with one source must not render as
+corroboration. Observed with `POST /projects/:id/cluster_agents/:agent_id/tokens`
+quoted correctly and attributed to the neighbouring *Cluster Agent* section,
+which shares the words "cluster" and "agent" and does not contain the path.
+
+This matters more since the prompt started asking for specifics: a list line is a
+short sentence with few words in it, which is exactly where word overlap has
+least to work with and a copied path has most.
 
 **Why verification is not optional.** A model asked to cite will occasionally
 produce a plausible-looking `[7]` when it was given four sources. Rendered
@@ -762,3 +805,9 @@ judgement, not whether a model is any good.
 9. Any source must return **verbatim passages, not summaries**, or the assistant
    would be citing text it was never given.
 10. At most one knowledge source may touch the request-scoped `DbContext`.
+11. A follow-up is searched with the conversation in front of it, and only on the
+    vector branch. Retrieving a question with no subject on its own words is how
+    an answer gets quoted in one turn and declared missing in the next.
+12. A path quoted in an answer must appear in the passage the citation points at.
+    Where it appears in a different supplied passage, the citation is corrected
+    to that one; where it appears in none, the marker goes.

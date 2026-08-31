@@ -46,6 +46,7 @@ internal sealed class DocumentKnowledgeSource(ISearchService search) : IKnowledg
             new SearchRequest
             {
                 Query = query.Text,
+                SemanticQuery = query.SemanticText,
                 FolderId = query.FolderId,
                 Take = query.Take,
             },

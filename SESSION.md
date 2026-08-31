@@ -4,7 +4,7 @@ Session state only. Architecture, conventions, design decisions and workflow
 live in `CLAUDE.md` and are not repeated here.
 
 **Last updated:** 2026-09-01 · **Branch:** `main`, clean and pushed ·
-**Tests:** 237 green (17 Api · 50 Integrations · 21 DataAccess · 149 Services) ·
+**Tests:** 248 green (17 Api · 50 Integrations · 21 DataAccess · 160 Services) ·
 **CI:** pushed, not yet checked
 
 ---
@@ -203,6 +203,57 @@ gitlab-foss' on branch 'master' anonymously", and `doc/no-such-folder` reads
 11 new Service tests cover the overlay, the three secret states, an unreadable
 token after a lost key ring, a rotated webhook secret being the one a delivery
 is checked against, and a hub pointed nowhere writing no failed sync.
+
+---
+
+## Since then: a follow-up question found nothing
+
+Reported from the UI: "how to get the Activity Analytics?" was answered and
+cited; "can you specify the paths?" — the very next turn — refused. The document
+had the paths all along.
+
+Diagnosed against the local database rather than guessed at:
+
+- The cited chunk (`tokens/fine_grained_access_tokens_rest.md`, section
+  *Activity Analytics*) holds all three endpoints verbatim. Turn 1 had them and
+  wrote "the paths provided" instead, because prompt rule 6 said "Answer in
+  prose, briefly" and nothing asked for specifics.
+- Turn 2 was searched on its own five words. `ChatService` passed `Query =
+  question`; the conversation was replayed to the model and never to retrieval.
+- Keyword branch: **0 hits** — `websearch_to_tsquery` ANDs its terms and no
+  chunk holds both *specify* and *path*.
+- Vector branch: nearest were *Preference* 0.379, *Following* 0.384,
+  *Suggestion* 0.387 — inside the 0.5 floor, so the model was handed those.
+- The passage that answered the question: **rank 285 of 476, distance 0.5199**,
+  outside the floor. The refusal was correct on what was supplied.
+
+Fixed in three parts:
+
+1. `ConversationQuery` — a question under three substantial words is searched
+   together with the last two user questions, on the **vector branch only**
+   (`SearchRequest.SemanticQuery`, carried through `KnowledgeQuery.SemanticText`
+   so MCP sources get the anchored form too). Measured: the same passage goes
+   from rank 285 to **rank 1 at 0.2354**.
+2. Prompt rule 6 now asks for the specifics — paths, endpoints, commands and
+   numbers copied out exactly, listed one per line with a marker each — and
+   "answer in prose, briefly" became rule 7, conditional on there being nothing
+   concrete to copy.
+3. A quoted path must appear in the passage cited for it. Found while verifying
+   part 2: the model quoted `POST /projects/:id/cluster_agents/:agent_id/tokens`
+   correctly and attributed it to the neighbouring *Cluster Agent* section,
+   which shares "cluster" and "agent" and does not contain the path. Word
+   overlap is weakest exactly where a copied path is strongest — a list line is
+   a short sentence — and rule 6 makes list answers the norm. A marker whose
+   path lives in a *different* supplied passage is re-pointed there rather than
+   dropped, because refusing would throw away a true answer; surplus markers
+   landing on one passage are dropped so one source cannot render as two.
+
+**Verified against the real model**, on a copy of the local library so the
+working database was untouched. The reported conversation now answers both
+turns from the *Activity Analytics* chunk, listing all three endpoints. A
+self-contained change of subject mid-conversation is not anchored and answers
+correctly; a thin one ("and vulnerabilities?") is anchored and still answers on
+the new subject. 8 new tests.
 
 ---
 

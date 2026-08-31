@@ -69,8 +69,18 @@ internal static partial class GroundedPrompt
             """
             5. Partial information is not a failure. Answer the part the sources cover,
                cite it, and say plainly which part they do not cover.
-            6. Answer in prose, briefly. Do not restate the question, do not describe
-               what the sources are, and do not mention these rules.
+            6. Give the specifics, do not point at them. Paths, endpoints, commands,
+               settings, file names, versions and numbers are copied out of the source
+               exactly as written. "The paths provided" is not an answer; the paths
+               are. When there are several, list them one per line, each line ending
+               with its source number:
+
+                   The group activity endpoints are [1]:
+                   - `/analytics/group_activity/issues_count` [1]
+                   - `/analytics/group_activity/merge_requests_count` [1]
+
+            7. Otherwise answer in prose, briefly. Do not restate the question, do not
+               describe what the sources are, and do not mention these rules.
 
             SOURCES
             """);
@@ -113,6 +123,12 @@ internal static partial class GroundedPrompt
     {
         var cited = new List<Citation>();
         var seen = new HashSet<int>();
+
+        // Markers whose passage was corrected rather than accepted as written.
+        // Kept apart so that, where one of them lands on a passage another
+        // marker already cites correctly, it is the corrected one that gives
+        // way — the reader keeps the number the model got right.
+        var repointed = new HashSet<int>();
         var questionTerms = Terms(question);
 
         foreach (Match match in CitationMarker().Matches(answer))
@@ -125,13 +141,34 @@ internal static partial class GroundedPrompt
             if (!seen.Add(marker)) continue;
 
             var passage = passages[index];
+            var sentence = SentenceAround(answer, match.Index);
 
             // A marker pointing at a real passage is not the same as a passage
             // that says anything about the sentence citing it.
-            if (!Supports(passage.Text, SentenceAround(answer, match.Index), questionTerms))
+            if (!Supports(passage.Text, sentence, questionTerms))
             {
-                seen.Remove(marker);
-                continue;
+                // Before dropping it: when the sentence quotes a path and some
+                // other supplied passage contains that exact path, the claim is
+                // grounded and only the number is wrong. Observed with a model
+                // quoting `/projects/:id/cluster_agents/:agent_id/tokens`
+                // correctly and marking it against the neighbouring "Cluster
+                // Agent" section.
+                //
+                // Re-pointed rather than dropped, because dropping it refuses a
+                // true answer, and keeping it as written sends a reader to a
+                // passage where the path is not. The evidence is the path
+                // itself appearing verbatim, which is stronger than what the
+                // marker asserted.
+                var grounded = WhereQuoted(sentence, passages);
+
+                if (grounded is null)
+                {
+                    seen.Remove(marker);
+                    continue;
+                }
+
+                repointed.Add(marker);
+                passage = grounded;
             }
 
             cited.Add(new Citation(
@@ -147,9 +184,53 @@ internal static partial class GroundedPrompt
                 SourceName: passage.SourceName));
         }
 
-        return [.. cited.OrderBy(citation => citation.Marker)];
+        // One passage, one citation. Several markers on a line, all pointing
+        // somewhere wrong, would otherwise be corrected onto the same passage
+        // and render as corroboration for a claim that has a single source.
+        // The surplus markers are dropped, and stripped from the answer text
+        // exactly as any unresolvable marker is.
+        var directlyCited = cited
+            .Where(citation => !repointed.Contains(citation.Marker))
+            .Select(Identity)
+            .ToHashSet();
+
+        var kept = new List<Citation>();
+
+        foreach (var citation in cited.OrderBy(citation => citation.Marker))
+        {
+            var surplus = repointed.Contains(citation.Marker)
+                && (directlyCited.Contains(Identity(citation))
+                    || kept.Any(other => Identity(other) == Identity(citation)));
+
+            if (!surplus) kept.Add(citation);
+        }
+
+        return kept;
     }
 
+    /// <summary>What makes two citations point at the same thing.</summary>
+    private static (Guid?, int?, string, string) Identity(Citation citation) =>
+        (citation.DocumentId, citation.ChunkId, citation.Title, citation.Heading);
+
+
+    /// <summary>
+    /// The supplied passage that actually contains a path quoted in the
+    /// sentence, or null when none does.
+    ///
+    /// First match wins, and the passages arrive ranked, so a path documented
+    /// in two places is attributed to the one retrieval thought most relevant.
+    /// </summary>
+    private static RetrievedPassage? WhereQuoted(
+        string sentence,
+        IReadOnlyList<RetrievedPassage> passages)
+    {
+        var paths = PathLiteral().Matches(sentence).Select(match => match.Value).ToList();
+
+        if (paths.Count == 0) return null;
+
+        return passages.FirstOrDefault(passage =>
+            paths.Any(path => passage.Text.Contains(path, StringComparison.OrdinalIgnoreCase)));
+    }
 
     /// <summary>
     /// Whether a passage plausibly backs the sentence that cited it.
@@ -177,6 +258,25 @@ internal static partial class GroundedPrompt
         string sentence,
         IReadOnlySet<string> questionTerms)
     {
+        // A quoted path is the strongest evidence either way, so it is checked
+        // before the word counting and settles the matter on its own.
+        //
+        // Rule 6 asks for specifics copied out verbatim, which makes most
+        // answers a list of paths — and a list line is a short sentence with
+        // few words in it, which is exactly where the overlap test below has
+        // least to work with. Observed: `/projects/:id/cluster_agents/:agent_id/tokens`
+        // was quoted correctly and attributed to the neighbouring "Cluster
+        // Agent" passage, which shares the words "cluster" and "agent" and does
+        // not contain the path at all.
+        var paths = PathLiteral().Matches(sentence)
+            .Select(match => match.Value)
+            .ToList();
+
+        if (paths.Count > 0)
+        {
+            return paths.Any(path => passage.Contains(path, StringComparison.OrdinalIgnoreCase));
+        }
+
         var sentenceTerms = Terms(sentence);
         if (sentenceTerms.Count < 3) return true;
 
@@ -235,6 +335,15 @@ internal static partial class GroundedPrompt
 
     [GeneratedRegex(@"[A-Za-z][A-Za-z0-9_-]*")]
     private static partial Regex WordPattern();
+
+    /// <summary>
+    /// An endpoint path as a source writes one: a leading slash and at least
+    /// two segments, so a bare "/" or a date like 2024/08 does not qualify.
+    /// Long enough to be worth insisting on, and copied character for character
+    /// by any model that is reading rather than remembering.
+    /// </summary>
+    [GeneratedRegex(@"/[A-Za-z0-9_:.-]+(?:/[A-Za-z0-9_:.-]+)+")]
+    private static partial Regex PathLiteral();
 
     /// <summary>
     /// Whether the model declined for lack of grounding.

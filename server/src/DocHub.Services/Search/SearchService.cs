@@ -109,6 +109,12 @@ internal sealed class SearchService(
 
         var take = Math.Clamp(request.Take, 1, 100);
 
+        // What is embedded may be wider than what is typed — a follow-up
+        // carries the subject of the conversation with it. The keyword branch
+        // keeps the words as asked: it ANDs its terms, so the same widening
+        // there would match less rather than more.
+        var semantic = request.SemanticQuery?.Trim() is { Length: > 0 } wider ? wider : query;
+
         var filter = new ChunkSearchDto
         {
             Text = query,
@@ -133,7 +139,7 @@ internal sealed class SearchService(
         // two commands at once. Issuing them together fails outright — and
         // fails intermittently, because a slow embedding provider hides the
         // race by letting the keyword query finish first.
-        var embeddingTask = EmbedQueryAsync(query, ct);
+        var embeddingTask = EmbedQueryAsync(semantic, ct);
 
         var keyword = await chunks.SearchKeywordAsync(filter, ct);
 

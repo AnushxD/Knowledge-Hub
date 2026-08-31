@@ -32,7 +32,22 @@ public sealed record KnowledgeSourceStatus(KnowledgeSourceState State, string De
 /// silently switch a repository source off.
 /// </param>
 /// <param name="Take">How many passages the caller can use.</param>
-public sealed record KnowledgeQuery(string Text, Guid? FolderId, int Take);
+/// <param name="Text">The question as it was asked.</param>
+/// <param name="SemanticText">
+/// The same question with the conversation's subject in front of it, when the
+/// question was too thin to stand alone — "can you specify the paths?" becomes
+/// "how do I get Activity Analytics? can you specify the paths?".
+///
+/// Null when the question already carried its own subject, which is most of
+/// them. A source matching on meaning should prefer this; one matching on
+/// literal words should not, since every word added is one more it will insist
+/// on finding.
+/// </param>
+public sealed record KnowledgeQuery(
+    string Text,
+    Guid? FolderId,
+    int Take,
+    string? SemanticText = null);
 
 /// <summary>
 /// What a passage points at, and therefore how a citation to it resolves.
