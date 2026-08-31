@@ -124,54 +124,7 @@ dotnet ef database update --project server/src/DocHub.DataAccess --startup-proje
 > stays exactly as release 1 left it, and `documenthub-schema.sql` is frozen
 > alongside it.
 
-### 5. Point the hub at a GitLab repository
-
-Every document comes from one GitLab project. There are two ways to say which:
-
-- **In the UI**, as an administrator — Settings → **Source repository**. This is
-  the normal way, including the access token and the webhook secret. It takes
-  effect immediately, with no restart, and it is what a deployment nobody wants
-  to edit files on should use. Skip the rest of this step if you take it.
-- **In configuration**, below. It is the deployment's default and the fallback
-  for anything left blank in the UI, so a box provisioned by environment
-  variables keeps working untouched.
-
-Leaving both unset is a valid state: the API starts, `/healthz` reports the
-repository check as `Degraded`, and the library says no repository has been
-chosen rather than looking broken. `appsettings.Development.json` ships pointing
-at a public project so a fresh clone has something to mirror; repoint it at
-yours:
-
-```jsonc
-"GitLab": {
-  "BaseUrl": "https://gitlab.example.org",
-  "ProjectPath": "team/handbook",   // namespaced path, as GitLab spells it
-  "Branch": "main",
-  "SubPath": "docs"                 // narrow the mirror; empty means the whole repo
-}
-```
-
-The access token is the one real secret and never goes in a committed file:
-
-```bash
-dotnet user-secrets set "GitLab:Token" "glpat-…" --project server/src/DocHub.Api
-```
-
-A token with `read_repository` is enough — nothing here writes to GitLab. Leave
-it unset for a public project.
-
-A token set in the UI instead is encrypted with ASP.NET Data Protection before
-it is stored, and is never sent back to a browser — the screen says only whether
-one is held. That makes it exactly as durable as the key ring: set
-`Authentication:KeyPath` on IIS, or a recycle leaves a token nobody can decrypt,
-which the screen then reports as needing to be set again.
-
-`SubPath` is usually what you want. A repository is mostly source code, and
-mirroring the root fills the tree with files no extractor can read; they are
-counted as skipped rather than mirrored, but the tree is easier to recognise
-without them.
-
-### 6. Create the blob storage container
+### 5. Create the blob storage container
 
 ```bash
 dotnet run --project server/src/DocHub.Api -- init-storage
@@ -180,7 +133,7 @@ dotnet run --project server/src/DocHub.Api -- init-storage
 This creates the private `documents` container in Azurite and exits. It is
 idempotent — running it again just reports that the container already exists.
 
-### 7. Pull the models
+### 6. Pull the models
 
 Two local models do the AI work — one turns text into vectors for search, the
 other writes the assistant's answers. Neither is bundled with the Ollama
@@ -206,7 +159,7 @@ second, so an answer streams in over several seconds. That is the cost of
 running locally for free; see [Configuration](#configuration) for what to
 change if you'd rather use a hosted model.
 
-### 8. Set the administrator password
+### 7. Set the administrator password
 
 The database arrives with one account, `dev@dochub.local`, and no password —
 a password hash is salted per call, so it cannot live in a migration, and a
@@ -222,17 +175,81 @@ Re-running it resets the password, which is also how to recover a forgotten
 local one. There is no self-registration — sign in as the administrator and
 create everyone else under **People**.
 
-### 9. Confirm setup is complete
+### 8. Confirm setup is complete
 
 Start the API (see below) and open http://localhost:5080/healthz — it stays
-anonymous so an orchestrator can reach it. It should report
-`"status": "Healthy"`. If a step above was missed, the status is `Degraded` and
-the response names the exact command to run. The `repository` check is the new
-one: it asks GitLab for the head commit, so it catches a wrong address, a
-rejected token and a branch that does not exist, which an HTTP ping would not.
+anonymous so an orchestrator can reach it. Every check should be `Healthy`
+except `repository`, which reads `Degraded` with *No repository is configured*
+until step 9 — that is the expected state at this point, not a fault. If a step
+above was missed, the status is `Degraded` for a different reason and the
+response names the exact command to run.
+
+Once a repository *is* chosen, the `repository` check earns its keep: it asks
+GitLab for the head commit, so it catches a wrong address, a rejected token and
+a branch that does not exist, which an HTTP ping would not.
 
 Then open the client and sign in as `dev@dochub.local`. Every other endpoint,
 plus `/swagger` and `/jobs`, now requires a session.
+
+### 9. Point the hub at a GitLab repository
+
+Every document comes from one GitLab project, and **no configuration file names
+it**. A fresh clone starts pointed at nothing: the API runs, `/healthz` reports
+the `repository` check as `Degraded`, and the library says no repository has
+been chosen rather than looking broken.
+
+**Do this in the app**, signed in as the administrator from step 7: Settings → **Source repository** → *Choose a repository*. Fill in:
+
+| Field | What it is | To reproduce the sample this project was built against |
+|---|---|---|
+| Instance address | Instance root, no path | `https://gitlab.com` |
+| Project path | Namespaced path, as GitLab spells it — not the whole URL | `gitlab-org/gitlab-foss` |
+| Branch | Only pushes to this branch trigger a sync | `master` |
+| Folder within the repository | Narrows the mirror; empty means everything | `doc/development` |
+| Access token | `read_repository`. Blank for a public project | *(leave blank — it is public)* |
+| Webhook secret | What GitLab sends back as `X-Gitlab-Token` | *(only needed for the webhook)* |
+
+**Test connection** reads GitLab before you save: it catches a wrong project, a
+branch that does not exist, and — the one that otherwise looks like a broken hub
+— a folder that holds no files. Saving takes effect immediately, with no
+restart, and does not sync; that is step 10.
+
+A folder is usually what you want. A repository is mostly source code, and
+mirroring the root fills the tree with files no extractor can read; they are
+counted as skipped rather than mirrored, but the tree is easier to recognise
+without them.
+
+Both secrets are encrypted with ASP.NET Data Protection before they are stored,
+and are never sent back to a browser — the screen says only whether one is held.
+That makes them exactly as durable as the key ring: set `Authentication:KeyPath`
+on IIS, or a recycle leaves a token nobody can decrypt, which the screen then
+reports as needing to be set again.
+
+<details>
+<summary>Pre-pointing a deployment from configuration instead</summary>
+
+The `GitLab` section is still read when it is set, and is the fallback for any
+field left blank in the UI — so a box can arrive already pointed, without anyone
+opening a screen. Set it through environment variables or Key Vault rather than
+a committed file:
+
+```bash
+GitLab__BaseUrl=https://gitlab.example.org
+GitLab__ProjectPath=team/handbook
+GitLab__Branch=main
+GitLab__SubPath=docs
+```
+
+The access token is the one real secret and never goes in a committed file:
+
+```bash
+dotnet user-secrets set "GitLab:Token" "glpat-…" --project server/src/DocHub.Api
+```
+
+Anything saved in the UI afterwards overrides the matching field, and clearing a
+field in the UI falls back to whatever is configured here.
+
+</details>
 
 ### 10. Mirror the repository
 
@@ -689,7 +706,8 @@ search changes.
 
 **The webhook.** Point GitLab at `POST /api/webhooks/gitlab` (Settings →
 Webhooks, "Push events") and put the same string in both the hook's *Secret
-token* and `GitLab:WebhookSecret`. The endpoint has to be anonymous — GitLab
+token* and the hub's webhook secret — Settings → **Source repository**, or
+`GitLab:WebhookSecret` for a deployment that configures it. The endpoint has to be anonymous — GitLab
 holds no session — so that secret is the only thing separating GitLab from
 anyone else who can reach the box, and an unset one **refuses every delivery**
 rather than accepting them all. It is the same fail-closed reasoning as the
@@ -697,8 +715,11 @@ Google allow-list. A push to any other branch is acknowledged and ignored:
 syncing on one would re-list the whole tree for every branch a busy team pushes
 to.
 
-All are validated at startup, so a missing or empty value fails the boot rather
-than the first request. Note that validation is all the app does at startup —
+Most are validated at startup, so a bad value fails the boot rather than the
+first request. The `GitLab` section is the exception, and deliberately: a value
+that is there must be well formed, but an absent one is a hub nobody has pointed
+anywhere yet — refusing to start would put the screen that fixes that out of
+reach. Note that validation is all the app does at startup —
 it never creates a database, applies a migration, or creates a container on
 its own. Those are the explicit setup steps above.
 
@@ -965,12 +986,7 @@ and add:
 |---|---|
 | `ASPNETCORE_ENVIRONMENT` | `Production` |
 | `Database__ConnectionString` | `Host=localhost;Port=5432;Database=documenthub_v2;Username=documenthub;Password=<the password from step 2>` |
-| `GitLab__BaseUrl` | `https://gitlab.example.org` — the instance to mirror |
-| `GitLab__ProjectPath` | `team/handbook` |
-| `GitLab__Branch` | `main` |
-| `GitLab__SubPath` | `docs`, or leave unset for the whole repository |
-| `GitLab__Token` | The `read_repository` token. **Secret** — set it here rather than in any file |
-| `GitLab__WebhookSecret` | The same string as the hook's *Secret token* in GitLab. Unset refuses every delivery |
+| `GitLab__*` | Optional — the repository is normally chosen in the app, under Settings → Source repository. Set `BaseUrl`, `ProjectPath`, `Branch`, `SubPath`, `Token` and `WebhookSecret` here only to have the box arrive already pointed; whatever is saved in the app overrides them field by field |
 | `FileStorage__ConnectionString` | `UseDevelopmentStorage=true` |
 | `FileStorage__ContainerName` | `documents` |
 | `Embeddings__BaseUrl` | `http://localhost:11434` |
@@ -1299,9 +1315,9 @@ immediately rather than on the first request.
 says which one:
 
 - `no migrations have been applied` → run step 4
-- `container does not exist` → run step 6
-- `the 'nomic-embed-text' model is not installed` → run step 7
-- `the 'qwen2.5:7b' model is not installed` → run step 7
+- `container does not exist` → run step 5
+- `the 'nomic-embed-text' model is not installed` → run step 6
+- `the 'qwen2.5:7b' model is not installed` → run step 6
 - `has no commits, so there is nothing to mirror` → the branch is real but
   empty; check `GitLab:Branch`
 
@@ -1309,7 +1325,7 @@ says which one:
 URL`** — a value is there and is not a URL. An *empty* section is fine and no
 longer stops the API: the repository can be chosen in the UI, and refusing to
 boot without one would put that screen out of reach. See
-[step 5](#5-point-the-hub-at-a-gitlab-repository).
+[step 9](#9-point-the-hub-at-a-gitlab-repository).
 
 **`repository` reports `No repository is configured`** — nothing is broken and
 no sync is missing; the hub has not been pointed anywhere. Set it under

@@ -179,6 +179,17 @@ What it cost, and what was decided:
 - **Saving does not sync.** Changing the project replaces the whole library at
   the next sync, and the form says so before the button is pressed.
 
+**The `GitLab` identity keys are out of both appsettings files.** Nothing
+committed says which repository to mirror — `appsettings.json` keeps only
+`TimeoutSeconds` and `MaxFileBytes`, which are about this box rather than about
+the repository, and `appsettings.Development.json` has no `GitLab` section at
+all. A fresh clone therefore starts pointed at nothing, which is exactly the
+first-run state the feature was built for; the README's setup order was changed
+to match, with choosing the repository now step 9, after there is an
+administrator to sign in as. Confirmed by booting against a clean database with
+no section present: everything healthy but `repository`, which says it needs
+choosing.
+
 **Verified end to end, in a browser, against a throwaway database.** An API
 booted with `GitLab:BaseUrl` and `ProjectPath` empty — which the old build
 refused to do — reported the repository check as degraded and the library said

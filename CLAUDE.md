@@ -181,6 +181,10 @@ CLAUDE.md · SESSION.md · README.md · architecture-blueprint.md · chat-pipeli
 - `appsettings.Development.json` — local container connection strings, safe to
   commit, **excluded from publish output and the Docker build context** because
   it carries the local seed-admin password
+- **Neither names a repository.** No `GitLab` identity keys are committed
+  anywhere: a fresh clone starts pointed at nothing and is pointed in the UI.
+  The section is still read when a deployment sets it through environment
+  variables or Key Vault, as the default and the per-field fallback
 - Real secrets → `dotnet user-secrets` locally, environment variables or Key
   Vault in prod. Never in any committed appsettings file
 - Bind via strongly-typed Options classes, one per integration, with
@@ -620,8 +624,12 @@ dotnet ef migrations add <Name> --project server/src/DocHub.DataAccess --startup
 Ports: client 4200 · API 5080 (`/swagger`, `/jobs`, `/healthz`) · Postgres 5432
 · Azurite 10000 · Ollama 11434.
 
-The library is empty until the repository is mirrored — `POST /api/repository/sync`,
-or **Sync now** on the library screen as an admin.
+Nothing is committed that says which repository to mirror, so a fresh clone
+starts pointed at nothing. Sign in as the seeded admin and set it under
+Settings → **Source repository** (`https://gitlab.com`, `gitlab-org/gitlab-foss`,
+branch `master`, folder `doc/development` reproduces the sample this was built
+against — it is public, so no token). Then mirror it: `POST /api/repository/sync`,
+or **Sync now** on the library screen.
 
 - Trunk-based: commit to `main` directly, or one short-lived `feature/*` branch.
 - Commit small, one thing at a time. **Verify (build + tests) before pushing**,
