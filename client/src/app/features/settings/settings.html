@@ -1,6 +1,12 @@
 <div class="mx-auto max-w-3xl px-6 py-8 lg:px-10">
   <h1 class="text-[21px] font-semibold text-ink">Settings</h1>
-  <p class="mt-1.5 text-[13px] text-muted">Personal preferences for this workspace.</p>
+  <p class="mt-1.5 text-[13px] text-muted">
+    @if (auth.isAdmin()) {
+      Personal preferences, and the repository this hub mirrors.
+    } @else {
+      Personal preferences for this workspace.
+    }
+  </p>
 
   <!-- Appearance -->
   <section class="dh-card mt-6 p-5">
@@ -185,6 +191,345 @@
     </div>
   </section>
 
+  <!-- Source repository. Admin only, and hidden rather than disabled for
+       everyone else: the API enforces the role, and a form that can only ever
+       be refused is worse than no form. -->
+  @if (auth.isAdmin()) {
+    <section class="dh-card mt-4 p-5">
+      <div class="flex items-start justify-between gap-3">
+        <div class="min-w-0">
+          <h2 class="text-[14px] font-semibold text-ink">Source repository</h2>
+          <p class="mt-1 text-[12.5px] text-muted">
+            The library is a mirror of one GitLab project. A document exists because a file does,
+            and the only thing that changes it is a commit — so this is where the whole library
+            comes from.
+          </p>
+        </div>
+        @if (repository(); as settings) {
+          @if (!editingRepository()) {
+            <button class="dh-btn-ghost shrink-0" type="button" (click)="startEditingRepository()">
+              <i class="pi pi-sliders-h text-[12px]"></i>
+              {{ settings.isConfigured ? 'Change' : 'Choose a repository' }}
+            </button>
+          }
+        }
+      </div>
+
+      @if (repository(); as settings) {
+        @if (!editingRepository()) {
+          @if (settings.isConfigured) {
+            <dl class="mt-4 grid gap-px overflow-hidden rounded-dh border border-hairline">
+              <div class="grid grid-cols-[130px_1fr] gap-3 bg-surface-1 p-3">
+                <dt class="text-[12px] text-subtle">Instance</dt>
+                <dd class="min-w-0 truncate text-[12.5px] text-ink">{{ settings.baseUrl }}</dd>
+              </div>
+              <div class="grid grid-cols-[130px_1fr] gap-3 bg-surface-1 p-3">
+                <dt class="text-[12px] text-subtle">Project</dt>
+                <dd class="min-w-0 truncate text-[12.5px] text-ink">{{ settings.projectPath }}</dd>
+              </div>
+              <div class="grid grid-cols-[130px_1fr] gap-3 bg-surface-1 p-3">
+                <dt class="text-[12px] text-subtle">Branch</dt>
+                <dd class="min-w-0 truncate text-[12.5px] text-ink">{{ settings.branch }}</dd>
+              </div>
+              <div class="grid grid-cols-[130px_1fr] gap-3 bg-surface-1 p-3">
+                <dt class="text-[12px] text-subtle">Folder</dt>
+                <dd class="min-w-0 truncate text-[12.5px] text-ink">
+                  {{ settings.subPath || 'The whole repository' }}
+                </dd>
+              </div>
+              <div class="grid grid-cols-[130px_1fr] gap-3 bg-surface-1 p-3">
+                <dt class="text-[12px] text-subtle">Access token</dt>
+                <dd class="min-w-0 text-[12.5px] text-ink">
+                  @if (settings.tokenIsUnreadable) {
+                    <span [style.color]="'var(--dh-status-failed)'">
+                      Saved, but it cannot be decrypted — set it again
+                    </span>
+                  } @else if (settings.hasToken) {
+                    Set
+                  } @else {
+                    Not set · the project must be readable without one
+                  }
+                </dd>
+              </div>
+              <div class="grid grid-cols-[130px_1fr] gap-3 bg-surface-1 p-3">
+                <dt class="text-[12px] text-subtle">Webhook secret</dt>
+                <dd class="min-w-0 text-[12.5px] text-ink">
+                  @if (settings.webhookSecretIsUnreadable) {
+                    <span [style.color]="'var(--dh-status-failed)'">
+                      Saved, but it cannot be decrypted — set it again
+                    </span>
+                  } @else if (settings.hasWebhookSecret) {
+                    Set
+                  } @else {
+                    Not set · pushes from GitLab are refused
+                  }
+                </dd>
+              </div>
+            </dl>
+
+            <p class="mt-3 text-[11.5px] text-subtle">
+              @if (settings.isSaved) {
+                Set here, {{ settings.updatedAt | date: 'd MMM y, HH:mm' }}. In force now — no
+                restart needed.
+              } @else {
+                From this deployment's configuration. Changing it here overrides that, without
+                touching the box.
+              }
+            </p>
+
+            @if (repositorySaved()) {
+              <p class="mt-3 text-[12px]" [style.color]="'var(--dh-status-indexed)'">
+                Saved. Nothing is mirrored until a sync runs — <b>Sync now</b> is on the library
+                screen.
+              </p>
+            }
+          } @else {
+            <!-- The empty state says what would fill it, rather than reading as
+                 a hub that is broken. -->
+            <div class="mt-4 rounded-dh border border-dashed border-hairline p-4 text-center">
+              <i class="pi pi-sitemap text-[18px] text-subtle"></i>
+              <p class="mt-2 text-[13px] font-medium text-ink">No repository yet</p>
+              <p class="mx-auto mt-1 max-w-md text-[12px] text-muted">
+                The library is empty because the hub has not been pointed at a GitLab project. Name
+                one here, then sync it from the library screen.
+              </p>
+              <button class="dh-btn-primary mt-3" type="button" (click)="startEditingRepository()">
+                Choose a repository
+              </button>
+            </div>
+          }
+        } @else {
+          <div class="mt-4 space-y-3">
+            @if (repositoryError(); as message) {
+              <div
+                class="flex items-start gap-2.5 rounded-dh border p-3"
+                role="alert"
+                [style.borderColor]="'color-mix(in oklab, var(--dh-status-failed) 32%, transparent)'"
+                [style.background]="'color-mix(in oklab, var(--dh-status-failed) 10%, transparent)'"
+              >
+                <i
+                  class="pi pi-exclamation-triangle mt-[1px] text-[13px]"
+                  [style.color]="'var(--dh-status-failed)'"
+                ></i>
+                <p class="text-[12.5px] text-ink">{{ message }}</p>
+              </div>
+            }
+
+            <label class="block">
+              <span class="mb-1.5 block text-[12px] font-medium text-ink">Instance address</span>
+              <input
+                class="h-9 w-full rounded-dh border border-hairline bg-surface-1 px-3 text-[13px] text-ink outline-none transition focus:border-brand-500/50"
+                type="url"
+                placeholder="https://gitlab.example.org"
+                autocomplete="off"
+                spellcheck="false"
+                [ngModel]="baseUrl()"
+                (ngModelChange)="baseUrl.set($event)"
+              />
+            </label>
+
+            <div class="grid gap-3 sm:grid-cols-2">
+              <label class="block">
+                <span class="mb-1.5 block text-[12px] font-medium text-ink">Project path</span>
+                <input
+                  class="h-9 w-full rounded-dh border border-hairline bg-surface-1 px-3 text-[13px] text-ink outline-none transition focus:border-brand-500/50"
+                  type="text"
+                  placeholder="team/docs"
+                  autocomplete="off"
+                  spellcheck="false"
+                  [ngModel]="projectPath()"
+                  (ngModelChange)="projectPath.set($event)"
+                />
+                <span class="mt-1.5 block text-[11.5px] text-subtle">
+                  The namespaced path, as GitLab spells it — not the whole URL.
+                </span>
+              </label>
+
+              <label class="block">
+                <span class="mb-1.5 block text-[12px] font-medium text-ink">Branch</span>
+                <input
+                  class="h-9 w-full rounded-dh border border-hairline bg-surface-1 px-3 text-[13px] text-ink outline-none transition focus:border-brand-500/50"
+                  type="text"
+                  placeholder="main"
+                  autocomplete="off"
+                  spellcheck="false"
+                  [ngModel]="branch()"
+                  (ngModelChange)="branch.set($event)"
+                />
+                <span class="mt-1.5 block text-[11.5px] text-subtle">
+                  Only pushes to this branch trigger a sync.
+                </span>
+              </label>
+            </div>
+
+            <label class="block">
+              <span class="mb-1.5 block text-[12px] font-medium text-ink">
+                Folder within the repository
+              </span>
+              <input
+                class="h-9 w-full rounded-dh border border-hairline bg-surface-1 px-3 text-[13px] text-ink outline-none transition focus:border-brand-500/50"
+                type="text"
+                placeholder="docs"
+                autocomplete="off"
+                spellcheck="false"
+                [ngModel]="subPath()"
+                (ngModelChange)="subPath.set($event)"
+              />
+              <span class="mt-1.5 block text-[11.5px] text-subtle">
+                Leave empty to mirror everything. A repository is mostly code, and mirroring the
+                root fills the tree with files no extractor can read.
+              </span>
+            </label>
+
+            <!-- Secrets are write-only: the API never sends one back, so blank
+                 has to mean "leave it alone" rather than "clear it". -->
+            <label class="block">
+              <span class="mb-1.5 block text-[12px] font-medium text-ink">Access token</span>
+              <input
+                class="h-9 w-full rounded-dh border border-hairline bg-surface-1 px-3 text-[13px] text-ink outline-none transition focus:border-brand-500/50 disabled:opacity-50"
+                type="password"
+                autocomplete="off"
+                [placeholder]="
+                  clearToken()
+                    ? 'Will be cleared when you save'
+                    : repository()?.hasToken
+                      ? 'Leave blank to keep the token already set'
+                      : 'Needs read_repository. Leave blank for a public project'
+                "
+                [disabled]="clearToken()"
+                [ngModel]="newToken()"
+                (ngModelChange)="newToken.set($event)"
+              />
+              @if (repository()?.hasToken) {
+                <button
+                  class="mt-1.5 text-[11.5px] text-brand-400 hover:underline"
+                  type="button"
+                  (click)="clearToken.set(!clearToken())"
+                >
+                  {{ clearToken() ? 'Keep the current token' : 'Clear the stored token' }}
+                </button>
+              }
+            </label>
+
+            <label class="block">
+              <span class="mb-1.5 block text-[12px] font-medium text-ink">Webhook secret</span>
+              <input
+                class="h-9 w-full rounded-dh border border-hairline bg-surface-1 px-3 text-[13px] text-ink outline-none transition focus:border-brand-500/50 disabled:opacity-50"
+                type="password"
+                autocomplete="off"
+                [placeholder]="
+                  clearWebhookSecret()
+                    ? 'Will be cleared when you save'
+                    : repository()?.hasWebhookSecret
+                      ? 'Leave blank to keep the secret already set'
+                      : 'Paste the same value into the GitLab push hook'
+                "
+                [disabled]="clearWebhookSecret()"
+                [ngModel]="newWebhookSecret()"
+                (ngModelChange)="newWebhookSecret.set($event)"
+              />
+              <span class="mt-1.5 block text-[11.5px] text-subtle">
+                The webhook endpoint is anonymous of necessity, so this is the only thing that tells
+                GitLab apart from anyone else who can reach the box. Empty refuses every push.
+              </span>
+              @if (repository()?.hasWebhookSecret) {
+                <button
+                  class="mt-1.5 text-[11.5px] text-brand-400 hover:underline"
+                  type="button"
+                  (click)="clearWebhookSecret.set(!clearWebhookSecret())"
+                >
+                  {{ clearWebhookSecret() ? 'Keep the current secret' : 'Clear the stored secret' }}
+                </button>
+              }
+            </label>
+
+            @if (libraryWillBeReplaced()) {
+              <div
+                class="flex items-start gap-2.5 rounded-dh border p-3"
+                [style.borderColor]="'color-mix(in oklab, var(--dh-status-pending) 36%, transparent)'"
+                [style.background]="'color-mix(in oklab, var(--dh-status-pending) 10%, transparent)'"
+              >
+                <i
+                  class="pi pi-exclamation-triangle mt-[1px] text-[13px]"
+                  [style.color]="'var(--dh-status-pending)'"
+                ></i>
+                <p class="text-[12.5px] text-ink">
+                  This points the hub somewhere else. At the next sync every document that is not in
+                  the new tree is removed, along with its chunks — for a different project, that is
+                  all of them. Conversations keep their citations.
+                </p>
+              </div>
+            }
+
+            @if (connection(); as result) {
+              <div
+                class="flex items-start gap-2.5 rounded-dh border p-3"
+                [style.borderColor]="
+                  connectionWorked()
+                    ? 'color-mix(in oklab, var(--dh-status-indexed) 32%, transparent)'
+                    : 'color-mix(in oklab, var(--dh-status-failed) 32%, transparent)'
+                "
+                [style.background]="
+                  connectionWorked()
+                    ? 'color-mix(in oklab, var(--dh-status-indexed) 10%, transparent)'
+                    : 'color-mix(in oklab, var(--dh-status-failed) 10%, transparent)'
+                "
+              >
+                <i
+                  class="pi mt-[1px] text-[13px]"
+                  [class]="connectionWorked() ? 'pi-check-circle' : 'pi-times-circle'"
+                  [style.color]="
+                    connectionWorked() ? 'var(--dh-status-indexed)' : 'var(--dh-status-failed)'
+                  "
+                ></i>
+                <div class="min-w-0">
+                  <p class="text-[12.5px] text-ink">{{ result.detail }}</p>
+                  @if (result.defaultBranch && !result.branchFound) {
+                    <p class="mt-1 text-[11.5px] text-subtle">
+                      Its default branch is {{ result.defaultBranch }}.
+                    </p>
+                  }
+                </div>
+              </div>
+            }
+
+            <div class="flex flex-wrap items-center justify-end gap-2 pt-1">
+              <button
+                class="dh-btn-ghost mr-auto"
+                type="button"
+                [disabled]="testingRepository() || savingRepository()"
+                (click)="testRepository()"
+              >
+                <i class="pi pi-sync text-[12px]"></i>
+                {{ testingRepository() ? 'Reading…' : 'Test connection' }}
+              </button>
+              <button
+                class="dh-btn-ghost"
+                type="button"
+                [disabled]="savingRepository()"
+                (click)="cancelEditingRepository()"
+              >
+                Cancel
+              </button>
+              <button
+                class="dh-btn-primary disabled:opacity-60"
+                type="button"
+                [disabled]="savingRepository()"
+                (click)="saveRepository()"
+              >
+                {{ savingRepository() ? 'Saving…' : 'Save repository' }}
+              </button>
+            </div>
+          </div>
+        }
+      } @else if (repositoryError(); as message) {
+        <p class="mt-4 text-[12.5px]" [style.color]="'var(--dh-status-failed)'">{{ message }}</p>
+      } @else {
+        <p class="mt-4 text-[12.5px] text-subtle">Reading the repository settings…</p>
+      }
+    </section>
+  }
+
   <!-- Library contents. Deliberately not called "Storage" any more: the hub
        stores no files at all, and a heading claiming otherwise was the last
        place the pre-mirror architecture was still being described to users. -->
@@ -193,8 +538,8 @@
     <p class="mt-1 text-[12.5px] text-muted">
       No file is stored here. A document's bytes are fetched from the repository each time it is
       previewed or downloaded, so what you get is what the branch holds now — and if the repository
-      is unreachable, previews fail while search keeps working. What the hub does keep is below:
-      the extracted text, split into the chunks an answer can cite.
+      is unreachable, previews fail while search keeps working. What the hub does keep is below: the
+      extracted text, split into the chunks an answer can cite.
     </p>
     <dl class="mt-4 grid grid-cols-2 gap-3 text-[12.5px] sm:grid-cols-4">
       <div class="rounded-dh border border-hairline p-3">

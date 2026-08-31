@@ -62,6 +62,15 @@ export class Browse {
     const repo = this.store.repository();
     if (!repo) return 'Loading the repository…';
 
+    // A fourth: the hub has not been pointed at a repository at all. Nothing is
+    // broken and no sync is missing — there is simply nowhere to mirror from
+    // yet, and only an administrator can say where.
+    if (!repo.isConfigured) {
+      return this.auth.isAdmin()
+        ? 'No repository is configured yet. Choose one under Settings, then sync it.'
+        : 'No repository is configured yet. An administrator sets which one the hub mirrors.';
+    }
+
     switch (repo.outcome) {
       case 'never':
         return `${repo.projectPath} has not been mirrored yet. Nothing is searchable until it is.`;
@@ -92,6 +101,11 @@ export class Browse {
   protected readonly lastSync = computed(() => {
     const repo = this.store.repository();
     if (!repo) return null;
+
+    // The empty state above already says this in full, and "never synced"
+    // beside it would read as a sync that was missed rather than one that has
+    // nothing to run against.
+    if (!repo.isConfigured) return null;
 
     switch (repo.outcome) {
       case 'never':
@@ -163,5 +177,4 @@ export class Browse {
     this.menuFor.set(null);
     this.store.retry(id);
   }
-
 }

@@ -22,7 +22,10 @@ import {
   LibraryStats,
   Person,
   Repository,
+  RepositoryConnection,
   RepositoryProbe,
+  RepositorySettings,
+  RepositorySettingsDraft,
   RepositorySource,
   RepositorySourceDraft,
   SearchQuery,
@@ -1219,8 +1222,7 @@ export class MockKnowledgeGateway extends KnowledgeGateway {
       subPath: 'docs',
       webUrl: `https://gitlab.example.org/${PROJECT}`,
       outcome: (Date.now() < this.syncingUntil ? 'running' : 'succeeded') as
-        | 'running'
-        | 'succeeded',
+        'running' | 'succeeded',
       commitSha: '9f2c1ab5d3e47f8091a2b6c4d5e6f708192a3b4c',
       startedAt: ago(9 * MINUTE),
       finishedAt: ago(9 * MINUTE),
@@ -1235,7 +1237,75 @@ export class MockKnowledgeGateway extends KnowledgeGateway {
       // without a backend, since it is the one that says "the library was
       // short of the repository and this run went and fetched the rest".
       requeued: 3,
+      isConfigured: true,
     }));
+  }
+
+  /**
+   * The repository settings, held in memory so the admin form can be worked on
+   * without a backend. Secrets are booleans here exactly as they are over the
+   * wire — a mock that handed a token back would let a screen be built around
+   * one the real API will never send.
+   */
+  private settings: RepositorySettings = {
+    baseUrl: 'https://gitlab.example.org',
+    projectPath: PROJECT,
+    branch: BRANCH,
+    subPath: 'docs',
+    hasToken: true,
+    hasWebhookSecret: true,
+    tokenIsUnreadable: false,
+    webhookSecretIsUnreadable: false,
+    isConfigured: true,
+    isSaved: true,
+    updatedAt: ago(3 * DAY),
+  };
+
+  repositorySettings(): Observable<RepositorySettings> {
+    return of(this.settings).pipe(delay(120));
+  }
+
+  saveRepositorySettings(draft: RepositorySettingsDraft): Observable<RepositorySettings> {
+    this.settings = {
+      ...this.settings,
+      baseUrl: draft.baseUrl.trim().replace(/\/$/, ''),
+      projectPath: draft.projectPath.trim().replace(/^\/|\/$/g, ''),
+      branch: draft.branch.trim(),
+      subPath: draft.subPath.trim().replace(/^\/|\/$/g, ''),
+
+      // The three states the API keeps: undefined leaves the stored secret
+      // alone, empty clears it, anything else replaces it.
+      hasToken: draft.token === undefined ? this.settings.hasToken : draft.token.length > 0,
+      hasWebhookSecret:
+        draft.webhookSecret === undefined
+          ? this.settings.hasWebhookSecret
+          : draft.webhookSecret.length > 0,
+      isConfigured: true,
+      isSaved: true,
+      updatedAt: new Date().toISOString(),
+    };
+
+    return of(this.settings).pipe(delay(200));
+  }
+
+  testRepositorySettings(draft: RepositorySettingsDraft): Observable<RepositoryConnection> {
+    // Two outcomes worth being able to reach without a backend: it reads, and
+    // the sub-path names nothing — the mistake that mirrors an empty library.
+    const subPathFound = !draft.subPath.trim().startsWith('nowhere');
+
+    return of<RepositoryConnection>({
+      isReachable: true,
+      projectFound: true,
+      branchFound: true,
+      subPathFound,
+      usedToken: draft.token !== '' && (draft.token !== undefined || this.settings.hasToken),
+      detail: subPathFound
+        ? `Read '${draft.projectPath}' on branch '${draft.branch}' (mock gateway).`
+        : `'${draft.subPath}' holds no files on that branch. The hub would mirror nothing.`,
+      projectName: draft.projectPath,
+      defaultBranch: BRANCH,
+      webUrl: `https://gitlab.example.org/${draft.projectPath}`,
+    }).pipe(delay(400));
   }
 
   /**
@@ -1272,7 +1342,6 @@ export class MockKnowledgeGateway extends KnowledgeGateway {
     });
     return of(void 0);
   }
-
 }
 
 /** Convenience for one-shot reads in resolvers/tests. */

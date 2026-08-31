@@ -22,7 +22,10 @@ import {
   MatchStrategy,
   Person,
   Repository,
+  RepositoryConnection,
   RepositoryProbe,
+  RepositorySettings,
+  RepositorySettingsDraft,
   RepositorySource,
   RepositorySourceDraft,
   SearchQuery,
@@ -304,9 +307,7 @@ export class HttpKnowledgeGateway extends KnowledgeGateway {
   }
 
   removeRepositorySource(name: string): Observable<void> {
-    return this.http.delete<void>(
-      `${this.base}/sources/repositories/${encodeURIComponent(name)}`,
-    );
+    return this.http.delete<void>(`${this.base}/sources/repositories/${encodeURIComponent(name)}`);
   }
 
   testRepositorySource(endpoint: string): Observable<RepositoryProbe> {
@@ -352,6 +353,18 @@ export class HttpKnowledgeGateway extends KnowledgeGateway {
 
   syncRepository(): Observable<Repository> {
     return this.http.post<Repository>(`${this.base}/repository/sync`, {});
+  }
+
+  repositorySettings(): Observable<RepositorySettings> {
+    return this.http.get<RepositorySettings>(`${this.base}/repository/settings`);
+  }
+
+  saveRepositorySettings(draft: RepositorySettingsDraft): Observable<RepositorySettings> {
+    return this.http.put<RepositorySettings>(`${this.base}/repository/settings`, draft);
+  }
+
+  testRepositorySettings(draft: RepositorySettingsDraft): Observable<RepositoryConnection> {
+    return this.http.post<RepositoryConnection>(`${this.base}/repository/settings/test`, draft);
   }
 
   // ---- assistant -----------------------------------------------------------
@@ -452,7 +465,6 @@ export class HttpKnowledgeGateway extends KnowledgeGateway {
       map(() => void 0),
     );
   }
-
 }
 
 // ---- mapping ----------------------------------------------------------------

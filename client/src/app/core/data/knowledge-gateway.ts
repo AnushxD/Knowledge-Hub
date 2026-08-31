@@ -16,7 +16,10 @@ import {
   KnowledgeSourceSummary,
   LibraryStats,
   Repository,
+  RepositoryConnection,
   RepositoryProbe,
+  RepositorySettings,
+  RepositorySettingsDraft,
   RepositorySource,
   RepositorySourceDraft,
   SearchQuery,
@@ -181,6 +184,23 @@ export abstract class KnowledgeGateway {
    * than treating the response as the result.
    */
   abstract syncRepository(): Observable<Repository>;
+
+  // ---- pointing the hub at a repository (Admin only; the API enforces it) ---
+
+  /**
+   * The repository settings in force. Secrets are described, never returned:
+   * there is nothing a screen can do with a token it already holds.
+   */
+  abstract repositorySettings(): Observable<RepositorySettings>;
+
+  /**
+   * Saves the settings. In force immediately — the next sync, webhook and file
+   * fetch use them — but nothing is mirrored until a sync is asked for.
+   */
+  abstract saveRepositorySettings(draft: RepositorySettingsDraft): Observable<RepositorySettings>;
+
+  /** Reads the repository described by the draft without saving it. */
+  abstract testRepositorySettings(draft: RepositorySettingsDraft): Observable<RepositoryConnection>;
 
   abstract retryIngestion(documentId: string): Observable<void>;
   abstract toggleStar(documentId: string): Observable<void>;

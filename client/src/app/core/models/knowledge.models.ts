@@ -147,6 +147,66 @@ export interface Repository {
    * with itself after a worker stopped part way through a backlog.
    */
   requeued: number;
+  /**
+   * Whether the hub has been pointed at a repository at all. False is a
+   * first-run state rather than a fault, and the library says so instead of
+   * showing an empty shelf.
+   */
+  isConfigured: boolean;
+}
+
+/**
+ * Which repository the hub mirrors, as an administrator edits it. Admin only —
+ * it names the instance and says whether a credential is held.
+ */
+export interface RepositorySettings {
+  baseUrl: string;
+  projectPath: string;
+  branch: string;
+  /** Empty means the whole repository is mirrored. */
+  subPath: string;
+  /** A token is in force. The token itself is never sent to the client. */
+  hasToken: boolean;
+  hasWebhookSecret: boolean;
+  /**
+   * A token was saved and cannot be decrypted — the Data Protection key ring
+   * changed under it. Shown as such, because "not set" would send someone
+   * looking for who removed it.
+   */
+  tokenIsUnreadable: boolean;
+  webhookSecretIsUnreadable: boolean;
+  isConfigured: boolean;
+  /** False means every value above still comes from the deployment's configuration. */
+  isSaved: boolean;
+  updatedAt: string | null;
+}
+
+/**
+ * A change to the repository. The two secrets are three-state: omitted leaves
+ * the stored one alone, a value replaces it, an empty string clears it.
+ */
+export interface RepositorySettingsDraft {
+  baseUrl: string;
+  projectPath: string;
+  branch: string;
+  subPath: string;
+  token?: string;
+  webhookSecret?: string;
+}
+
+/** What was established about a repository before saving it. */
+export interface RepositoryConnection {
+  isReachable: boolean;
+  projectFound: boolean;
+  branchFound: boolean;
+  /** The sub-path holds files. A wrong one mirrors nothing and looks like a broken hub. */
+  subPathFound: boolean;
+  /** Whether a token was sent, so "worked anonymously" is distinguishable. */
+  usedToken: boolean;
+  detail: string;
+  projectName: string | null;
+  defaultBranch: string | null;
+  webUrl: string | null;
 }
 
 /** Filter state for the browser screen. */

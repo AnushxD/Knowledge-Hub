@@ -33,18 +33,24 @@
            the one action that changes the library: re-reading the repository. -->
       <div class="flex items-center gap-2">
         @if (store.repository(); as repo) {
-          <a
-            [href]="repo.webUrl"
-            target="_blank"
-            rel="noreferrer noopener"
-            class="hidden items-center gap-1.5 text-[11.5px] text-subtle transition hover:text-ink sm:flex"
-          >
-            <i class="pi pi-code text-[11px]"></i>
-            {{ repo.projectPath }}@{{ repo.branch }}
-            <i class="pi pi-external-link text-[9px]"></i>
-          </a>
+          @if (repo.isConfigured) {
+            <a
+              [href]="repo.webUrl"
+              target="_blank"
+              rel="noreferrer noopener"
+              class="hidden items-center gap-1.5 text-[11.5px] text-subtle transition hover:text-ink sm:flex"
+            >
+              <i class="pi pi-code text-[11px]"></i>
+              {{ repo.projectPath }}@{{ repo.branch }}
+              <i class="pi pi-external-link text-[9px]"></i>
+            </a>
+          }
         }
-        @if (auth.isAdmin()) {
+        <!-- Not offered at all until there is somewhere to sync from: a
+             disabled button that still looks pressable is the kind of dead
+             control this screen exists to avoid, and the empty state below
+             already offers the action that helps. -->
+        @if (auth.isAdmin() && store.repository()?.isConfigured !== false) {
           <button
             type="button"
             class="dh-btn-ghost"
@@ -254,7 +260,6 @@
 
 <!-- ── Content ─────────────────────────────────────────────────────────── -->
 <div class="relative px-5 py-4 lg:px-7">
-
   @if (store.loading()) {
     @if (store.viewMode() === 'list') {
       <div class="dh-card overflow-hidden"><dh-row-skeleton [count]="8" /></div>
@@ -285,21 +290,32 @@
           [message]="emptyMessage()"
         >
           @if (auth.isAdmin()) {
-            <button type="button" class="dh-btn-primary" (click)="store.syncRepository()">
-              <i class="pi pi-sync text-[12px]"></i>
-              Sync now
-            </button>
+            <!-- Syncing is only an offer once there is somewhere to sync from;
+                 before that the action that actually helps is choosing one. -->
+            @if (store.repository()?.isConfigured === false) {
+              <a routerLink="/settings" class="dh-btn-primary">
+                <i class="pi pi-sliders-h text-[12px]"></i>
+                Choose a repository
+              </a>
+            } @else {
+              <button type="button" class="dh-btn-primary" (click)="store.syncRepository()">
+                <i class="pi pi-sync text-[12px]"></i>
+                Sync now
+              </button>
+            }
           }
           @if (store.repository(); as repo) {
-            <a
-              [href]="repo.webUrl"
-              target="_blank"
-              rel="noreferrer noopener"
-              class="dh-btn-ghost"
-            >
-              <i class="pi pi-external-link text-[12px]"></i>
-              Open in GitLab
-            </a>
+            @if (repo.isConfigured) {
+              <a
+                [href]="repo.webUrl"
+                target="_blank"
+                rel="noreferrer noopener"
+                class="dh-btn-ghost"
+              >
+                <i class="pi pi-external-link text-[12px]"></i>
+                Open in GitLab
+              </a>
+            }
           }
         </dh-empty-state>
       }
