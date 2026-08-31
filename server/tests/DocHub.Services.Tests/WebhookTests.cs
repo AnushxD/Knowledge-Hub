@@ -17,7 +17,8 @@ public sealed class WebhookTests(StackFixture fixture)
     {
         await using var scope = fixture.NewScope();
 
-        var outcome = scope.Webhook.Handle("test-secret", "Push Hook", "refs/heads/main");
+        var outcome = await scope.Webhook.HandleAsync(
+            "test-secret", "Push Hook", "refs/heads/main");
 
         Assert.Equal(WebhookOutcome.Queued, outcome);
 
@@ -32,7 +33,8 @@ public sealed class WebhookTests(StackFixture fixture)
     {
         await using var scope = fixture.NewScope();
 
-        var outcome = scope.Webhook.Handle("not-the-secret", "Push Hook", "refs/heads/main");
+        var outcome = await scope.Webhook.HandleAsync(
+            "not-the-secret", "Push Hook", "refs/heads/main");
 
         Assert.Equal(WebhookOutcome.Rejected, outcome);
         Assert.Empty(scope.SyncQueue.Queued);
@@ -44,7 +46,8 @@ public sealed class WebhookTests(StackFixture fixture)
         await using var scope = fixture.NewScope();
 
         Assert.Equal(
-            WebhookOutcome.Rejected, scope.Webhook.Handle(null, "Push Hook", "refs/heads/main"));
+            WebhookOutcome.Rejected,
+            await scope.Webhook.HandleAsync(null, "Push Hook", "refs/heads/main"));
         Assert.Empty(scope.SyncQueue.Queued);
     }
 
@@ -53,7 +56,7 @@ public sealed class WebhookTests(StackFixture fixture)
     {
         await using var scope = fixture.NewScope();
 
-        var outcome = scope.Webhook.Handle(
+        var outcome = await scope.Webhook.HandleAsync(
             "test-secret", "Push Hook", "refs/heads/feature/rewrite");
 
         // Not an error — GitLab disables a hook that keeps failing, and a push
@@ -69,7 +72,8 @@ public sealed class WebhookTests(StackFixture fixture)
     {
         await using var scope = fixture.NewScope();
 
-        var outcome = scope.Webhook.Handle("test-secret", "Pipeline Hook", "refs/heads/main");
+        var outcome = await scope.Webhook.HandleAsync(
+            "test-secret", "Pipeline Hook", "refs/heads/main");
 
         Assert.Equal(WebhookOutcome.Ignored, outcome);
         Assert.Empty(scope.SyncQueue.Queued);

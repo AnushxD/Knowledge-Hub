@@ -7,7 +7,6 @@ using DocHub.Services.Activity;
 using DocHub.Services.Ingestion;
 using DocHub.Services.ViewModels;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 
 namespace DocHub.Services.Repository;
 
@@ -19,10 +18,9 @@ internal sealed class RepositoryMirrorService(
     IIngestionService ingestion,
     IIngestionQueue queue,
     IActivityLog activity,
-    IOptions<GitLabOptions> options,
+    IRepositorySettingsReader settings,
     ILogger<RepositoryMirrorService> logger) : IRepositoryMirrorService
 {
-    private readonly GitLabOptions _options = options.Value;
 
     /// <summary>
     /// One sync at a time, process-wide.
@@ -40,8 +38,16 @@ internal sealed class RepositoryMirrorService(
 
     public async Task<RepositoryViewModel> GetStatusAsync(CancellationToken ct = default)
     {
-        var state = await syncState.GetAsync(repository.ProjectPath, repository.Branch, ct);
-        return ToViewModel(state);
+        var current = await settings.GetAsync(ct);
+
+        // Nothing has been mirrored from a repository nobody has chosen, and
+        // there is no sync record to look for either — the state is keyed by
+        // the project path, and there is not one.
+        if (!current.IsConfigured) return ToViewModel(current, state: null);
+
+        var state = await syncState.GetAsync(current.ProjectPath, current.Branch, ct);
+
+        return ToViewModel(current, state);
     }
 
     public async Task<RepositoryViewModel> SyncAsync(
@@ -69,10 +75,21 @@ internal sealed class RepositoryMirrorService(
 
     private async Task<RepositoryViewModel> RunAsync(Guid? actorId, CancellationToken ct)
     {
+        // Read once, before any of the work: a save landing mid-sync would
+        // otherwise have the tree listed from one repository and the sync
+        // record written against another.
+        var current = await settings.GetAsync(ct);
+
+        if (!current.IsConfigured)
+        {
+            logger.LogInformation("Nothing to sync: no repository is configured.");
+            return ToViewModel(current, state: null);
+        }
+
         var startedAt = DateTimeOffset.UtcNow;
         var stopwatch = Stopwatch.StartNew();
 
-        await syncState.StartAsync(repository.ProjectPath, repository.Branch, startedAt, ct);
+        await syncState.StartAsync(current.ProjectPath, current.Branch, startedAt, ct);
 
         try
         {
@@ -82,8 +99,8 @@ internal sealed class RepositoryMirrorService(
             var outcome = await ReconcileAsync(files, head, ct);
 
             var finished = new RepositorySyncStateDto(
-                repository.ProjectPath,
-                repository.Branch,
+                current.ProjectPath,
+                current.Branch,
                 SyncOutcome.Succeeded,
                 head,
                 startedAt,
@@ -103,18 +120,18 @@ internal sealed class RepositoryMirrorService(
             await activity.RecordForAsync(
                 actorId,
                 ActivityType.Synced,
-                $"{repository.ProjectPath}@{repository.Branch}",
+                $"{current.ProjectPath}@{current.Branch}",
                 targetId: null,
                 ct);
 
             logger.LogInformation(
                 "Synced {Project}@{Branch} at {Commit}: {Added} added, {Updated} updated, "
                 + "{Removed} removed, {Requeued} requeued, {Skipped} not indexable, in {ElapsedMs}ms",
-                repository.ProjectPath, repository.Branch, head ?? "(no commits)",
+                current.ProjectPath, current.Branch, head ?? "(no commits)",
                 outcome.Added, outcome.Updated, outcome.Removed, outcome.Requeued, outcome.Skipped,
                 stopwatch.ElapsedMilliseconds);
 
-            return ToViewModel(finished);
+            return ToViewModel(current, finished);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
@@ -124,11 +141,11 @@ internal sealed class RepositoryMirrorService(
             // briefly unreachable is far worse than serving yesterday's tree.
             logger.LogError(
                 exception, "Sync of {Project}@{Branch} failed",
-                repository.ProjectPath, repository.Branch);
+                current.ProjectPath, current.Branch);
 
             var failed = new RepositorySyncStateDto(
-                repository.ProjectPath,
-                repository.Branch,
+                current.ProjectPath,
+                current.Branch,
                 SyncOutcome.Failed,
                 CommitSha: null,
                 startedAt,
@@ -142,8 +159,10 @@ internal sealed class RepositoryMirrorService(
 
             await syncState.FinishAsync(failed, CancellationToken.None);
 
-            return ToViewModel(await syncState.GetAsync(
-                repository.ProjectPath, repository.Branch, CancellationToken.None));
+            return ToViewModel(
+                current,
+                await syncState.GetAsync(
+                    current.ProjectPath, current.Branch, CancellationToken.None));
         }
     }
 
@@ -317,7 +336,7 @@ internal sealed class RepositoryMirrorService(
     {
         get
         {
-            var subPath = _options.SubPath.Trim('/');
+            var subPath = settings.Current.SubPath.Trim('/');
             if (subPath.Length > 0) return subPath[(subPath.LastIndexOf('/') + 1)..];
 
             var project = repository.ProjectPath.Trim('/');
@@ -328,11 +347,15 @@ internal sealed class RepositoryMirrorService(
     private static string ExtensionOf(string fileName) =>
         Path.GetExtension(fileName).TrimStart('.').ToLowerInvariant();
 
-    private RepositoryViewModel ToViewModel(RepositorySyncStateDto? state) => new(
-        repository.ProjectPath,
-        repository.Branch,
-        _options.SubPath,
-        $"{_options.BaseUrl.TrimEnd('/')}/{repository.ProjectPath.Trim('/')}",
+    private static RepositoryViewModel ToViewModel(
+        RepositoryConfiguration current,
+        RepositorySyncStateDto? state) => new(
+        current.ProjectPath,
+        current.Branch,
+        current.SubPath,
+        current.IsConfigured
+            ? $"{current.BaseUrl.TrimEnd('/')}/{current.ProjectPath.Trim('/')}"
+            : string.Empty,
         // "never" rather than a missing record: a hub that has not synced looks
         // exactly like one whose repository is empty, and the fixes differ.
         state is null ? "never" : state.Outcome.ToString().ToLowerInvariant(),
@@ -344,7 +367,8 @@ internal sealed class RepositoryMirrorService(
         state?.FilesUpdated ?? 0,
         state?.FilesRemoved ?? 0,
         state?.FilesSkipped ?? 0,
-        state?.FilesRequeued ?? 0);
+        state?.FilesRequeued ?? 0,
+        current.IsConfigured);
 
     private sealed class SyncCounts
     {

@@ -130,6 +130,19 @@ public sealed class StackFixture : IAsyncLifetime
         // to one set of options.
         var settingRepo = new RepositorySourceSettingRepository(db);
 
+        // The real settings reader over the real table, not a stub: what an
+        // administrator saves has to reach the sync and the webhook, and a
+        // fixed reader here would let that wiring break with every test still
+        // green.
+        var repositorySettingsRepo = new RepositorySettingsRepository(db);
+        var protector = new FakeSecretProtector();
+        var repositorySettings = new StoredRepositorySettings(
+            new SingleServiceScopeFactory(repositorySettingsRepo),
+            protector,
+            gitLabOptions,
+            NullLogger<StoredRepositorySettings>.Instance);
+        var connectionProbe = new RecordingConnectionProbe();
+
         // The real activity log, not a stub: recording is a side effect of
         // ordinary operations, and a stub here would let it silently stop
         // working while every test still passed.
@@ -168,7 +181,11 @@ public sealed class StackFixture : IAsyncLifetime
 
         var mirror = new RepositoryMirrorService(
             repository, documentRepo, folderRepo, syncStateRepo, ingestion, queue, activity,
-            gitLabOptions, NullLogger<RepositoryMirrorService>.Instance);
+            repositorySettings, NullLogger<RepositoryMirrorService>.Instance);
+
+        var settingsAdmin = new RepositorySettingsAdmin(
+            repositorySettingsRepo, repositorySettings, connectionProbe, protector, activity, user,
+            NullLogger<RepositorySettingsAdmin>.Instance);
 
         return new Scope(
             db,
@@ -178,7 +195,7 @@ public sealed class StackFixture : IAsyncLifetime
             ingestion,
             mirror,
             new RepositoryWebhook(
-                syncQueue, repository, gitLabOptions, NullLogger<RepositoryWebhook>.Instance),
+                syncQueue, repositorySettings, NullLogger<RepositoryWebhook>.Instance),
             searchService,
             new ChatService(
                 chatRepo, knowledge, llm, user,
@@ -190,7 +207,11 @@ public sealed class StackFixture : IAsyncLifetime
             knowledge,
             user,
             settingRepo,
-            activity);
+            activity,
+            settingsAdmin,
+            repositorySettings,
+            connectionProbe,
+            protector);
     }
 
     /// <summary>
@@ -260,7 +281,11 @@ public sealed class StackFixture : IAsyncLifetime
         IKnowledgeRetriever Knowledge,
         TestCurrentUser User,
         IRepositorySourceSettingRepository SourceSettings,
-        IActivityLog Activity) : IAsyncDisposable
+        IActivityLog Activity,
+        IRepositorySettingsAdmin RepositorySettings,
+        IRepositorySettingsReader SettingsInForce,
+        RecordingConnectionProbe ConnectionProbe,
+        FakeSecretProtector Protector) : IAsyncDisposable
     {
         /// <summary>
         /// Commits a file to the fake repository and mirrors it, returning the

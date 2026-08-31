@@ -12,6 +12,10 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.10" />
+    <!-- Encrypts the repository access token and webhook secret before they are
+         written to the database. Abstractions only: the key ring is the host's
+         to configure, and Authentication:KeyPath is what makes it durable. -->
+    <PackageReference Include="Microsoft.AspNetCore.DataProtection.Abstractions" Version="10.0.10" />
     <!-- Text extraction. These are in-process parsing libraries, not external
          systems, so they stay in the Service layer behind ITextExtractor rather
          than becoming Integrations. -->

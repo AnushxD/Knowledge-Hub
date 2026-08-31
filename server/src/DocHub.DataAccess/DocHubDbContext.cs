@@ -67,6 +67,8 @@ public sealed class DocHubDbContext(DbContextOptions<DocHubDbContext> options)
     public DbSet<RepositorySourceSetting> RepositorySourceSettings =>
         Set<RepositorySourceSetting>();
 
+    public DbSet<RepositorySettings> RepositorySettings => Set<RepositorySettings>();
+
     public DbSet<Document> Documents => Set<Document>();
 
     public DbSet<DocumentChunk> DocumentChunks => Set<DocumentChunk>();
@@ -172,6 +174,39 @@ public sealed class DocHubDbContext(DbContextOptions<DocHubDbContext> options)
             // Deliberately no seed row. An empty table is the honest starting
             // state: no repository servers have been added, and the sources
             // screen says exactly that.
+        });
+
+        builder.Entity<RepositorySettings>(entity =>
+        {
+            entity.ToTable(
+                "repository_settings",
+                // One repository, one row. Enforced here rather than by
+                // convention because everything reads "the settings" as a
+                // single answer, and a second row would make that a guess.
+                table => table.HasCheckConstraint(
+                    "ck_repository_settings_singleton",
+                    // Quoted: columns in this schema are PascalCase, and an
+                    // unquoted identifier would be folded to lower case and not
+                    // found.
+                    $"\"Id\" = {Entities.RepositorySettings.SingletonId}"));
+
+            entity.HasKey(settings => settings.Id);
+            // Never generated: the id is the constant above, not a sequence.
+            entity.Property(settings => settings.Id).ValueGeneratedNever();
+            entity.Property(settings => settings.BaseUrl).HasMaxLength(2000);
+            entity.Property(settings => settings.ProjectPath).HasMaxLength(500);
+            entity.Property(settings => settings.Branch).HasMaxLength(300);
+            entity.Property(settings => settings.SubPath).HasMaxLength(2000);
+
+            // Ciphertext, not the secret. Data Protection's payload is
+            // base64url and grows with the key ring's metadata, so this is
+            // sized well clear of the token it wraps.
+            entity.Property(settings => settings.ProtectedToken).HasMaxLength(4000);
+            entity.Property(settings => settings.ProtectedWebhookSecret).HasMaxLength(4000);
+
+            // Deliberately no seed row. No row at all is what "the deployment's
+            // configuration is in force" looks like, and seeding one would make
+            // every fresh install claim an administrator had chosen it.
         });
 
         builder.Entity<Folder>(entity =>

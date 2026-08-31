@@ -15,6 +15,7 @@ namespace DocHub.Api.Controllers;
 [Produces("application/json")]
 public sealed class RepositoryController(
     IRepositoryMirrorService mirror,
+    IRepositorySettingsAdmin settings,
     IRepositorySyncQueue queue,
     ICurrentUser currentUser) : ControllerBase
 {
@@ -47,9 +48,68 @@ public sealed class RepositoryController(
     [Authorize(Policy = Policies.Admin)]
     [HttpPost("sync")]
     [ProducesResponseType<RepositoryViewModel>(StatusCodes.Status202Accepted)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<ActionResult<RepositoryViewModel>> Sync(CancellationToken ct)
     {
+        var status = await mirror.GetStatusAsync(ct);
+
+        // Refused rather than queued into a job that can only fail: there is
+        // nothing to mirror until the hub has been pointed somewhere, and the
+        // message says where to do that.
+        if (!status.IsConfigured)
+        {
+            throw new ValidationException(
+                "No repository is configured. Point the hub at one under Settings first.");
+        }
+
         queue.Enqueue(currentUser.Id);
-        return Accepted(await mirror.GetStatusAsync(ct));
+        return Accepted(status);
     }
+
+    // ---- which repository is mirrored ----------------------------------------
+    //
+    // Admin only, and separate from the status above for the same reason the
+    // knowledge-source endpoints are split: this one names the instance and
+    // says whether a credential is held, while that one only says how current
+    // the library is — a question for whoever is reading it.
+
+    /// <summary>
+    /// The repository settings in force. Secrets are described, never returned:
+    /// there is no screen that needs to show a token back.
+    /// </summary>
+    [Authorize(Policy = Policies.Admin)]
+    [HttpGet("settings")]
+    [ProducesResponseType<RepositorySettingsViewModel>(StatusCodes.Status200OK)]
+    public async Task<RepositorySettingsViewModel> GetSettings(CancellationToken ct) =>
+        await settings.GetAsync(ct);
+
+    /// <summary>
+    /// Points the hub at a repository. In force immediately — the next sync,
+    /// webhook and file fetch use it, with no restart.
+    ///
+    /// Does not sync. Changing the project or branch replaces the whole library
+    /// at the next one, and that is a decision worth pressing a second button
+    /// for rather than a side effect of saving a form.
+    /// </summary>
+    [Authorize(Policy = Policies.Admin)]
+    [HttpPut("settings")]
+    [ProducesResponseType<RepositorySettingsViewModel>(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<RepositorySettingsViewModel> SaveSettings(
+        [FromBody] UpdateRepositorySettingsRequest request,
+        CancellationToken ct) =>
+        await settings.SaveAsync(request, ct);
+
+    /// <summary>
+    /// Reads the repository described by the request without saving it, so a
+    /// wrong project path or sub-path is caught before it empties the library.
+    /// </summary>
+    [Authorize(Policy = Policies.Admin)]
+    [HttpPost("settings/test")]
+    [ProducesResponseType<RepositoryConnectionViewModel>(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<RepositoryConnectionViewModel> TestSettings(
+        [FromBody] UpdateRepositorySettingsRequest request,
+        CancellationToken ct) =>
+        await settings.TestAsync(request, ct);
 }

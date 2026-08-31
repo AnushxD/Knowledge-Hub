@@ -3,7 +3,6 @@ using System.Net.Http.Headers;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 
 namespace DocHub.Integrations.SourceControl;
 
@@ -25,10 +24,9 @@ public sealed class FileTooLargeException(string message) : Exception(message);
 /// </summary>
 internal sealed partial class GitLabRepositoryClient(
     HttpClient http,
-    IOptions<GitLabOptions> options,
+    IRepositorySettingsReader settings,
     ILogger<GitLabRepositoryClient> logger) : ISourceRepositoryClient
 {
-    private readonly GitLabOptions _options = options.Value;
 
     /// <summary>
     /// Guards the pagination loop. A tree of 50,000 files is already beyond
@@ -39,20 +37,30 @@ internal sealed partial class GitLabRepositoryClient(
 
     private const int PageSize = 100;
 
-    public string ProjectPath => _options.ProjectPath;
+    // The settings are read per call rather than captured in a field: the
+    // repository is editable by an administrator, and a client instance that
+    // remembered where it was pointed when it was built would keep mirroring
+    // the previous project until something recycled the process.
+    public string ProjectPath => settings.Current.ProjectPath;
 
-    public string Branch => _options.Branch;
+    public string Branch => settings.Current.Branch;
 
-    public Uri WebUrlFor(string repositoryPath) =>
-        new($"{_options.BaseUrl.TrimEnd('/')}/{_options.ProjectPath.Trim('/')}/-/blob/"
-            + $"{Uri.EscapeDataString(_options.Branch)}/{FullPath(repositoryPath)}");
+    public Uri WebUrlFor(string repositoryPath)
+    {
+        var current = settings.Current;
+
+        return new($"{current.BaseUrl.TrimEnd('/')}/{current.ProjectPath.Trim('/')}/-/blob/"
+            + $"{Uri.EscapeDataString(current.Branch)}/{FullPath(current, repositoryPath)}");
+    }
 
     public async Task<string?> GetHeadCommitAsync(CancellationToken ct = default)
     {
-        var url = $"{ProjectApi}/repository/commits"
-            + $"?ref_name={Uri.EscapeDataString(_options.Branch)}&per_page=1";
+        var current = await RequireConfiguredAsync(ct);
 
-        using var response = await SendAsync(url, ct);
+        var url = $"{ProjectApi(current)}/repository/commits"
+            + $"?ref_name={Uri.EscapeDataString(current.Branch)}&per_page=1";
+
+        using var response = await SendAsync(current, url, ct);
         await using var body = await response.Content.ReadAsStreamAsync(ct);
         using var json = await JsonDocument.ParseAsync(body, cancellationToken: ct);
 
@@ -70,11 +78,13 @@ internal sealed partial class GitLabRepositoryClient(
 
     public async Task<IReadOnlyList<RepositoryFile>> ListFilesAsync(CancellationToken ct = default)
     {
-        var subPath = _options.SubPath.Trim('/');
+        var current = await RequireConfiguredAsync(ct);
+
+        var subPath = current.SubPath.Trim('/');
         var prefix = subPath.Length == 0 ? string.Empty : subPath + "/";
 
-        var url = $"{ProjectApi}/repository/tree"
-            + $"?ref={Uri.EscapeDataString(_options.Branch)}"
+        var url = $"{ProjectApi(current)}/repository/tree"
+            + $"?ref={Uri.EscapeDataString(current.Branch)}"
             + $"&recursive=true&per_page={PageSize}&pagination=keyset";
 
         if (subPath.Length > 0) url += $"&path={Uri.EscapeDataString(subPath)}";
@@ -88,11 +98,11 @@ internal sealed partial class GitLabRepositoryClient(
             if (++pages > MaxPages)
             {
                 throw new SourceRepositoryException(
-                    $"The tree of '{_options.ProjectPath}' did not end after {MaxPages} pages "
+                    $"The tree of '{current.ProjectPath}' did not end after {MaxPages} pages "
                     + "of 100 entries. Mirror a sub-path instead of the whole repository.");
             }
 
-            using var response = await SendAsync(next, ct);
+            using var response = await SendAsync(current, next, ct);
             await using var body = await response.Content.ReadAsStreamAsync(ct);
             using var json = await JsonDocument.ParseAsync(body, cancellationToken: ct);
 
@@ -133,7 +143,7 @@ internal sealed partial class GitLabRepositoryClient(
 
         logger.LogInformation(
             "Listed {FileCount} files from {Project}@{Branch}{SubPath}",
-            files.Count, _options.ProjectPath, _options.Branch,
+            files.Count, current.ProjectPath, current.Branch,
             subPath.Length == 0 ? string.Empty : $" under {subPath}");
 
         return files;
@@ -143,14 +153,16 @@ internal sealed partial class GitLabRepositoryClient(
         string repositoryPath,
         CancellationToken ct = default)
     {
+        var current = await RequireConfiguredAsync(ct);
+
         // The whole path is one path segment to GitLab, slashes included, so it
         // is escaped as data rather than as a path.
-        var url = $"{ProjectApi}/repository/files/"
-            + $"{Uri.EscapeDataString(FullPath(repositoryPath))}/raw"
-            + $"?ref={Uri.EscapeDataString(_options.Branch)}";
+        var url = $"{ProjectApi(current)}/repository/files/"
+            + $"{Uri.EscapeDataString(FullPath(current, repositoryPath))}/raw"
+            + $"?ref={Uri.EscapeDataString(current.Branch)}";
 
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
-        Authenticate(request);
+        Authenticate(current, request);
 
         HttpResponseMessage response;
 
@@ -165,7 +177,7 @@ internal sealed partial class GitLabRepositoryClient(
                                           && !ct.IsCancellationRequested)
         {
             throw new SourceRepositoryException(
-                $"Could not reach GitLab at {_options.BaseUrl}: {exception.Message}", exception);
+                $"Could not reach GitLab at {current.BaseUrl}: {exception.Message}", exception);
         }
 
         if (response.StatusCode == HttpStatusCode.NotFound)
@@ -176,15 +188,15 @@ internal sealed partial class GitLabRepositoryClient(
 
         try
         {
-            EnsureSuccess(response, url);
+            EnsureSuccess(current, response, url);
 
             var size = response.Content.Headers.ContentLength;
 
-            if (size > _options.MaxFileBytes)
+            if (size > current.MaxFileBytes)
             {
                 throw new FileTooLargeException(
                     $"The file is {size / 1024 / 1024} MB, above the "
-                    + $"{_options.MaxFileBytes / 1024 / 1024} MB limit set by "
+                    + $"{current.MaxFileBytes / 1024 / 1024} MB limit set by "
                     + "GitLab:MaxFileBytes, so it was not indexed.");
             }
 
@@ -202,23 +214,49 @@ internal sealed partial class GitLabRepositoryClient(
         }
     }
 
+    /// <summary>
+    /// The settings in force, refusing to reach GitLab at all when no
+    /// repository has been chosen yet.
+    ///
+    /// Thrown rather than returning nothing: an unconfigured hub is a first-run
+    /// state with an obvious fix, and every caller here already renders a
+    /// <see cref="SourceRepositoryException"/> as "the repository could not be
+    /// read" — which is exactly what happened.
+    /// </summary>
+    private async Task<RepositoryConfiguration> RequireConfiguredAsync(CancellationToken ct)
+    {
+        var current = await settings.GetAsync(ct);
+
+        if (!current.IsConfigured)
+        {
+            throw new SourceRepositoryException(
+                "No repository is configured. An administrator can point the hub at one under "
+                + "Settings, or set GitLab:BaseUrl and GitLab:ProjectPath on the deployment.");
+        }
+
+        return current;
+    }
+
     /// <summary>Project path escaped into the single id segment the API expects.</summary>
-    private string ProjectApi =>
-        $"{_options.BaseUrl.TrimEnd('/')}/api/v4/projects/"
-        + Uri.EscapeDataString(_options.ProjectPath.Trim('/'));
+    private static string ProjectApi(RepositoryConfiguration current) =>
+        $"{current.BaseUrl.TrimEnd('/')}/api/v4/projects/"
+        + Uri.EscapeDataString(current.ProjectPath.Trim('/'));
 
     /// <summary>Path from the repository root, which is what GitLab addresses.</summary>
-    private string FullPath(string repositoryPath)
+    private static string FullPath(RepositoryConfiguration current, string repositoryPath)
     {
-        var subPath = _options.SubPath.Trim('/');
+        var subPath = current.SubPath.Trim('/');
         var path = repositoryPath.TrimStart('/');
         return subPath.Length == 0 ? path : $"{subPath}/{path}";
     }
 
-    private async Task<HttpResponseMessage> SendAsync(string url, CancellationToken ct)
+    private async Task<HttpResponseMessage> SendAsync(
+        RepositoryConfiguration current,
+        string url,
+        CancellationToken ct)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
-        Authenticate(request);
+        Authenticate(current, request);
 
         HttpResponseMessage response;
 
@@ -230,12 +268,12 @@ internal sealed partial class GitLabRepositoryClient(
                                           && !ct.IsCancellationRequested)
         {
             throw new SourceRepositoryException(
-                $"Could not reach GitLab at {_options.BaseUrl}: {exception.Message}", exception);
+                $"Could not reach GitLab at {current.BaseUrl}: {exception.Message}", exception);
         }
 
         try
         {
-            EnsureSuccess(response, url);
+            EnsureSuccess(current, response, url);
             return response;
         }
         catch
@@ -245,17 +283,20 @@ internal sealed partial class GitLabRepositoryClient(
         }
     }
 
-    private void Authenticate(HttpRequestMessage request)
+    private static void Authenticate(RepositoryConfiguration current, HttpRequestMessage request)
     {
         // Left off entirely for a public project rather than sent empty, which
         // GitLab answers with 401 instead of falling back to anonymous access.
-        if (!string.IsNullOrWhiteSpace(_options.Token))
-            request.Headers.Add("PRIVATE-TOKEN", _options.Token);
+        if (!string.IsNullOrWhiteSpace(current.Token))
+            request.Headers.Add("PRIVATE-TOKEN", current.Token);
 
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
     }
 
-    private void EnsureSuccess(HttpResponseMessage response, string url)
+    private static void EnsureSuccess(
+        RepositoryConfiguration current,
+        HttpResponseMessage response,
+        string url)
     {
         if (response.IsSuccessStatusCode) return;
 
@@ -264,11 +305,11 @@ internal sealed partial class GitLabRepositoryClient(
         var explanation = response.StatusCode switch
         {
             HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden =>
-                "GitLab refused the token. Check GitLab:Token has read_repository on "
-                + $"'{_options.ProjectPath}'.",
+                "GitLab refused the token. Check it has read_repository on "
+                + $"'{current.ProjectPath}'.",
             HttpStatusCode.NotFound =>
-                $"GitLab has no project '{_options.ProjectPath}' or no branch "
-                + $"'{_options.Branch}' on it. Check GitLab:ProjectPath and GitLab:Branch.",
+                $"GitLab has no project '{current.ProjectPath}' or no branch "
+                + $"'{current.Branch}' on it. Check the project path and branch.",
             _ => $"GitLab answered {(int)response.StatusCode} {response.ReasonPhrase}.",
         };
 

@@ -7,6 +7,7 @@ using DocHub.Integrations.SourceControl;
 using DocHub.Integrations.Storage;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 
 namespace DocHub.Integrations;
@@ -159,18 +160,18 @@ public static class IntegrationsServiceCollectionExtensions
         services
             .AddOptions<GitLabOptions>()
             .Bind(configuration.GetSection(GitLabOptions.SectionName))
-            // Required, not optional. Every document in the hub comes from this
-            // repository, so an installation without one is not a degraded
-            // installation — it is an empty product, and finding that out at
-            // boot beats finding it out from a blank library screen.
+            // Checked for being *well formed*, not for being present. The
+            // repository is now something an administrator can point at from
+            // the UI, so an empty section is a first-run state rather than a
+            // misconfiguration — and refusing to boot without one would mean
+            // the screen that sets it could never be reached. A value that is
+            // there and wrong is still caught here, where it is cheap.
             .Validate(
-                options => Uri.TryCreate(options.BaseUrl, UriKind.Absolute, out var url)
-                    && (url.Scheme == Uri.UriSchemeHttp || url.Scheme == Uri.UriSchemeHttps),
+                options => string.IsNullOrWhiteSpace(options.BaseUrl)
+                    || (Uri.TryCreate(options.BaseUrl, UriKind.Absolute, out var url)
+                        && (url.Scheme == Uri.UriSchemeHttp || url.Scheme == Uri.UriSchemeHttps)),
                 "GitLab:BaseUrl must be an absolute http or https URL, such as "
-                + "'https://gitlab.example.org'.")
-            .Validate(
-                options => !string.IsNullOrWhiteSpace(options.ProjectPath),
-                "GitLab:ProjectPath must be the namespaced project path, such as 'team/docs'.")
+                + "'https://gitlab.example.org', or empty to be set in the UI.")
             .Validate(
                 options => !string.IsNullOrWhiteSpace(options.Branch),
                 "GitLab:Branch must name the branch to mirror.")
@@ -183,10 +184,25 @@ public static class IntegrationsServiceCollectionExtensions
             .GetSection(GitLabOptions.SectionName)
             .Get<GitLabOptions>() ?? new GitLabOptions();
 
+        // Configuration only. Services replaces this with the reader that
+        // overlays what an administrator saved — which needs the database, and
+        // so cannot live here. TryAdd rather than Add: the later registration
+        // is the one that must win, and two would leave that to ordering.
+        services.TryAddSingleton<IRepositorySettingsReader, ConfiguredRepositorySettings>();
+
         services
             .AddHttpClient<ISourceRepositoryClient, GitLabRepositoryClient>(client =>
             {
                 client.Timeout = TimeSpan.FromSeconds(gitLabOptions.TimeoutSeconds);
+            });
+
+        // Its own client, with its own deadline: somebody is watching this one,
+        // and a probe that takes as long as a full tree listing to say "that
+        // address is wrong" is a probe nobody presses twice.
+        services
+            .AddHttpClient<IRepositoryConnectionProbe, GitLabConnectionProbe>(client =>
+            {
+                client.Timeout = TimeSpan.FromSeconds(15);
             });
 
         services.AddHealthChecks()

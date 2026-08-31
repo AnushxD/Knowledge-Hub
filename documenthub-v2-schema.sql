@@ -454,6 +454,37 @@ BEGIN
 END $EF$;
 COMMIT;
 
+START TRANSACTION;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM __ef_migrations_history WHERE "MigrationId" = '20260831183805_RepositorySettings') THEN
+    CREATE TABLE repository_settings (
+        "Id" integer NOT NULL,
+        "BaseUrl" character varying(2000) NOT NULL,
+        "ProjectPath" character varying(500) NOT NULL,
+        "Branch" character varying(300) NOT NULL,
+        "SubPath" character varying(2000) NOT NULL,
+        "HasSubPath" boolean NOT NULL,
+        "ProtectedToken" character varying(4000),
+        "ProtectedWebhookSecret" character varying(4000),
+        "UpdatedAt" timestamp with time zone NOT NULL,
+        "UpdatedById" uuid,
+        CONSTRAINT "PK_repository_settings" PRIMARY KEY ("Id"),
+        CONSTRAINT ck_repository_settings_singleton CHECK ("Id" = 1)
+    );
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM __ef_migrations_history WHERE "MigrationId" = '20260831183805_RepositorySettings') THEN
+    INSERT INTO __ef_migrations_history ("MigrationId", "ProductVersion")
+    VALUES ('20260831183805_RepositorySettings', '10.0.10');
+    END IF;
+END $EF$;
+COMMIT;
+
 
 
 -- Default administrator for a fresh deployment.

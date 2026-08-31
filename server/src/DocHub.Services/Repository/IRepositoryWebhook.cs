@@ -2,7 +2,6 @@ using System.Security.Cryptography;
 using System.Text;
 using DocHub.Integrations.SourceControl;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 
 namespace DocHub.Services.Repository;
 
@@ -35,32 +34,44 @@ public interface IRepositoryWebhook
     /// <param name="token">The <c>X-Gitlab-Token</c> header, verbatim.</param>
     /// <param name="eventName">The <c>X-Gitlab-Event</c> header, e.g. "Push Hook".</param>
     /// <param name="gitRef">The <c>ref</c> from the payload, e.g. "refs/heads/main".</param>
-    WebhookOutcome Handle(string? token, string? eventName, string? gitRef);
+    Task<WebhookOutcome> HandleAsync(
+        string? token,
+        string? eventName,
+        string? gitRef,
+        CancellationToken ct = default);
 }
 
 internal sealed class RepositoryWebhook(
     IRepositorySyncQueue queue,
-    ISourceRepositoryClient repository,
-    IOptions<GitLabOptions> options,
+    IRepositorySettingsReader settings,
     ILogger<RepositoryWebhook> logger) : IRepositoryWebhook
 {
-    private readonly GitLabOptions _options = options.Value;
-
-    public WebhookOutcome Handle(string? token, string? eventName, string? gitRef)
+    // Awaited rather than read from a cached snapshot: the secret is editable
+    // in the UI, and a delivery checked against the previous one would be
+    // refused for as long as the snapshot lasted — which reads as GitLab having
+    // the wrong secret, the exact thing the administrator has just fixed.
+    public async Task<WebhookOutcome> HandleAsync(
+        string? token,
+        string? eventName,
+        string? gitRef,
+        CancellationToken ct = default)
     {
+        var current = await settings.GetAsync(ct);
+
         // No secret configured refuses everything. This endpoint has to be
         // anonymous — GitLab cannot hold a session — so the secret is the only
         // thing separating GitLab from anyone else who can reach the box, and
         // an unset one has to fail closed for the same reason an empty Google
         // allow-list admits nobody.
-        if (string.IsNullOrWhiteSpace(_options.WebhookSecret))
+        if (string.IsNullOrWhiteSpace(current.WebhookSecret))
         {
             logger.LogWarning(
-                "Refused a GitLab webhook: GitLab:WebhookSecret is not configured.");
+                "Refused a GitLab webhook: no webhook secret is set, in configuration or in the "
+                + "repository settings.");
             return WebhookOutcome.Rejected;
         }
 
-        if (!Matches(token, _options.WebhookSecret))
+        if (!Matches(token, current.WebhookSecret))
         {
             logger.LogWarning("Refused a GitLab webhook: the token did not match.");
             return WebhookOutcome.Rejected;
@@ -77,11 +88,11 @@ internal sealed class RepositoryWebhook(
         // A push to a feature branch changes nothing the hub mirrors, and
         // syncing on one would re-list the whole tree for every branch a team
         // pushes to — which on a busy repository is continuously.
-        if (!IsMirroredBranch(gitRef))
+        if (!IsMirroredBranch(current.Branch, gitRef))
         {
             logger.LogInformation(
                 "Ignoring a push to '{Ref}'; mirroring '{Branch}'.",
-                gitRef ?? "(none)", repository.Branch);
+                gitRef ?? "(none)", current.Branch);
             return WebhookOutcome.Ignored;
         }
 
@@ -91,7 +102,7 @@ internal sealed class RepositoryWebhook(
         return WebhookOutcome.Queued;
     }
 
-    private bool IsMirroredBranch(string? gitRef)
+    private static bool IsMirroredBranch(string mirrored, string? gitRef)
     {
         if (string.IsNullOrWhiteSpace(gitRef)) return false;
 
@@ -100,7 +111,7 @@ internal sealed class RepositoryWebhook(
             ? gitRef[prefix.Length..]
             : gitRef;
 
-        return string.Equals(branch, repository.Branch, StringComparison.Ordinal);
+        return string.Equals(branch, mirrored, StringComparison.Ordinal);
     }
 
     /// <summary>

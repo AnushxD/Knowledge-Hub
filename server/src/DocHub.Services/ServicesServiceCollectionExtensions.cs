@@ -1,4 +1,5 @@
 using DocHub.Integrations.Knowledge;
+using DocHub.Integrations.SourceControl;
 using DocHub.Services.Activity;
 using DocHub.Services.Chat;
 using DocHub.Services.Documents;
@@ -39,6 +40,26 @@ public static class ServicesServiceCollectionExtensions
         services.AddScoped<IIngestionService, IngestionService>();
         services.AddScoped<IRepositoryMirrorService, RepositoryMirrorService>();
         services.AddScoped<IRepositoryWebhook, RepositoryWebhook>();
+        services.AddScoped<IRepositorySettingsAdmin, RepositorySettingsAdmin>();
+
+        // Singleton, behind both of its contracts: it caches one snapshot for
+        // the whole process, and saving refreshes that snapshot so the answer
+        // the screen draws and the repository the next sync reads describe the
+        // same place.
+        //
+        // This replaces the configuration-only reader registered by
+        // AddIntegrations, which is why that one is a TryAdd and this one runs
+        // after it.
+        services.AddSingleton<StoredRepositorySettings>();
+        services.AddSingleton<IRepositorySettingsReader>(
+            provider => provider.GetRequiredService<StoredRepositorySettings>());
+        services.AddSingleton<IRepositorySettingsRefresher>(
+            provider => provider.GetRequiredService<StoredRepositorySettings>());
+
+        // In-process encryption of the secrets that are stored in the database
+        // rather than in configuration, so it belongs here beside the text
+        // extractors rather than in Integrations.
+        services.AddSingleton<ISecretProtector, DataProtectionSecretProtector>();
         services.AddScoped<ISearchService, SearchService>();
         services.AddScoped<IChatService, ChatService>();
         services.AddScoped<IActivityLog, ActivityLog>();

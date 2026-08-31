@@ -1,6 +1,5 @@
 using DocHub.Integrations.SourceControl;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
-using Microsoft.Extensions.Options;
 
 namespace DocHub.Integrations.HealthChecks;
 
@@ -14,21 +13,34 @@ namespace DocHub.Integrations.HealthChecks;
 /// </summary>
 internal sealed class SourceRepositoryHealthCheck(
     ISourceRepositoryClient repository,
-    IOptions<GitLabOptions> options) : IHealthCheck
+    IRepositorySettingsReader settings) : IHealthCheck
 {
-    private readonly GitLabOptions _options = options.Value;
-
     public async Task<HealthCheckResult> CheckHealthAsync(
         HealthCheckContext context,
         CancellationToken cancellationToken = default)
     {
+        var current = await settings.GetAsync(cancellationToken);
+
         var data = new Dictionary<string, object>
         {
-            ["project"] = repository.ProjectPath,
-            ["branch"] = repository.Branch,
-            ["subPath"] = _options.SubPath,
-            ["authenticated"] = !string.IsNullOrWhiteSpace(_options.Token),
+            ["project"] = current.ProjectPath,
+            ["branch"] = current.Branch,
+            ["subPath"] = current.SubPath,
+            ["authenticated"] = !string.IsNullOrWhiteSpace(current.Token),
+            ["settingsFrom"] = current.Origin.ToString(),
         };
+
+        // Nothing to check yet, and nothing broken either. A hub that has not
+        // been pointed at a repository reports the state it is in, because
+        // unhealthy here would have an operator hunting for an outage that is
+        // really a screen nobody has filled in.
+        if (!current.IsConfigured)
+        {
+            return HealthCheckResult.Degraded(
+                "No repository is configured. An administrator can point the hub at one under "
+                + "Settings.",
+                data: data);
+        }
 
         try
         {

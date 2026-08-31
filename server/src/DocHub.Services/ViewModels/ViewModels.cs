@@ -477,6 +477,11 @@ public record DocumentContent(Stream Content, string ContentType, string FileNam
 /// with itself, and it is shown because a run reporting nothing but zeros while
 /// hundreds of documents begin indexing reads as a run that did nothing.
 /// </param>
+/// <param name="IsConfigured">
+/// Whether the hub has been pointed at a repository at all. False is a
+/// first-run state rather than a fault, and the library says so in those words
+/// instead of showing an empty shelf.
+/// </param>
 public record RepositoryViewModel(
     string ProjectPath,
     string Branch,
@@ -491,4 +496,89 @@ public record RepositoryViewModel(
     int Updated,
     int Removed,
     int Skipped,
-    int Requeued);
+    int Requeued,
+    bool IsConfigured);
+
+/// <summary>
+/// Which repository the hub mirrors, as an administrator edits it.
+///
+/// Separate from <see cref="RepositoryViewModel"/> because the two answer
+/// different questions and are read by different people: that one says how
+/// current the library is and anyone signed in may see it, this one is the
+/// deployment's aim and is admin-only — it names the instance, and says whether
+/// a credential is held.
+/// </summary>
+/// <param name="HasToken">
+/// Whether an access token is in force. The token itself is never returned:
+/// there is no screen that needs to show it, and a secret that is only sent
+/// back out to be sent in again is a secret with two extra ways to leak.
+/// </param>
+/// <param name="TokenIsUnreadable">
+/// A token was saved here and cannot be decrypted — the Data Protection key
+/// ring changed under it. Reported rather than shown as "not set", because the
+/// fix is to set it again and the cause is worth knowing.
+/// </param>
+/// <param name="IsSaved">
+/// Whether any of this was chosen in the UI, as opposed to coming from the
+/// deployment's configuration. A field left blank here falls back to the
+/// configured value, so the screen has to be able to say which is in force.
+/// </param>
+public record RepositorySettingsViewModel(
+    string BaseUrl,
+    string ProjectPath,
+    string Branch,
+    string SubPath,
+    bool HasToken,
+    bool HasWebhookSecret,
+    bool TokenIsUnreadable,
+    bool WebhookSecretIsUnreadable,
+    bool IsConfigured,
+    bool IsSaved,
+    DateTimeOffset? UpdatedAt);
+
+/// <summary>
+/// A change to the mirrored repository. Every field is replaced together —
+/// this is one setting with several parts, and saving a project path without
+/// the branch it lives on has no meaning.
+/// </summary>
+public record UpdateRepositorySettingsRequest
+{
+    /// <summary>Instance root, e.g. <c>https://gitlab.example.org</c>.</summary>
+    public string? BaseUrl { get; init; }
+
+    /// <summary>Namespaced project path as GitLab spells it, e.g. <c>team/docs</c>.</summary>
+    public string? ProjectPath { get; init; }
+
+    public string? Branch { get; init; }
+
+    /// <summary>Directory to mirror. Empty is a real choice: the whole repository.</summary>
+    public string? SubPath { get; init; }
+
+    /// <summary>
+    /// Null leaves the stored token exactly as it is; a value replaces it; an
+    /// empty string clears it. Three states because a form that has to re-send
+    /// a secret in order to change a branch is a form that will eventually send
+    /// it somewhere it should not.
+    /// </summary>
+    public string? Token { get; init; }
+
+    /// <summary>Same three states as <see cref="Token"/>.</summary>
+    public string? WebhookSecret { get; init; }
+}
+
+/// <summary>What was established about a repository before saving it.</summary>
+/// <param name="SubPathFound">
+/// The sub-path holds files on that branch. The most valuable of these checks:
+/// a wrong sub-path mirrors nothing, and an empty library reads as a broken hub
+/// rather than a mistyped directory.
+/// </param>
+public record RepositoryConnectionViewModel(
+    bool IsReachable,
+    bool ProjectFound,
+    bool BranchFound,
+    bool SubPathFound,
+    bool UsedToken,
+    string Detail,
+    string? ProjectName,
+    string? DefaultBranch,
+    string? WebUrl);

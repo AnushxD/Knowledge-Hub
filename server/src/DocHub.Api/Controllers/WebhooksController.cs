@@ -27,12 +27,15 @@ public sealed class WebhooksController(IRepositoryWebhook webhook) : ControllerB
     [ProducesResponseType(StatusCodes.Status202Accepted)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    public IActionResult GitLab([FromBody] GitLabPushHook? payload)
+    public async Task<IActionResult> GitLab(
+        [FromBody] GitLabPushHook? payload,
+        CancellationToken ct)
     {
-        var outcome = webhook.Handle(
+        var outcome = await webhook.HandleAsync(
             Request.Headers["X-Gitlab-Token"].FirstOrDefault(),
             Request.Headers["X-Gitlab-Event"].FirstOrDefault(),
-            payload?.Ref);
+            payload?.Ref,
+            ct);
 
         return outcome switch
         {
