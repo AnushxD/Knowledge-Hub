@@ -44,7 +44,7 @@ IIS; the development machine is a Mac.
 |---|---|---|
 | Frontend | Angular 22 — standalone, signals, zoneless — + Tailwind v4 | **No third-party UI kit** |
 | Backend | ASP.NET Core (.NET 10) | |
-| Database | PostgreSQL 17 + pgvector | One database for relational data *and* embeddings. V2 uses `documenthub_v2`; v1's is frozen |
+| Database | PostgreSQL 17 + pgvector | One database for relational data *and* embeddings. One database, `documenthub` |
 | Source of documents | GitLab v4 REST API | One project, one branch, optionally one sub-path |
 | File storage | Azure Blob Storage | Wired and health-checked, but **no document uses it** — files stream from GitLab on demand |
 | Background jobs | Hangfire, Postgres-backed, in-process | Dashboard at `/jobs`, Admin only |
@@ -142,9 +142,7 @@ server/
   Dockerfile
 .github/workflows/{ci,publish}.yml
 docker-compose.yml                        # postgres+pgvector, azurite, ollama
-docker/initdb/                            # creates documenthub_v2 on a fresh volume
-documenthub-v2-schema.sql                 # idempotent V2 setup; ships in the publish output
-documenthub-schema.sql                    # V1's, frozen at release 1, never regenerated
+documenthub-schema.sql                    # idempotent setup; ships in the publish output
 docker-compose.app.yml                    # the built stack on that infrastructure
 CLAUDE.md · SESSION.md · README.md · architecture-blueprint.md · chat-pipeline.md
 ```
@@ -471,10 +469,14 @@ Recorded so they are not re-litigated. Each is a trade already reasoned through.
 - Starring is not recorded: a bookmark is not an edit.
 
 **Deployment**
-- **V2 has its own database and its own migration chain.** V1's is left exactly
-  as release 1 left it. The two share no history, so neither script may be run
-  against the other's database — `documenthub-schema.sql` is frozen and
-  `documenthub-v2-schema.sql` is the one that ships.
+- **One database, `documenthub`, on one migration chain.** The chain starts at
+  `InitialSchemaV2`, a squash rather than a step on from release 1, so a
+  database still carrying release 1's history cannot be migrated onto it — it
+  is recreated. Release 1 keeps its own frozen script on the `release-1`
+  branch, where the tag that needs it can still find it; main carries one
+  script, `documenthub-schema.sql`, and it is the one that ships. Naming the
+  live database after the release that happens to be current was a standing
+  invitation to point the wrong script at it.
 - **One binary, two shapes.** Containers: nginx serves the client and proxies
   `/api`. IIS: the API serves the client from `wwwroot`, one site. Chosen at
   startup by looking for `wwwroot/index.html` — nothing branches on an
@@ -638,9 +640,6 @@ docker compose up -d --wait                  # postgres, azurite, ollama
 docker compose exec ollama ollama pull nomic-embed-text
 docker compose exec ollama ollama pull qwen2.5:7b
 
-# V2 has its own database. On a volume that predates it, create it once:
-docker compose exec postgres createdb -U documenthub documenthub_v2
-
 dotnet ef database update --project server/src/DocHub.DataAccess --startup-project server/src/DocHub.Api
 dotnet run --project server/src/DocHub.Api -- init-storage
 dotnet run --project server/src/DocHub.Api -- seed-admin
@@ -685,8 +684,8 @@ or **Sync now** on the library screen.
   interfaces
 - Never write to the mirrored repository. The token needs `read_repository` and
   nothing more, so a bug here cannot alter the team's documentation
-- Never run `documenthub-schema.sql` and `documenthub-v2-schema.sql` against
-  the same database, or point `dotnet ef database update` at the v1 one
+- Never point `documenthub-schema.sql` or `dotnet ef database update` at a
+  database still carrying release 1's migration history — recreate it instead
 - Never let the assistant answer from anything but retrieved passages
 - Never trust a client-supplied domain, `hd` hint or `returnUrl` — verify
   domains against the address the provider verified, and restrict redirects to

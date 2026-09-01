@@ -38,9 +38,10 @@ What that meant in practice:
   reports 0 added, 0 updated, 0 removed.
 - **Triggered by an admin "Sync now" and a GitLab push webhook**, both queued
   through Hangfire. No scheduled poll — that was the choice made.
-- **A new database, `documenthub_v2`, on a fresh squashed migration chain.**
-  V1's is untouched and `documenthub-schema.sql` is frozen beside the new
-  `documenthub-v2-schema.sql`, which is now what the IIS artefact and the
+- **A fresh squashed migration chain**, starting at `InitialSchemaV2`. It
+  shares no history with release 1, so a database carrying release 1's history
+  is recreated rather than migrated. One database, `documenthub`, and one
+  script, `documenthub-schema.sql`, which is what the IIS artefact and the
   Docker image ship.
 
 **Verified end to end** against a real GitLab instance (`gitlab.com`, the
@@ -308,9 +309,9 @@ registers. Reachable through the ordinary change-password path.
   IIS section of the README is updated for v2 — new database, new script, the
   `GitLab__*` environment variables — but nobody has run it.
 - **CI has not been checked** since the v2 push. Both workflows were updated to
-  publish `documenthub-v2-schema.sql`; the server tests need `documenthub_v2`
-  to exist on the runner, which the compose init script handles on a fresh
-  volume — worth confirming on the first run.
+  publish `documenthub-schema.sql`. The test projects create their own
+  databases, so the runner needs nothing beyond what compose brings up — worth
+  confirming on the first run.
 - **Not tried against the org's own GitLab.** Everything so far is against
   gitlab.com anonymously. The token path — in user-secrets or saved in the UI,
   sent as `PRIVATE-TOKEN` — is written and covered by tests but has never had a
@@ -354,5 +355,6 @@ registers. Reachable through the ordinary change-password path.
 1. Run it against the org's GitLab with a real token and a real `SubPath`.
 2. Configure the push webhook and confirm a real delivery lands.
 3. Check the CI run and fix whatever the runner does not have.
-4. Redeploy the IIS box onto `documenthub_v2` and re-verify sign-in, streaming
-   and a first sync there.
+4. Redeploy the IIS box — dropping and recreating its `documenthub` database,
+   which still holds release 1's chain — and re-verify sign-in, streaming and a
+   first sync there.

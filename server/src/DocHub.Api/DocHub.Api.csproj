@@ -41,8 +41,8 @@
          has to remember to copy across, and later to keep in step.
          Link, because the script lives at the repository root: it is a
          deployment artefact, not something this project owns. -->
-    <Content Include="..\..\..\documenthub-v2-schema.sql"
-             Link="documenthub-v2-schema.sql"
+    <Content Include="..\..\..\documenthub-schema.sql"
+             Link="documenthub-schema.sql"
              CopyToOutputDirectory="PreserveNewest"
              CopyToPublishDirectory="Always" />
   </ItemGroup>

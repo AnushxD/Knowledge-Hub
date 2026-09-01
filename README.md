@@ -13,10 +13,12 @@ content and always cites its sources.
 > search, and answered from by an assistant that cites the exact passage behind
 > every claim and says "I don't know" when the answer isn't there.
 >
-> V2 runs against **its own database** (`documenthub_v2`). V1's is left exactly
-> as [release 1](https://github.com/AnushxD/Knowledge-Hub/releases/tag/v1.0.0)
-> left it — the two share no migration history, so never point
-> `dotnet ef database update` at the old one. See [Current state](#current-state).
+> There is **one database, `documenthub`**. Its migration chain starts at a
+> squash, not at a step on from
+> [release 1](https://github.com/AnushxD/Knowledge-Hub/releases/tag/v1.0.0), so
+> a database still carrying release 1's history is recreated rather than
+> migrated. Release 1 keeps its own frozen schema script on the `release-1`
+> branch. See [Current state](#current-state).
 
 ---
 
@@ -98,31 +100,23 @@ approve the build tooling once:
 npm --prefix client approve-scripts esbuild fsevents lmdb msgpackr-extract @parcel/watcher
 ```
 
-### 4. Create the V2 database and its schema
+### 4. Apply the schema
 
 The API **never** creates or migrates anything on startup — provisioning is an
-explicit step you run, so nothing is silently created behind your back. That
-includes the database itself.
+explicit step you run, so nothing is silently created behind your back.
 
-A fresh clone gets `documenthub_v2` automatically: `docker/initdb` runs when
-the Postgres volume is created. If you already had the volume from v1, create
-it once by hand:
-
-```bash
-docker compose exec postgres createdb -U documenthub documenthub_v2
-```
-
-Then apply the schema:
+The `documenthub` database itself is created by the Postgres container from
+`POSTGRES_DB`. Apply the schema to it:
 
 ```bash
 dotnet ef database update --project server/src/DocHub.DataAccess --startup-project server/src/DocHub.Api
 ```
 
-> **Never run this against the v1 `documenthub` database.** V2 restarted the
-> migration chain, so the two share no history and applying one to the other
-> would try to create tables that already exist under a different shape. V1
-> stays exactly as release 1 left it, and `documenthub-schema.sql` is frozen
-> alongside it.
+> **If your Postgres volume predates this**, `documenthub` may still hold
+> release 1's migration history. The chain here starts at a squash and shares
+> no history with it, so migrating on top would try to create tables that
+> already exist under a different shape. Drop and recreate the database
+> instead — see [Current state](#current-state).
 
 ### 5. Create the blob storage container
 
@@ -538,10 +532,8 @@ Knowledge-Hub/
 │   ├── src/DocHub.DataAccess/    # EF Core, entities, repositories, migrations
 │   ├── src/DocHub.Integrations/  # external systems: GitLab, blob storage, embeddings, LLM, MCP
 │   └── tests/                    # integration tests
-├── docker/initdb/                # creates documenthub_v2 on a fresh Postgres volume
 ├── docker-compose.yml            # Postgres + pgvector, Azurite, Ollama
-├── documenthub-v2-schema.sql     # idempotent V2 setup, for a machine with no .NET SDK
-├── documenthub-schema.sql        # V1's, frozen at release 1
+├── documenthub-schema.sql        # idempotent setup, for a machine with no .NET SDK
 ├── CLAUDE.md                     # architecture rules and conventions — read this
 └── architecture-blueprint.md     # the full technical design
 ```
@@ -564,7 +556,7 @@ Key settings, one strongly-typed Options class per external dependency:
 
 | Key | Purpose |
 |---|---|
-| `Database:ConnectionString` | Postgres connection — `documenthub_v2`, and also backs the Hangfire job store |
+| `Database:ConnectionString` | Postgres connection — `documenthub`, and also backs the Hangfire job store |
 | `GitLab:BaseUrl` | Instance root, e.g. `https://gitlab.example.org`. The deployment's default; an administrator can override it under Settings → Source repository. Unset means "not chosen yet" |
 | `GitLab:ProjectPath` | Namespaced project path, e.g. `team/handbook`. Overridable in the UI |
 | `GitLab:Branch` | Branch to mirror (default `main`). Overridable in the UI |
@@ -930,7 +922,7 @@ ollama pull qwen2.5:7b
 
 #### 3. Create the database
 
-The artefact ships `documenthub-v2-schema.sql` beside the binaries. It creates
+The artefact ships `documenthub-schema.sql` beside the binaries. It creates
 every table and index and seeds the administrator account, and it is
 **idempotent** — running it again applies only what is missing, so it is also
 how you apply changes on a later upgrade.
@@ -938,27 +930,28 @@ how you apply changes on a later upgrade.
 Create the database first — the API never does:
 
 ```powershell
-createdb -h localhost -p 5432 -U documenthub documenthub_v2
+createdb -h localhost -p 5432 -U documenthub documenthub
 ```
 
 Then run the script against it:
 
 ```powershell
-psql -h localhost -p 5432 -U documenthub -d documenthub_v2 -f D:\Knowledge-Hub-main\documenthub-v2-schema.sql
+psql -h localhost -p 5432 -U documenthub -d documenthub -f D:\Knowledge-Hub-main\documenthub-schema.sql
 ```
 
 Point `-f` at wherever you extracted the artefact. There is no `dotnet ef` step
 and no SDK needed — this script *is* the migration. It enables the `vector`
 extension itself, so an empty database is all it needs.
 
-> **Upgrading a box that ran v1?** Leave the old `documenthub` database alone.
-> V2 restarted the migration chain, so its script and v1's must never touch the
-> same database, and v1's history contains nothing v2 can build on. The old
-> library was uploads; the new one is rebuilt from GitLab by the first sync.
+> **Upgrading a box that ran release 1?** Its `documenthub` database cannot be
+> migrated onto this chain, which starts at a squash and shares no history with
+> it. Drop and recreate the database, then run the script. Nothing is lost that
+> matters: the old library was uploads, and the new one is rebuilt from GitLab
+> by the first sync.
 
 > If `psql` is not installed, open the `postgres` container in Portainer,
 > **Console → Connect** (`/bin/sh`), and paste the script into
-> `psql -U documenthub -d documenthub_v2`. Workable, but the file is long; the
+> `psql -U documenthub -d documenthub`. Workable, but the file is long; the
 > command above is better.
 
 #### 4. Create the application pool and site in IIS Manager
@@ -988,7 +981,7 @@ and add:
 | Name | Value |
 |---|---|
 | `ASPNETCORE_ENVIRONMENT` | `Production` |
-| `Database__ConnectionString` | `Host=localhost;Port=5432;Database=documenthub_v2;Username=documenthub;Password=<the password from step 2>` |
+| `Database__ConnectionString` | `Host=localhost;Port=5432;Database=documenthub;Username=documenthub;Password=<the password from step 2>` |
 | `GitLab__*` | Optional — the repository is normally chosen in the app, under Settings → Source repository. Set `BaseUrl`, `ProjectPath`, `Branch`, `SubPath`, `Token` and `WebhookSecret` here only to have the box arrive already pointed; whatever is saved in the app overrides them field by field |
 | `FileStorage__ConnectionString` | `UseDevelopmentStorage=true` |
 | `FileStorage__ContainerName` | `documents` |
@@ -1047,7 +1040,7 @@ Browse to the site from IIS Manager, then check in order:
    `Degraded` names the command that fixes it.
 2. `http://localhost:8080/` → the sign-in screen.
 3. Sign in as **`admin@documenthub.local`**. The initial password is the one set
-   by `documenthub-v2-schema.sql` — it is written in a comment at the bottom of that
+   by `documenthub-schema.sql` — it is written in a comment at the bottom of that
    file. **Change it immediately** from the People screen; it is a known,
    committed credential and is meant to be rotated on first use.
 
@@ -1360,7 +1353,7 @@ The dashboard's pipeline counts say so directly, and so does the database —
 `/api/documents/stats` needs a session, so it is not a one-liner from a shell:
 
 ```bash
-docker compose exec postgres psql -U documenthub -d documenthub_v2 -c 'select "Status", count(*) from documents group by "Status";'
+docker compose exec postgres psql -U documenthub -d documenthub -c 'select "Status", count(*) from documents group by "Status";'
 ```
 
 `Pending` far above `Indexed` is the case. It happens when the API stops part
